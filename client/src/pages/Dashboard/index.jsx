@@ -11,7 +11,7 @@ export default function Dashboard() {
 
   const { data: allData, isLoading } = useQuery({
     queryKey: ['tickets', 'dashboard'],
-    queryFn: () => ticketApi.list({ limit: 500 }).then(r => r.data.data)
+    queryFn: () => ticketApi.list({ limit: 500 }).then(r => r.data.tickets)
   })
 
   if (isLoading) return (
