@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import './i18n'
 import './index.css'
-
 import { useAuthStore } from './store/authStore'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/Login'
@@ -22,15 +21,29 @@ const queryClient = new QueryClient({
 })
 
 function ProtectedRoute({ children, roles }) {
-  const { user, token } = useAuthStore()
-  if (!token) return <Navigate to="/login" replace />
+  const { user } = useAuthStore()
+  if (!user) return <Navigate to="/login" replace />
   if (roles && user && !roles.includes(user?.role)) return <Navigate to="/" replace />
   return children
 }
 
 function App() {
   const { init } = useAuthStore()
-  React.useEffect(() => { init() }, [])
+  const [ready, setReady] = React.useState(false)
+
+  React.useEffect(() => {
+    init().finally(() => setReady(true))
+  }, [])
+
+  if (!ready) return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', background: '#1B2A4A', color: '#fff', fontSize: 16,
+      fontFamily: 'sans-serif'
+    }}>
+      Loading...
+    </div>
+  )
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -44,7 +57,7 @@ function App() {
             <Route path="tickets/:id" element={<TicketDetail />} />
             <Route path="meetings" element={<MeetingsPage />} />
             <Route path="import" element={
-              <ProtectedRoute roles={['admin','manager']}>
+              <ProtectedRoute roles={['admin', 'manager']}>
                 <ImportPage />
               </ProtectedRoute>
             } />
