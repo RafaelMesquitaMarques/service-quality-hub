@@ -30,8 +30,8 @@ export default function TicketsPage() {
     } catch { toast.error('Export failed') }
   }
 
-  const tickets = data?.data || []
-  const total   = data?.meta?.total || 0
+  const tickets = data?.tickets || []
+  const total   = data?.total || 0
 
   return (
     <>
@@ -52,7 +52,6 @@ export default function TicketsPage() {
 
       {/* Filters */}
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex flex-wrap gap-2">
-        {/* Search */}
         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
           <i className="ti ti-search text-gray-400 text-base" aria-hidden="true" />
           <input
@@ -63,7 +62,6 @@ export default function TicketsPage() {
           />
         </div>
 
-        {/* Status filter */}
         <select
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
           value={filters.status}
@@ -75,7 +73,6 @@ export default function TicketsPage() {
           ))}
         </select>
 
-        {/* Department filter */}
         <select
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
           value={filters.department}
