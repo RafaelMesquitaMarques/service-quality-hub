@@ -96,20 +96,20 @@ export default function Layout() {
               </span>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={toggleLang}
-              className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left"
-            >
-              {i18n.language === 'fr' ? 'EN →' : 'FR →'}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-white/50 hover:text-white transition-colors"
-            >
-              <i className="ti ti-logout text-sm" aria-hidden="true" />
-            </button>
-          </div>
+       <div className="flex gap-2 mt-1">
+  <button
+    onClick={toggleLang}
+    className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left"
+  >
+    {i18n.language === 'fr' ? 'EN →' : 'FR →'}
+  </button>
+  <button
+    onClick={handleLogout}
+    className="text-xs text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
+  >
+    Logout
+  </button>
+</div>
         </div>
       </nav>
 
