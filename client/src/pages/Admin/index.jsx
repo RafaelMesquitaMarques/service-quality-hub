@@ -18,7 +18,9 @@ export default function AdminPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ full_name: '', email: '', password: '', role: 'cpm', language: 'fr' })
+  const [form, setForm] = useState({
+    full_name: '', email: '', password: '', role: 'cpm', language: 'fr'
+  })
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -50,7 +52,7 @@ export default function AdminPage() {
     <>
       <PageHeader
         title={t('nav.admin')}
-        subtitle={stats ? `${stats.total_tickets} tickets · ${stats.total_users} users · ${stats.storage_used_mb}MB storage` : ''}
+        subtitle={stats ? `${stats.total_tickets} tickets · ${stats.total_users} users · ${stats.storage_used_mb}MB` : ''}
         actions={
           <button className="btn-primary" onClick={() => setShowForm(true)}>
             <i className="ti ti-user-plus" /> Nouvel utilisateur
@@ -62,22 +64,32 @@ export default function AdminPage() {
           <div className="card p-4 mb-5 max-w-lg">
             <div className="text-sm font-semibold mb-3">Créer un utilisateur</div>
             <div className="space-y-3">
-              <div><label className="label">Nom complet</label>
-                <input className="input" value={form.full_name} onChange={e => setForm(f => ({...f, full_name: e.target.value}))} /></div>
-              <div><label className="label">Email</label>
-                <input type="email" className="input" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} /></div>
-              <div><label className="label">Mot de passe</label>
-                <input type="password" className="input" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))} /></div>
+              <div>
+                <label className="label">Nom complet</label>
+                <input className="input" value={form.full_name} onChange={e => setForm(f => ({...f, full_name: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">Email</label>
+                <input type="email" className="input" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">Mot de passe</label>
+                <input type="password" className="input" value={form.password} onChange={e => setForm(f => ({...f, password: e.target.value}))} />
+              </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="label">Rôle</label>
+                <div>
+                  <label className="label">Rôle</label>
                   <select className="input" value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}>
                     {ROLES.map(r => <option key={r} value={r}>{t(`roles.${r}`)}</option>)}
-                  </select></div>
-                <div><label className="label">Langue</label>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Langue</label>
                   <select className="input" value={form.language} onChange={e => setForm(f => ({...f, language: e.target.value}))}>
                     <option value="fr">Français</option>
                     <option value="en">English</option>
-                  </select></div>
+                  </select>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <button className="btn-ghost" onClick={() => setShowForm(false)}>Annuler</button>
@@ -88,7 +100,6 @@ export default function AdminPage() {
             </div>
           </div>
         )}
-
         <div className="card overflow-hidden">
           {isLoading ? (
             <div className="flex justify-center p-8"><Spinner /></div>
@@ -105,4 +116,33 @@ export default function AdminPage() {
                 {(users || []).map(user => (
                   <tr key={user.id} className="border-b border-gray-50">
                     <td className="px-4 py-3 font-medium text-sm">{user.full_name}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{
+                    <td className="px-4 py-3 text-xs text-gray-500">{user.email || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[user.role]}`}>
+                        {t(`roles.${user.role}`)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs">{user.language?.toUpperCase()}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${user.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {user.active ? 'Actif' : 'Inactif'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        className="text-xs text-gray-400 hover:text-gray-600"
+                        onClick={() => toggleMutation.mutate({ id: user.id, active: !user.active })}
+                      >
+                        {user.active ? 'Désactiver' : 'Activer'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
