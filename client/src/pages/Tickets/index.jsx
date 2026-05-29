@@ -31,7 +31,7 @@ export default function TicketsPage() {
   }
 
   const tickets = data?.tickets || []
-  const total   = data?.total || 0
+const total   = data?.total || 0
 
   return (
     <>
