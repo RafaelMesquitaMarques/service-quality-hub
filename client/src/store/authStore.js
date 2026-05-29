@@ -23,7 +23,7 @@ export const useAuthStore = create(
             .single()
 
           set({
-            user: { ...data.user, ...profile },
+            user: { ...profile, email: data.user.email, id: data.user.id },
             session: data.session,
             isLoading: false
           })
