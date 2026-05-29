@@ -10,9 +10,8 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('sqh-auth')
-      window.location.href = '/login'
-    }
+  console.log('401 error:', err.config?.url)
+}
     return Promise.reject(err)
   }
 )
