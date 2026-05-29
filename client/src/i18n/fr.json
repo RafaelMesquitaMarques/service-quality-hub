@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "tickets": "Tickets",
+    "weekly_review": "Revue hebdomadaire",
+    "import": "Importer Excel",
+    "admin": "Administration"
+  },
+  "status": {
+    "not_started": "Non démarré",
+    "wip": "En cours",
+    "completed": "Complété",
+    "cancelled": "Annulé"
+  },
+  "roles": {
+    "admin": "Administrateur",
+    "manager": "Gestionnaire",
+    "cpm": "CPM",
+    "service_desk": "Service Desk",
+    "viewer": "Visualiseur"
+  },
+  "ticket": {
+    "new": "Nouveau ticket",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "id": "ID",
+    "issue": "Problème qualité",
+    "ship_to": "Destination",
+    "sold_to": "Vendu à",
+    "department": "Département",
+    "brand": "Marque",
+    "plant": "Usine",
+    "status": "Statut",
+    "categories": "Catégorie",
+    "cost": "Coût approx.",
+    "supplier_credit": "Crédit fournisseur",
+    "affected_qty": "Qté affectée",
+    "total_qty": "Qté totale",
+    "affected_pct": "% affecté",
+    "sc_number": "SC#",
+    "ref_so": "REF SO",
+    "item": "Item",
+    "material_number": "Numéro matériel",
+    "root_cause": "Cause racine",
+    "corrective_action": "Action corrective",
+    "meeting_date": "Date de réunion",
+    "reception_date": "Date de réception",
+    "photos": "Photos",
+    "history": "Historique"
+  },
+  "dashboard": {
+    "open_tickets": "Tickets ouverts",
+    "total_cost": "Coût total (mois)",
+    "completion_rate": "Taux de complétion",
+    "next_meeting": "Prochaine réunion",
+    "by_category": "Par catégorie",
+    "by_department": "Coût par département",
+    "recent": "Tickets récents",
+    "see_all": "Voir tout"
+  },
+  "import": {
+    "title": "Importer l'historique Excel",
+    "drop": "Déposez votre fichier Excel ici",
+    "drop_sub": "Quality_Meeting__Data_.xlsx ou KPI_Quality_Meeting.xlsx",
+    "choose": "Choisir un fichier",
+    "preview": "Aperçu",
+    "confirm": "Confirmer l'import",
+    "skip_duplicates": "Ignorer les doublons (SC#)",
+    "success": "{{count}} tickets importés",
+    "skipped": "{{count}} ignorés"
+  },
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "search": "Rechercher...",
+    "export": "Exporter",
+    "filter": "Filtrer",
+    "all": "Tous",
+    "loading": "Chargement...",
+    "error": "Une erreur est survenue",
+    "confirm_delete": "Êtes-vous sûr de vouloir supprimer?",
+    "no_results": "Aucun résultat"
+  },
+  "auth": {
+    "login": "Connexion",
+    "logout": "Déconnexion",
+    "email": "Courriel",
+    "password": "Mot de passe",
+    "login_btn": "Se connecter",
+    "wrong_credentials": "Courriel ou mot de passe incorrect"
+  }
+}

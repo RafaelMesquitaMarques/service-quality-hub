@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "tickets": "Tickets",
+    "weekly_review": "Weekly Review",
+    "import": "Import Excel",
+    "admin": "Admin"
+  },
+  "status": {
+    "not_started": "Not started",
+    "wip": "WIP",
+    "completed": "Completed",
+    "cancelled": "Cancelled"
+  },
+  "roles": {
+    "admin": "Admin",
+    "manager": "Manager",
+    "cpm": "CPM",
+    "service_desk": "Service Desk",
+    "viewer": "Viewer"
+  },
+  "ticket": {
+    "new": "New ticket",
+    "edit": "Edit",
+    "delete": "Delete",
+    "id": "ID",
+    "issue": "Quality issue",
+    "ship_to": "Ship To",
+    "sold_to": "Sold To",
+    "department": "Department",
+    "brand": "Brand",
+    "plant": "Plant",
+    "status": "Status",
+    "categories": "Category",
+    "cost": "Cost approx.",
+    "supplier_credit": "Supplier credit",
+    "affected_qty": "Affected qty",
+    "total_qty": "Total qty",
+    "affected_pct": "Affected %",
+    "sc_number": "SC#",
+    "ref_so": "REF SO",
+    "item": "Item",
+    "material_number": "Material number",
+    "root_cause": "Root cause",
+    "corrective_action": "Corrective action",
+    "meeting_date": "Meeting date",
+    "reception_date": "Reception date",
+    "photos": "Photos",
+    "history": "History"
+  },
+  "dashboard": {
+    "open_tickets": "Open tickets",
+    "total_cost": "Total cost (MTD)",
+    "completion_rate": "Completion rate",
+    "next_meeting": "Next meeting",
+    "by_category": "By category",
+    "by_department": "Cost by department",
+    "recent": "Recent tickets",
+    "see_all": "See all"
+  },
+  "import": {
+    "title": "Import Excel history",
+    "drop": "Drop your Excel file here",
+    "drop_sub": "Quality_Meeting__Data_.xlsx or KPI_Quality_Meeting.xlsx",
+    "choose": "Choose file",
+    "preview": "Preview",
+    "confirm": "Confirm import",
+    "skip_duplicates": "Skip duplicates (SC#)",
+    "success": "{{count}} tickets imported",
+    "skipped": "{{count}} skipped"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search...",
+    "export": "Export",
+    "filter": "Filter",
+    "all": "All",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "confirm_delete": "Are you sure you want to delete?",
+    "no_results": "No results"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "login_btn": "Sign in",
+    "wrong_credentials": "Incorrect email or password"
+  }
+}
