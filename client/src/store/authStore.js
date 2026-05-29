@@ -59,7 +59,7 @@ export const useAuthStore = create(
             .eq('id', session.user.id)
             .single()
           set({
-            user: { ...session.user, ...profile },
+           user: { ...profile, email: session.user.email, id: session.user.id },
             session
           })
         }
@@ -75,7 +75,7 @@ export const useAuthStore = create(
               .eq('id', session.user.id)
               .single()
             set({
-              user: { ...session.user, ...profile },
+             user: { ...profile, email: session.user.email, id: session.user.id },
               session
             })
           }
