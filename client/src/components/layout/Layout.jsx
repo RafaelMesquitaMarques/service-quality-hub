@@ -37,15 +37,12 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
       <nav className="w-52 flex-shrink-0 flex flex-col" style={{ background: '#1A3A5C' }}>
-        {/* Logo */}
         <div className="px-4 py-4 border-b border-white/10">
           <div className="text-white font-semibold text-sm tracking-wide">Service Quality Hub</div>
           <div className="text-white/40 text-xs mt-0.5 uppercase tracking-widest">Foliot</div>
         </div>
 
-        {/* Nav */}
         <div className="flex-1 py-2">
           {navItems.map(item => (
             <NavLink
@@ -87,7 +84,6 @@ export default function Layout() {
           )}
         </div>
 
-        {/* User area */}
         <div className="px-4 py-3 border-t border-white/10">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-7 h-7 rounded-full bg-amber-400 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0">
@@ -96,7 +92,7 @@ export default function Layout() {
             <div className="flex-1 min-w-0">
               <div className="text-white text-xs font-medium truncate">{user?.full_name}</div>
               <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLORS[user?.role] || 'bg-gray-100'}`}>
-                {t(`roles.${user?.role}`)}
+                {user?.role ? t(`roles.${user.role}`) : ''}
               </span>
             </div>
           </div>
@@ -117,7 +113,6 @@ export default function Layout() {
         </div>
       </nav>
 
-      {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet />
       </main>
