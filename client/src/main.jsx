@@ -24,7 +24,7 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children, roles }) {
   const { user, token } = useAuthStore()
   if (!token) return <Navigate to="/login" replace />
-  if (roles && !roles.includes(user?.role)) return <Navigate to="/" replace />
+  if (roles && user && !roles.includes(user?.role)) return <Navigate to="/" replace />
   return children
 }
 
