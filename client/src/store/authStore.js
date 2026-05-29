@@ -2,6 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { supabase } from '../services/supabase'
 
+const fetchProfile = async (userId) => {
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+  return data
+}
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
@@ -14,14 +23,8 @@ export const useAuthStore = create(
         try {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password })
           if (error) throw error
-
-          // Fetch user profile
-          const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .single()
-
+          // Session is now active — safe to fetch profile
+          const profile = await fetchProfile(data.user.id)
           set({
             user: { ...profile, email: data.user.email, id: data.user.id },
             session: data.session,
@@ -42,42 +45,32 @@ export const useAuthStore = create(
       setLanguage: async (language) => {
         const { user } = get()
         if (!user) return
-        await supabase
-          .from('user_profiles')
-          .update({ language })
-          .eq('id', user.id)
+        await supabase.from('user_profiles').update({ language }).eq('id', user.id)
         set(s => ({ user: { ...s.user, language } }))
       },
 
-      // Rehydrate session on app load
       init: async () => {
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
-          const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single()
-          set({
-           user: { ...profile, email: session.user.email, id: session.user.id },
-            session
-          })
+          const profile = await fetchProfile(session.user.id)
+          if (profile) {
+            set({
+              user: { ...profile, email: session.user.email, id: session.user.id },
+              session
+            })
+          }
         }
-
-        // Listen for auth changes
         supabase.auth.onAuthStateChange(async (event, session) => {
           if (event === 'SIGNED_OUT') {
             set({ user: null, session: null })
-          } else if (session) {
-            const { data: profile } = await supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single()
-            set({
-             user: { ...profile, email: session.user.email, id: session.user.id },
-              session
-            })
+          } else if (event === 'SIGNED_IN' && session) {
+            const profile = await fetchProfile(session.user.id)
+            if (profile) {
+              set({
+                user: { ...profile, email: session.user.email, id: session.user.id },
+                session
+              })
+            }
           }
         })
       }
