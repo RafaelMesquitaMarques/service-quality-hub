@@ -246,55 +246,25 @@ export const adminApi = {
   },
 
   inviteUser: async (payload) => {
-  const { data: { session } } = await supabase.auth.getSession()
-  const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-user`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify(payload),
-    }
-  )
-  const result = await res.json()
-  if (!res.ok) throw new Error(result.error || 'Erreur invitation')
-  return { data: result }
-},
-    const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
-      payload.email,
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    const res = await fetch(
+      supabaseUrl + '/functions/v1/invite-user',
       {
-        data: {
-          full_name:  payload.full_name,
-          role:       payload.role,
-          department: payload.department,
-          plant_id:   payload.plant_id,
-          language:   payload.language,
-          avatar_url: payload.avatar_url,
-        }
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+          'apikey': anonKey,
+        },
+        body: JSON.stringify(payload),
       }
     )
-    if (authError) throw authError
-
-    const { error: profileError } = await supabase
-      .from('user_profiles')
-      .upsert({
-        id:         authData.user.id,
-        full_name:  payload.full_name,
-        email:      payload.email,
-        role:       payload.role,
-        department: payload.department  || null,
-        plant_id:   payload.plant_id    || null,
-        language:   payload.language    || 'fr',
-        avatar_url: payload.avatar_url  || null,
-        active:     false,
-        invited_at: new Date().toISOString(),
-      })
-    if (profileError) throw profileError
-
-    return { data: authData }
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || 'Erreur invitation')
+    return { data: result }
   },
 
   updateUser: async (id, payload) => {
@@ -310,7 +280,7 @@ export const adminApi = {
 
   uploadAvatar: async (userId, file) => {
     const ext  = file.name.split('.').pop()
-    const path = `avatars/${userId || 'new'}-${Date.now()}.${ext}`
+    const path = 'avatars/' + (userId || 'new') + '-' + Date.now() + '.' + ext
     const { error } = await supabase.storage
       .from('user-avatars')
       .upload(path, file, { upsert: true })
