@@ -44,9 +44,9 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
   const activeIdxRef = useRef(activeIdx)
   const canvasReady  = useRef(false)
 
-  useEffect(() => { toolRef.current  = tool  }, [tool])
-  useEffect(() => { colorRef.current = color }, [color])
-  useEffect(() => { thickRef.current = thick }, [thick])
+  useEffect(() => { toolRef.current     = tool    }, [tool])
+  useEffect(() => { colorRef.current    = color   }, [color])
+  useEffect(() => { thickRef.current    = thick   }, [thick])
   useEffect(() => { activeIdxRef.current = activeIdx }, [activeIdx])
 
   fabricRef.current = {
@@ -79,9 +79,10 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
     }
   }, [])
 
-  // Init Fabric once when canvas element is available
+  // Init Fabric once when first photo arrives
   useEffect(() => {
     if (!canvasElRef.current || !window.fabric || canvasReady.current) return
+    if (photos.length === 0) return
     canvasReady.current = true
 
     const fc = new window.fabric.Canvas(canvasElRef.current, {
@@ -90,11 +91,9 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
     })
     fabricInst.current = fc
 
-    // ── mouse:down: only start drawing if tool is NOT select ──
     fc.on('mouse:down', (opt) => {
       const t = toolRef.current
-      // If clicking on an existing object in any mode, let Fabric handle it natively
-      if (opt.target) return
+      if (opt.target) return   // clicking existing object — let Fabric handle natively
       if (t === 'select') return
       if (t === 'text') {
         const p = fc.getPointer(opt.e)
@@ -164,10 +163,11 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
       statesRef.current[activeIdxRef.current] = fc.toJSON()
     })
 
-    return () => { fc.dispose(); canvasReady.current = false }
+    // Load first photo immediately
+    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
   }, [photos.length > 0])
 
-  // Sync tool mode to Fabric
+  // Sync tool mode
   useEffect(() => {
     const fc = fabricInst.current
     if (!fc) return
@@ -196,7 +196,7 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
     }
   }, [tool, color, thick])
 
-  // Load photo when activeIdx or photos change
+  // Load photo when activeIdx changes
   useEffect(() => {
     const fc = fabricInst.current
     if (!fc || !photos[activeIdx]) return
@@ -364,12 +364,11 @@ export default function TicketModal({ onClose }) {
   }, [])
 
   const handleActivate = useCallback((idx) => {
-    fabricRef.current?.saveState?.()
     setActivePhoto(idx)
   }, [])
 
+  // KEY FIX: just switch tab — never unmount PhotoAnnotator
   const handleTabChange = (tab) => {
-    fabricRef.current?.saveState?.()
     setActiveTab(tab)
   }
 
@@ -436,141 +435,138 @@ export default function TicketModal({ onClose }) {
           ))}
         </div>
 
-        {activeTab === 'info' && (
-          <div style={S.body}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-              <F2 label="Date réception *"><input style={inp} type="date" value={form.issue_reception_date} onChange={e => sf('issue_reception_date', e.target.value)} /></F2>
-              <F2 label="Date réunion"><input style={inp} type="date" value={form.meeting_date} onChange={e => sf('meeting_date', e.target.value)} /></F2>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-              <F2 label="Département *">
-                <select style={inp} value={form.department} onChange={e => sf('department', e.target.value)}>
-                  <option value="">Sélectionner...</option>
-                  {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                </select>
-              </F2>
-              <F2 label="Catégorie *">
-                <select style={inp} value={form.categories} onChange={e => sf('categories', e.target.value)}>
-                  <option value="">Sélectionner...</option>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </F2>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 }}>
-              <F2 label="Marque (Brand)">
-                <select style={inp} value={form.brand} onChange={e => sf('brand', e.target.value)}>
-                  <option value="">Sélectionner...</option>
-                  {BRANDS.map(b => <option key={b}>{b}</option>)}
-                </select>
-              </F2>
-              <F2 label="Usine (Plant)">
-                <select style={inp} value={form.plant} onChange={e => sf('plant', e.target.value)}>
-                  <option value="">Sélectionner...</option>
-                  {PLANTS.map(p => <option key={p}>{p}</option>)}
-                </select>
-              </F2>
-              <F2 label="Statut">
-                <select style={inp} value={form.status} onChange={e => sf('status', e.target.value)}>
-                  {STATUSES.map(s => <option key={s} value={s}>{STATUS_LBL[s]}</option>)}
-                </select>
-              </F2>
-            </div>
-            <div style={{ marginBottom:10 }}>
-              <F2 label="Problème qualité (Quality issue) *">
-                <textarea style={{ ...inp, resize:'vertical', height:80 }}
-                  placeholder="Décrire le problème en détail..."
-                  value={form.quality_issue} onChange={e => sf('quality_issue', e.target.value)} />
-              </F2>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-              <F2 label="Ship To"><input style={inp} placeholder="Ex: HIEX Page, AZ" value={form.ship_to} onChange={e => sf('ship_to', e.target.value)} /></F2>
-              <F2 label="Sold To"><input style={inp} placeholder="Ex: Hilton Supply Management" value={form.sold_to} onChange={e => sf('sold_to', e.target.value)} /></F2>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:10, marginBottom:10 }}>
-              <F2 label="REF SO"><input style={inp} placeholder="66882" value={form.ref_so} onChange={e => sf('ref_so', e.target.value)} /></F2>
-              <F2 label="SC#"><input style={inp} placeholder="68489" value={form.sc_number} onChange={e => sf('sc_number', e.target.value)} /></F2>
-              <F2 label="Qté affectée"><input style={inp} type="number" placeholder="1" value={form.qty_affected} onChange={e => sf('qty_affected', e.target.value)} /></F2>
-              <F2 label="Coût approx. $"><input style={inp} type="number" placeholder="800" value={form.cost_approx} onChange={e => sf('cost_approx', e.target.value)} /></F2>
-            </div>
-            <div onClick={() => handleTabChange('pj')} style={S.dropZone}>
-              <div style={{ fontSize:24, marginBottom:6 }}>☁</div>
-              <div style={{ fontSize:13, fontWeight:500, color:'#374151', marginBottom:3 }}>Glisser les fichiers ici ou cliquer pour parcourir</div>
-              <div style={{ fontSize:11, color:'#9ca3af', marginBottom:8 }}>JPG, PNG, PDF, Word, Excel, Vidéo · Max 20 MB par fichier</div>
-              <div style={{ display:'flex', gap:6, justifyContent:'center', flexWrap:'wrap' }}>
-                {[['📷','Photo','#eff6ff','#1d4ed8'],['📄','PDF','#fef2f2','#b91c1c'],['📊','Excel','#f0fdf4','#15803d'],['🎬','Vidéo','#fdf4ff','#9333ea']].map(([ic,lb,bg,cl]) => (
-                  <span key={lb} style={{ fontSize:11, padding:'3px 8px', borderRadius:4, background:bg, color:cl, fontWeight:500 }}>{ic} {lb}</span>
-                ))}
-              </div>
+        {/* ── INFORMATIONS — shown/hidden via display, never unmounted ── */}
+        <div style={{ ...S.body, display: activeTab === 'info' ? 'block' : 'none' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+            <F2 label="Date réception *"><input style={inp} type="date" value={form.issue_reception_date} onChange={e => sf('issue_reception_date', e.target.value)} /></F2>
+            <F2 label="Date réunion"><input style={inp} type="date" value={form.meeting_date} onChange={e => sf('meeting_date', e.target.value)} /></F2>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+            <F2 label="Département *">
+              <select style={inp} value={form.department} onChange={e => sf('department', e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+              </select>
+            </F2>
+            <F2 label="Catégorie *">
+              <select style={inp} value={form.categories} onChange={e => sf('categories', e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </F2>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 }}>
+            <F2 label="Marque (Brand)">
+              <select style={inp} value={form.brand} onChange={e => sf('brand', e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {BRANDS.map(b => <option key={b}>{b}</option>)}
+              </select>
+            </F2>
+            <F2 label="Usine (Plant)">
+              <select style={inp} value={form.plant} onChange={e => sf('plant', e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {PLANTS.map(p => <option key={p}>{p}</option>)}
+              </select>
+            </F2>
+            <F2 label="Statut">
+              <select style={inp} value={form.status} onChange={e => sf('status', e.target.value)}>
+                {STATUSES.map(s => <option key={s} value={s}>{STATUS_LBL[s]}</option>)}
+              </select>
+            </F2>
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <F2 label="Problème qualité (Quality issue) *">
+              <textarea style={{ ...inp, resize:'vertical', height:80 }}
+                placeholder="Décrire le problème en détail..."
+                value={form.quality_issue} onChange={e => sf('quality_issue', e.target.value)} />
+            </F2>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
+            <F2 label="Ship To"><input style={inp} placeholder="Ex: HIEX Page, AZ" value={form.ship_to} onChange={e => sf('ship_to', e.target.value)} /></F2>
+            <F2 label="Sold To"><input style={inp} placeholder="Ex: Hilton Supply Management" value={form.sold_to} onChange={e => sf('sold_to', e.target.value)} /></F2>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:10, marginBottom:10 }}>
+            <F2 label="REF SO"><input style={inp} placeholder="66882" value={form.ref_so} onChange={e => sf('ref_so', e.target.value)} /></F2>
+            <F2 label="SC#"><input style={inp} placeholder="68489" value={form.sc_number} onChange={e => sf('sc_number', e.target.value)} /></F2>
+            <F2 label="Qté affectée"><input style={inp} type="number" placeholder="1" value={form.qty_affected} onChange={e => sf('qty_affected', e.target.value)} /></F2>
+            <F2 label="Coût approx. $"><input style={inp} type="number" placeholder="800" value={form.cost_approx} onChange={e => sf('cost_approx', e.target.value)} /></F2>
+          </div>
+          <div onClick={() => handleTabChange('pj')} style={S.dropZone}>
+            <div style={{ fontSize:24, marginBottom:6 }}>☁</div>
+            <div style={{ fontSize:13, fontWeight:500, color:'#374151', marginBottom:3 }}>Glisser les fichiers ici ou cliquer pour parcourir</div>
+            <div style={{ fontSize:11, color:'#9ca3af', marginBottom:8 }}>JPG, PNG, PDF, Word, Excel, Vidéo · Max 20 MB par fichier</div>
+            <div style={{ display:'flex', gap:6, justifyContent:'center', flexWrap:'wrap' }}>
+              {[['📷','Photo','#eff6ff','#1d4ed8'],['📄','PDF','#fef2f2','#b91c1c'],['📊','Excel','#f0fdf4','#15803d'],['🎬','Vidéo','#fdf4ff','#9333ea']].map(([ic,lb,bg,cl]) => (
+                <span key={lb} style={{ fontSize:11, padding:'3px 8px', borderRadius:4, background:bg, color:cl, fontWeight:500 }}>{ic} {lb}</span>
+              ))}
             </div>
           </div>
-        )}
+        </div>
 
-        {activeTab === 'pj' && (
-          <div style={S.body}>
-            <div style={S.secLabel}>PHOTOS D'INSPECTION</div>
-            {fabricLoaded ? (
-              <PhotoAnnotator
-                photos={photos} activeIdx={activePhoto}
-                onActivate={handleActivate} onAddPhoto={handleAddPhoto}
-                fabricRef={fabricRef}
-              />
-            ) : (
-              <div style={{ padding:30, textAlign:'center', color:'#9ca3af', fontSize:13 }}>
-                Chargement des outils d'annotation…
-              </div>
-            )}
-            <div style={{ marginTop:16 }}>
-              <div style={S.secLabel}>AUTRES PIÈCES JOINTES</div>
-              <label style={{ ...S.dropZone, cursor:'pointer' }}>
-                <div style={{ fontSize:22, marginBottom:4 }}>📁</div>
-                <div style={{ fontSize:13, fontWeight:500, color:'#374151' }}>PDF, Word, Excel, Vidéo</div>
-                <div style={{ fontSize:11, color:'#9ca3af' }}>Max 20 MB par fichier</div>
-                <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.mp4,.mov" multiple style={{ display:'none' }} />
-              </label>
+        {/* ── PIÈCES JOINTES — always mounted, hidden when not active ── */}
+        <div style={{ ...S.body, display: activeTab === 'pj' ? 'block' : 'none' }}>
+          <div style={S.secLabel}>PHOTOS D'INSPECTION</div>
+          {fabricLoaded ? (
+            <PhotoAnnotator
+              photos={photos} activeIdx={activePhoto}
+              onActivate={handleActivate} onAddPhoto={handleAddPhoto}
+              fabricRef={fabricRef}
+            />
+          ) : (
+            <div style={{ padding:30, textAlign:'center', color:'#9ca3af', fontSize:13 }}>
+              Chargement des outils d'annotation…
             </div>
+          )}
+          <div style={{ marginTop:16 }}>
+            <div style={S.secLabel}>AUTRES PIÈCES JOINTES</div>
+            <label style={{ ...S.dropZone, cursor:'pointer' }}>
+              <div style={{ fontSize:22, marginBottom:4 }}>📁</div>
+              <div style={{ fontSize:13, fontWeight:500, color:'#374151' }}>PDF, Word, Excel, Vidéo</div>
+              <div style={{ fontSize:11, color:'#9ca3af' }}>Max 20 MB par fichier</div>
+              <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.mp4,.mov" multiple style={{ display:'none' }} />
+            </label>
           </div>
-        )}
+        </div>
 
-        {activeTab === 'ac' && (
-          <div style={S.body}>
-            {[
-              {
-                title:'👤 Responsable',
-                body:(
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                    <F2 label="Assigné à"><input style={inp} placeholder="Nom du responsable" value={ac.assigned_to} onChange={e => sa('assigned_to', e.target.value)} /></F2>
-                    <F2 label="Date limite"><input style={inp} type="date" value={ac.due_date} onChange={e => sa('due_date', e.target.value)} /></F2>
+        {/* ── ACTION CORRECTIVE — always mounted, hidden when not active ── */}
+        <div style={{ ...S.body, display: activeTab === 'ac' ? 'block' : 'none' }}>
+          {[
+            {
+              title:'👤 Responsable',
+              body:(
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                  <F2 label="Assigné à"><input style={inp} placeholder="Nom du responsable" value={ac.assigned_to} onChange={e => sa('assigned_to', e.target.value)} /></F2>
+                  <F2 label="Date limite"><input style={inp} type="date" value={ac.due_date} onChange={e => sa('due_date', e.target.value)} /></F2>
+                </div>
+              ),
+            },
+            {
+              title:"📋 Description de l'action",
+              body:<F2 label=""><textarea style={{ ...inp, resize:'vertical', height:90 }} placeholder="Décrire l'action corrective…" value={ac.description} onChange={e => sa('description', e.target.value)} /></F2>,
+            },
+            {
+              title:'✅ Suivi',
+              body:(
+                <>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:8 }}>
+                    <F2 label="Statut action">
+                      <select style={inp} value={ac.status} onChange={e => sa('status', e.target.value)}>
+                        {['À faire','En cours','Complétée'].map(s => <option key={s}>{s}</option>)}
+                      </select>
+                    </F2>
+                    <F2 label="Date de clôture"><input style={inp} type="date" value={ac.close_date} onChange={e => sa('close_date', e.target.value)} /></F2>
                   </div>
-                ),
-              },
-              {
-                title:"📋 Description de l'action",
-                body:<F2 label=""><textarea style={{ ...inp, resize:'vertical', height:90 }} placeholder="Décrire l'action corrective…" value={ac.description} onChange={e => sa('description', e.target.value)} /></F2>,
-              },
-              {
-                title:'✅ Suivi',
-                body:(
-                  <>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:8 }}>
-                      <F2 label="Statut action">
-                        <select style={inp} value={ac.status} onChange={e => sa('status', e.target.value)}>
-                          {['À faire','En cours','Complétée'].map(s => <option key={s}>{s}</option>)}
-                        </select>
-                      </F2>
-                      <F2 label="Date de clôture"><input style={inp} type="date" value={ac.close_date} onChange={e => sa('close_date', e.target.value)} /></F2>
-                    </div>
-                    <F2 label="Notes"><textarea style={{ ...inp, resize:'vertical', height:56 }} placeholder="Notes additionnelles…" value={ac.notes} onChange={e => sa('notes', e.target.value)} /></F2>
-                  </>
-                ),
-              },
-            ].map(({ title, body }) => (
-              <div key={title} style={S.acBlock}>
-                <div style={{ fontSize:12, fontWeight:500, marginBottom:8, color:'#374151' }}>{title}</div>
-                {body}
-              </div>
-            ))}
-          </div>
-        )}
+                  <F2 label="Notes"><textarea style={{ ...inp, resize:'vertical', height:56 }} placeholder="Notes additionnelles…" value={ac.notes} onChange={e => sa('notes', e.target.value)} /></F2>
+                </>
+              ),
+            },
+          ].map(({ title, body }) => (
+            <div key={title} style={S.acBlock}>
+              <div style={{ fontSize:12, fontWeight:500, marginBottom:8, color:'#374151' }}>{title}</div>
+              {body}
+            </div>
+          ))}
+        </div>
 
         <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <button onClick={onClose} style={{ padding:'8px 14px', borderRadius:7, fontSize:13, cursor:'pointer', background:'none', border:'none', color:'#6b7280', display:'inline-flex', alignItems:'center', gap:4 }}>
