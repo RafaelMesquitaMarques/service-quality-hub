@@ -187,7 +187,7 @@ export default function MeetingsPage() {
       if (!newMeetingDate) throw new Error('Date obligatoire')
       const { data, error } = await supabase.from('meetings').insert({
         meeting_date: newMeetingDate,
-        type: 'weekly_review',
+        type: 'quality_review',
         notes: '',
       }).select().single()
       if (error) throw error
