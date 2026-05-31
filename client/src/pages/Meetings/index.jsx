@@ -210,10 +210,11 @@ export default function MeetingsPage() {
   })
 
   const { data: allTickets } = useQuery({
-    queryKey: ['tickets-picker'],
-    queryFn: () => ticketApi.list({ fiscal_year: CURRENT_FISCAL_YEAR }).then(r => r.data.tickets),
-    enabled: showTicketPicker,
-  })
+  queryKey: ['tickets-picker'],
+  queryFn: () => ticketApi.list({ fiscal_year: 'all' }).then(r => r.data.tickets),
+  enabled: showTicketPicker,
+  staleTime: 0,
+})
 
   const tickets   = meetingTickets || []
   const actList   = actions        || []
