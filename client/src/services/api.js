@@ -246,6 +246,23 @@ export const adminApi = {
   },
 
   inviteUser: async (payload) => {
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-user`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    }
+  )
+  const result = await res.json()
+  if (!res.ok) throw new Error(result.error || 'Erreur invitation')
+  return { data: result }
+},
     const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
       payload.email,
       {
