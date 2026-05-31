@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { adminApi } from '../../services/api'
+import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner } from '../../components/ui'
 import PlantModal from './PlantModal'
 import toast from 'react-hot-toast'
@@ -18,9 +18,10 @@ export default function PlantsPage() {
   const { data: plants, isLoading } = useQuery({
     queryKey: ['plants-admin'],
     queryFn: async () => {
-      const { data, error } = await import('../../services/supabase').then(m =>
-        m.supabase.from('plants').select('*').order('name')
-      )
+      const { data, error } = await supabase
+        .from('plants')
+        .select('*')
+        .order('name')
       if (error) throw error
       return data
     },
@@ -28,7 +29,6 @@ export default function PlantsPage() {
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, active }) => {
-      const { supabase } = await import('../../services/supabase')
       const { error } = await supabase.from('plants').update({ active }).eq('id', id)
       if (error) throw error
     },
@@ -42,7 +42,6 @@ export default function PlantsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      const { supabase } = await import('../../services/supabase')
       const { error } = await supabase.from('plants').delete().eq('id', id)
       if (error) throw error
     },
