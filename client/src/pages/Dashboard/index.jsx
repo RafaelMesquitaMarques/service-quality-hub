@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend, ReferenceLine
+  Legend, ReferenceLine, Cell
 } from 'recharts'
 import { ticketApi, calcKpis, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { KpiCard, StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
@@ -18,6 +18,8 @@ const MONTHLY_REVENUE = {
 }
 
 const TOLERANCE_PCT = 0.003
+
+const BRAND_COLORS = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA']
 
 export default function Dashboard() {
   const { t } = useTranslation()
@@ -77,7 +79,7 @@ export default function Dashboard() {
       .reduce((sum, t) => sum + Number(t.cost_approx), 0)
     const revenue = MONTHLY_REVENUE[name] || 0
     const pct = revenue > 0 ? scCost / revenue * 100 : null
-    return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null, tolerance: TOLERANCE_PCT * 100, events: monthTickets.length }
+    return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null, tolerance: TOLERANCE_PCT * 100 }
   }).filter(d => d.pct !== null)
 
   const eventsByMonthData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
@@ -94,8 +96,37 @@ export default function Dashboard() {
     .sort((a, b) => b[1] - a[1]).slice(0, 6)
     .map(([name, count]) => ({ name, count }))
 
-  const ytdRevenue = Object.values(MONTHLY_REVENUE).reduce((s, v) => s + v, 0)
-  const ytdPct     = ytdRevenue > 0 ? kpis.scCost / ytdRevenue * 100 : 0
+  // ── NEW: Brand trend (tickets by brand per fiscal month) ───
+  const brands = [...new Set(tickets.map(t => t.brand).filter(Boolean))].sort()
+  const brandTrendData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
+    const row = { name: nameShort }
+    brands.forEach(b => {
+      row[b] = tickets.filter(t => t.fiscal_month === fiscal && t.brand === b).length || null
+    })
+    return row
+  }).filter(row => brands.some(b => row[b]))
+
+  // ── NEW: Cost by plant ─────────────────────────────────────
+  const plantCostMap = {}
+  tickets.filter(t => t.plant && t.cost_approx > 0).forEach(t => {
+    plantCostMap[t.plant] = (plantCostMap[t.plant] || 0) + Number(t.cost_approx)
+  })
+  const plantCostData = Object.entries(plantCostMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
+
+  // ── NEW: Top 10 clients by ticket count ───────────────────
+  const clientMap = {}
+  tickets.filter(t => t.ship_to).forEach(t => {
+    const key = t.ship_to.length > 28 ? t.ship_to.slice(0, 28) + '…' : t.ship_to
+    clientMap[key] = (clientMap[key] || 0) + 1
+  })
+  const topClientsData = Object.entries(clientMap)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([name, count]) => ({ name, count }))
+
+  const ytdRevenue     = Object.values(MONTHLY_REVENUE).reduce((s, v) => s + v, 0)
+  const ytdPct         = ytdRevenue > 0 ? kpis.scCost / ytdRevenue * 100 : 0
   const aboveTolerance = ytdPct > 0.3
 
   return (
@@ -158,9 +189,13 @@ export default function Dashboard() {
               <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11 }} domain={[0, 'auto']} />
               <Tooltip formatter={(v, name) => name === 'pct' ? [`${v.toFixed(3)}%`, 'SC Cost %'] : [`${v}%`, 'Tolerance']} />
               <ReferenceLine y={TOLERANCE_PCT * 100} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '0.3%', position: 'right', fontSize: 10, fill: '#EF4444' }} />
-              <Bar dataKey="pct" name="pct" fill="#2563EB" radius={[4, 4, 0, 0]}
+              <Bar dataKey="pct" name="pct" radius={[4, 4, 0, 0]}
                 label={{ position: 'top', formatter: v => v > 0.5 ? `${v.toFixed(1)}%` : '', fontSize: 10, fill: '#374151' }}
-              />
+              >
+                {scPctData.map((entry, i) => (
+                  <Cell key={i} fill={entry.pct > TOLERANCE_PCT * 100 ? '#DC2626' : '#2563EB'} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -176,13 +211,30 @@ export default function Dashboard() {
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip />
               <Legend />
-              <Bar dataKey="fy2026" name={`FY${CURRENT_FISCAL_YEAR}`}   fill="#2563EB" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="fy2026" name={`FY${CURRENT_FISCAL_YEAR}`}     fill="#2563EB" radius={[3, 3, 0, 0]} />
               <Bar dataKey="fy2025" name={`FY${CURRENT_FISCAL_YEAR - 1}`} fill="#93C5FD" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* ── Cost by dept + by category ── */}
+        {/* ── NEW: Brand trend by fiscal month ── */}
+        <div className="card p-4">
+          <div className="text-sm font-semibold text-gray-900 mb-1">Tickets by brand — FY{CURRENT_FISCAL_YEAR}</div>
+          <div className="text-xs text-gray-400 mb-4">Number of tickets per brand per fiscal month</div>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={brandTrendData} margin={{ top: 5 }}>
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Legend />
+              {brands.map((brand, i) => (
+                <Bar key={brand} dataKey={brand} stackId="a" fill={BRAND_COLORS[i % BRAND_COLORS.length]} radius={i === brands.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* ── Cost by dept + by plant ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 mb-4">{t('dashboard.by_department')} — Cost FY{CURRENT_FISCAL_YEAR}</div>
@@ -196,6 +248,22 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
+          {/* ── NEW: Cost by plant ── */}
+          <div className="card p-4">
+            <div className="text-sm font-semibold text-gray-900 mb-4">Cost by plant — FY{CURRENT_FISCAL_YEAR}</div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={plantCostData} layout="vertical" margin={{ left: 50 }}>
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={50} />
+                <Tooltip formatter={v => `$${v.toLocaleString()}`} />
+                <Bar dataKey="cost" fill="#7C3AED" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* ── By category + Top 10 clients ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 mb-4">{t('dashboard.by_category')} — FY{CURRENT_FISCAL_YEAR}</div>
             <ResponsiveContainer width="100%" height={240}>
@@ -204,6 +272,21 @@ export default function Dashboard() {
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
                 <Tooltip />
                 <Bar dataKey="count" fill="#2563EB" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* ── NEW: Top 10 clients ── */}
+          <div className="card p-4">
+            <div className="text-sm font-semibold text-gray-900 mb-4">Top 10 clients — FY{CURRENT_FISCAL_YEAR}</div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={topClientsData} layout="vertical" margin={{ left: 140 }}>
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={140} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#0891B2" radius={[0, 4, 4, 0]}
+                  label={{ position: 'right', fontSize: 10, fill: '#6B7280' }}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
