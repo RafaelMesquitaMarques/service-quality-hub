@@ -151,7 +151,7 @@ export default function AdminPage() {
       }}
       style={{ padding:'5px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444', display:'inline-flex', alignItems:'center', gap:4 }}
     >
-      <i className="ti ti-trash" style={{ fontSize:14 }} aria-hidden="true" />
+      🗑
     </button>
   </div>
 </td>
