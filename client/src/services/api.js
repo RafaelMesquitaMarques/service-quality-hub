@@ -126,7 +126,7 @@ export function calcKpis(tickets) {
   })
 
   const costByDepartment = {}
-  tickets.filter(t => t.cost_approx > 0).forEach(t => {
+  tickets.filter(t => t.cost_approx > 0 && t.department).forEach(t => {
     costByDepartment[t.department] = (costByDepartment[t.department] || 0) + Number(t.cost_approx)
   })
 
