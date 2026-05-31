@@ -72,10 +72,6 @@ export default function AdminPage() {
     setShowModal(true)
   }
 
-select id, full_name, email, role, active, invited_at 
-from user_profiles 
-order by created_at desc 
-limit 5;
 
   const inp = {
     width:'100%', fontSize:13, padding:'7px 10px',
