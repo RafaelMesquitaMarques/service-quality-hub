@@ -13,22 +13,27 @@ export function StatusBadge({ status }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────────
-// trend: { label: '+8%', positive: true } — optional badge top-right
-export function KpiCard({ label, value, sub, subColor = 'text-gray-400', icon, iconColor, iconBg, trend }) {
+// iconBg: hex or CSS color string for background, e.g. '#EFF6FF'
+// iconColor: hex or CSS color string for icon, e.g. '#2563EB'
+// trend: { label: '+8% vs FY2025', positive: true }
+export function KpiCard({ label, value, sub, subColor = 'text-gray-400', icon, iconBg, iconColor, trend }) {
   return (
     <div className="card p-4">
       <div className="flex items-start justify-between mb-3">
         {icon && (
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${iconBg}`}>
-            <i className={`ti ${icon} text-lg ${iconColor || ''}`} aria-hidden="true" />
+          <div
+            style={{ background: iconBg, width: 36, height: 36, borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+          >
+            <i className={`ti ${icon}`} style={{ fontSize: 18, color: iconColor }} aria-hidden="true" />
           </div>
         )}
         {trend && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-            trend.positive
-              ? 'bg-green-50 text-green-700'
-              : 'bg-red-50 text-red-600'
-          }`}>
+          <span style={{
+            fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 20,
+            background: trend.positive ? '#F0FDF4' : '#FEF2F2',
+            color:      trend.positive ? '#15803D' : '#DC2626',
+          }}>
             {trend.label}
           </span>
         )}
@@ -92,10 +97,7 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel, dange
         <p className="text-sm text-gray-500 mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} className="btn-ghost">Annuler</button>
-          <button
-            onClick={onConfirm}
-            className={danger ? 'btn-danger' : 'btn-primary'}
-          >
+          <button onClick={onConfirm} className={danger ? 'btn-danger' : 'btn-primary'}>
             Confirmer
           </button>
         </div>
