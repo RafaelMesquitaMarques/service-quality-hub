@@ -49,20 +49,11 @@ export default function AdminPage() {
     queryFn: () => adminApi.plants().then(r => r.data),
   })
 
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, active }) => adminApi.updateUser(id, { active }),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['admin-users'])
-      toast.success('Statut mis à jour')
-    },
-    onError: () => toast.error('Erreur lors de la mise à jour'),
-  })
-
   const deleteMutation = useMutation({
     mutationFn: (id) => adminApi.deactivate(id),
     onSuccess: () => {
       queryClient.invalidateQueries(['admin-users'])
-      toast.success('Utilisateur désactivé')
+      toast.success('Utilisateur desactive')
     },
     onError: () => toast.error('Erreur'),
   })
@@ -72,11 +63,10 @@ export default function AdminPage() {
     setShowModal(true)
   }
 
-
-  const inp = {
-    width:'100%', fontSize:13, padding:'7px 10px',
-    border:'1px solid #d1d5db', borderRadius:7,
-    background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
+  const handleClose = () => {
+    setShowModal(false)
+    setEditUser(null)
+    queryClient.invalidateQueries(['admin-users'])
   }
 
   return (
@@ -99,7 +89,7 @@ export default function AdminPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  {['Utilisateur','Rôle','Département','Usine','Statut','Actions'].map(h => (
+                  {['Utilisateur','Role','Departement','Usine','Statut','Actions'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -138,11 +128,11 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         {isInvited ? (
                           <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, background:'#fff7ed', color:'#92400e', fontWeight:500 }}>
-                            ⏳ Invité
+                            Invite
                           </span>
                         ) : (
-                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, background: user.active ? '#f0fdf4' : '#f3f4f6', color: user.active ? '#166534' : '#6b7280', fontWeight:500 }}>
-                            {user.active ? '● Actif' : '○ Inactif'}
+                          <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, background: user.active ? '#f0fdf4' : '#f3f4f6', color: user.active ? '#166634' : '#6b7280', fontWeight:500 }}>
+                            {user.active ? 'Actif' : 'Inactif'}
                           </span>
                         )}
                       </td>
@@ -156,7 +146,7 @@ export default function AdminPage() {
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`Désactiver ${user.full_name} ?`))
+                              if (window.confirm('Desactiver ' + user.full_name + ' ?'))
                                 deleteMutation.mutate(user.id)
                             }}
                             style={{ padding:'4px 8px', borderRadius:5, fontSize:11, cursor:'pointer', border:'0.5px solid #fecaca', background:'none', color:'#ef4444' }}
