@@ -6,9 +6,12 @@ import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
 export default function TicketDetail() {
-  const { id } = useParams()
-  const { t } = useTranslation()
-  const navigate = useNavigate()
+ const { id } = useParams()
+const { t } = useTranslation()
+const navigate = useNavigate()
+const [searchParams] = useState(() => new URLSearchParams(window.location.search))
+const fromMeeting = searchParams.get('from') === 'meeting'
+const meetingId   = searchParams.get('meetingId')
   const queryClient = useQueryClient()
 
   const { data: ticket, isLoading } = useQuery({
@@ -33,7 +36,7 @@ export default function TicketDetail() {
         title={ticket.quality_issue}
         subtitle={`${ticket.id} · SC# ${ticket.sc_number || '—'}`}
         actions={
-          <button className="btn-ghost" onClick={() => navigate(-1)}>
+          <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
             ← Retour
           </button>
         }
