@@ -46,7 +46,30 @@ export default function Dashboard() {
   const tickets     = currentYearTickets || []
   const prevTickets = prevYearTickets    || []
   const kpis        = calcKpis(tickets)
+  const prevKpis    = calcKpis(prevTickets)
 
+  // ── Trend helpers ──────────────────────────────────────────
+  function ticketTrend() {
+    if (!prevTickets.length) return null
+    const diff = tickets.length - prevTickets.length
+    const pct  = Math.round(Math.abs(diff) / prevTickets.length * 100)
+    return { label: `${diff >= 0 ? '+' : '−'}${pct}% vs FY${CURRENT_FISCAL_YEAR - 1}`, positive: diff <= 0 }
+  }
+
+  function costTrend() {
+    if (!prevKpis.totalCost) return null
+    const diff = kpis.totalCost - prevKpis.totalCost
+    const pct  = Math.round(Math.abs(diff) / prevKpis.totalCost * 100)
+    return { label: `${diff >= 0 ? '+' : '−'}${pct}% vs FY${CURRENT_FISCAL_YEAR - 1}`, positive: diff <= 0 }
+  }
+
+  function completionTrend() {
+    if (!prevKpis.completionPct) return null
+    const diff = kpis.completionPct - prevKpis.completionPct
+    return { label: `${diff >= 0 ? '+' : '−'}${Math.abs(diff)}% vs FY${CURRENT_FISCAL_YEAR - 1}`, positive: diff >= 0 }
+  }
+
+  // ── Chart data ─────────────────────────────────────────────
   const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, name, nameShort }) => {
     const monthTickets = tickets.filter(t => t.fiscal_month === fiscal)
     const scCost = monthTickets
@@ -73,6 +96,7 @@ export default function Dashboard() {
 
   const ytdRevenue = Object.values(MONTHLY_REVENUE).reduce((s, v) => s + v, 0)
   const ytdPct     = ytdRevenue > 0 ? kpis.scCost / ytdRevenue * 100 : 0
+  const aboveTolerance = ytdPct > 0.3
 
   return (
     <>
@@ -82,42 +106,57 @@ export default function Dashboard() {
       />
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
+        {/* ── KPI Cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <KpiCard
             label={`Tickets FY${CURRENT_FISCAL_YEAR}`}
             value={tickets.length}
-            icon="ti-clipboard-list" iconBg="bg-blue-50 text-blue-600"
-            sub={`${kpis.open} ouverts`}
+            icon="ti-clipboard-list"
+            iconBg="bg-blue-50"
+            iconColor="text-blue-600"
+            trend={ticketTrend()}
+            sub={`${kpis.open} open`}
           />
           <KpiCard
-           label={`Coût Total FY${CURRENT_FISCAL_YEAR}`}
+            label={`Total Cost FY${CURRENT_FISCAL_YEAR}`}
             value={`$${Math.round(kpis.totalCost).toLocaleString()}`}
-            icon="ti-currency-dollar" iconBg="bg-amber-50 text-amber-600"
-            sub={`SC Cost $${Math.round(kpis.scCost).toLocaleString()} (excl. Client)`}
+            icon="ti-currency-dollar"
+            iconBg="bg-amber-50"
+            iconColor="text-amber-600"
+            trend={costTrend()}
+            sub={`SC $${Math.round(kpis.scCost).toLocaleString()} (excl. Client)`}
           />
           <KpiCard
             label="SC Cost % YTD"
             value={`${ytdPct.toFixed(2)}%`}
-            icon="ti-chart-line" iconBg={ytdPct > 0.3 ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}
-            sub={`Tolérance 0.30% · ${ytdPct > 0.3 ? '⚠ Au-dessus' : '✓ En dessous'}`}
-            subColor={ytdPct > 0.3 ? "text-red-500" : "text-green-500"}
+            icon="ti-chart-line"
+            iconBg={aboveTolerance ? "bg-red-50" : "bg-green-50"}
+            iconColor={aboveTolerance ? "text-red-600" : "text-green-600"}
+            trend={{ label: aboveTolerance ? '⚠ Above limit' : '✓ Within limit', positive: !aboveTolerance }}
+            sub={`Tolerance 0.30%`}
+            subColor="text-gray-400"
           />
           <KpiCard
             label={t('dashboard.completion_rate')}
             value={`${kpis.completionPct}%`}
-            icon="ti-circle-check" iconBg="bg-green-50 text-green-600"
-            sub={`${kpis.completed} complétés`} subColor="text-green-500"
+            icon="ti-circle-check"
+            iconBg="bg-green-50"
+            iconColor="text-green-600"
+            trend={completionTrend()}
+            sub={`${kpis.completed} completed`}
+            subColor="text-green-500"
           />
         </div>
 
+        {/* ── SC Cost % chart ── */}
         <div className="card p-4">
           <div className="text-sm font-semibold text-gray-900 mb-1">SC Cost % of Revenue — FY{CURRENT_FISCAL_YEAR}</div>
-          <div className="text-xs text-gray-400 mb-4">Coût SC (excl. Client) / Revenus mensuels · Ligne rouge = tolérance 0.30%</div>
+          <div className="text-xs text-gray-400 mb-4">SC cost (excl. Client) / monthly revenue · red line = 0.30% tolerance</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={scPctData} margin={{ top: 10 }}>
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11 }} domain={[0, 'auto']} />
-              <Tooltip formatter={(v, name) => name === 'pct' ? [`${v.toFixed(3)}%`, 'SC Cost %'] : [`${v}%`, 'Tolérance']} />
+              <Tooltip formatter={(v, name) => name === 'pct' ? [`${v.toFixed(3)}%`, 'SC Cost %'] : [`${v}%`, 'Tolerance']} />
               <ReferenceLine y={TOLERANCE_PCT * 100} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '0.3%', position: 'right', fontSize: 10, fill: '#EF4444' }} />
               <Bar dataKey="pct" name="pct" fill="#2563EB" radius={[4, 4, 0, 0]}
                 label={{ position: 'top', formatter: v => v > 0.5 ? `${v.toFixed(1)}%` : '', fontSize: 10, fill: '#374151' }}
@@ -126,9 +165,10 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
+        {/* ── Events by month ── */}
         <div className="card p-4">
           <div className="text-sm font-semibold text-gray-900 mb-4">
-            Événements par mois fiscal — FY{CURRENT_FISCAL_YEAR} vs FY{CURRENT_FISCAL_YEAR - 1}
+            Events by fiscal month — FY{CURRENT_FISCAL_YEAR} vs FY{CURRENT_FISCAL_YEAR - 1}
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={eventsByMonthData} margin={{ top: 5 }}>
@@ -142,9 +182,10 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
+        {/* ── Cost by dept + by category ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-4">
-            <div className="text-sm font-semibold text-gray-900 mb-4">{t('dashboard.by_department')} — Coût FY{CURRENT_FISCAL_YEAR}</div>
+            <div className="text-sm font-semibold text-gray-900 mb-4">{t('dashboard.by_department')} — Cost FY{CURRENT_FISCAL_YEAR}</div>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={deptCostData} layout="vertical" margin={{ left: 70 }}>
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
@@ -168,6 +209,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── Recent tickets ── */}
         <div className="card">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <div className="text-sm font-semibold">{t('dashboard.recent')}</div>
