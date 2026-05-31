@@ -136,25 +136,25 @@ export default function AdminPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div style={{ display:'flex', gap:4 }}>
-                          <button
-                            onClick={() => handleEdit(user)}
-                            style={{ padding:'4px 8px', borderRadius:5, fontSize:11, cursor:'pointer', border:'0.5px solid #e5e7eb', background:'none', color:'#6b7280' }}
-                          >
-                            <i className="ti ti-edit" aria-hidden="true" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (window.confirm('Desactiver ' + user.full_name + ' ?'))
-                                deleteMutation.mutate(user.id)
-                            }}
-                            style={{ padding:'4px 8px', borderRadius:5, fontSize:11, cursor:'pointer', border:'0.5px solid #fecaca', background:'none', color:'#ef4444' }}
-                          >
-                            <i className="ti ti-trash" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
+              <td className="px-4 py-3">
+  <div style={{ display:'flex', gap:6 }}>
+    <button
+      onClick={() => handleEdit(user)}
+      style={{ padding:'5px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#6b7280', display:'inline-flex', alignItems:'center', gap:4 }}
+    >
+      <i className="ti ti-edit" style={{ fontSize:14 }} aria-hidden="true" /> Modifier
+    </button>
+    <button
+      onClick={() => {
+        if (window.confirm('Desactiver ' + user.full_name + ' ?'))
+          deleteMutation.mutate(user.id)
+      }}
+      style={{ padding:'5px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444', display:'inline-flex', alignItems:'center', gap:4 }}
+    >
+      <i className="ti ti-trash" style={{ fontSize:14 }} aria-hidden="true" />
+    </button>
+  </div>
+</td>
                     </tr>
                   )
                 })}
