@@ -1,7 +1,6 @@
 import { supabase } from './supabase'
 
 // ─── Fiscal Year helpers ────────────────────────────────────────────────────
-// FY starts in December: FY2026 = Dec 2025 → Nov 2026
 export const CURRENT_FISCAL_YEAR = 2026
 
 export function getFiscalYear(dateYYYYMM) {
@@ -16,7 +15,6 @@ export function getFiscalMonth(dateYYYYMM) {
   return month === 12 ? 1 : month + 1
 }
 
-// Fiscal month order for charts (Dec=1, Jan=2, ..., Nov=12)
 export const FISCAL_MONTH_ORDER = [
   { fiscal: 1,  name: 'December',  nameShort: 'Dec' },
   { fiscal: 2,  name: 'January',   nameShort: 'Jan' },
@@ -224,31 +222,97 @@ export const adminApi = {
   users: async () => {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('*')
+      .select('*, plants(name)')
       .order('created_at', { ascending: false })
     if (error) throw error
+    const users = (data || []).map(u => ({
+      ...u,
+      plant_name: u.plants?.name || null,
+    }))
+    return { data: users }
+  },
+
+  plants: async () => {
+    const { data, error } = await supabase
+      .from('plants')
+      .select('id, name, country, active')
+      .eq('active', true)
+      .order('name')
+    if (error) {
+      console.warn('plants table not found, returning empty')
+      return { data: [] }
+    }
     return { data }
   },
+
+  inviteUser: async (payload) => {
+    const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(
+      payload.email,
+      {
+        data: {
+          full_name:  payload.full_name,
+          role:       payload.role,
+          department: payload.department,
+          plant_id:   payload.plant_id,
+          language:   payload.language,
+          avatar_url: payload.avatar_url,
+        }
+      }
+    )
+    if (authError) throw authError
+
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .upsert({
+        id:         authData.user.id,
+        full_name:  payload.full_name,
+        email:      payload.email,
+        role:       payload.role,
+        department: payload.department  || null,
+        plant_id:   payload.plant_id    || null,
+        language:   payload.language    || 'fr',
+        avatar_url: payload.avatar_url  || null,
+        active:     false,
+        invited_at: new Date().toISOString(),
+      })
+    if (profileError) throw profileError
+
+    return { data: authData }
+  },
+
   updateUser: async (id, payload) => {
     const { data, error } = await supabase
       .from('user_profiles')
-      .update(payload)
+      .update({ ...payload, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single()
     if (error) throw error
     return { data }
   },
+
+  uploadAvatar: async (userId, file) => {
+    const ext  = file.name.split('.').pop()
+    const path = `avatars/${userId || 'new'}-${Date.now()}.${ext}`
+    const { error } = await supabase.storage
+      .from('user-avatars')
+      .upload(path, file, { upsert: true })
+    if (error) throw error
+    const { data } = supabase.storage.from('user-avatars').getPublicUrl(path)
+    return { data: { url: data.publicUrl } }
+  },
+
   deactivate: async (id) => {
     const { data, error } = await supabase
       .from('user_profiles')
-      .update({ active: false })
+      .update({ active: false, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single()
     if (error) throw error
     return { data }
   },
+
   stats: async () => {
     const t = await supabase.from('tickets').select('*', { count: 'exact', head: true })
     const u = await supabase.from('user_profiles').select('*', { count: 'exact', head: true })
@@ -259,12 +323,12 @@ export const adminApi = {
 // ─── Import API ───────────────────────────────────────────────────────────────
 export const importApi = {
   preview: async () => ({ data: {} }),
-  run: async () => ({ data: {} }),
+  run:     async () => ({ data: {} }),
 }
 
 export default {
-  get: async () => ({}),
-  post: async () => ({}),
-  patch: async () => ({}),
+  get:    async () => ({}),
+  post:   async () => ({}),
+  patch:  async () => ({}),
   delete: async () => ({}),
 }
