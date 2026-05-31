@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../services/supabase'
@@ -137,10 +137,10 @@ export default function MeetingsPage() {
   const [selId,  setSelId]   = useState(null)
   const [notes,  setNotes]   = useState('')
   const [newAction, setNewAction] = useState({ text:'', owner:'', due:'' })
-  const [showActionForm,  setShowActionForm]  = useState(false)
+  const [showActionForm,   setShowActionForm]   = useState(false)
   const [showTicketPicker, setShowTicketPicker] = useState(false)
-  const [showNewMeeting,  setShowNewMeeting]  = useState(false)
-  const [newMeetingDate,  setNewMeetingDate]  = useState('')
+  const [showNewMeeting,   setShowNewMeeting]   = useState(false)
+  const [newMeetingDate,   setNewMeetingDate]   = useState('')
 
   const { data: meetings, isLoading: loadingMeetings } = useQuery({
     queryKey: ['meetings-v2'],
@@ -151,6 +151,20 @@ export default function MeetingsPage() {
       return data || []
     },
   })
+
+  // Restore meeting from URL param (coming back from ticket detail)
+  useEffect(() => {
+    if (!meetings || meetings.length === 0) return
+    const params = new URLSearchParams(window.location.search)
+    const mid = params.get('meetingId')
+    if (mid) {
+      const m = meetings.find(x => x.id === mid)
+      if (m) {
+        setSelId(m.id)
+        setNotes(m.notes || '')
+      }
+    }
+  }, [meetings])
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
@@ -201,11 +215,11 @@ export default function MeetingsPage() {
     enabled: showTicketPicker,
   })
 
-  const tickets  = meetingTickets || []
-  const actList  = actions        || []
+  const tickets   = meetingTickets || []
+  const actList   = actions        || []
   const totalCost = tickets.reduce((s, t) => s + Number(t?.cost_approx || 0), 0)
-  const openAct  = actList.filter(a => a.status !== 'done').length
-  const doneAct  = actList.filter(a => a.status === 'done').length
+  const openAct   = actList.filter(a => a.status !== 'done').length
+  const doneAct   = actList.filter(a => a.status === 'done').length
 
   const saveNotesMut = useMutation({
     mutationFn: async () => {
@@ -418,7 +432,10 @@ export default function MeetingsPage() {
                       {tickets.map(t => (
                         <div key={t?.id} style={{ display:'grid', gridTemplateColumns:'52px 1fr 80px 64px 28px', gap:8, alignItems:'center', padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
                           <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af' }}>{t?.sc_number || '—'}</div>
-                          <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827', cursor:'pointer' }} onClick={() => navigate(`/tickets/${t?.id}?from=meeting&meetingId=${selId}`)}>
+                          <div
+                            style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827', cursor:'pointer' }}
+                            onClick={() => navigate(`/tickets/${t?.id}?from=meeting&meetingId=${selId}`)}
+                          >
                             {t?.quality_issue}
                           </div>
                           <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t?.department}</div>
