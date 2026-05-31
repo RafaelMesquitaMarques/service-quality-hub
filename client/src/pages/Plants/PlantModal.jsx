@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
 
 const COUNTRIES = ['Vietnam','China','Canada','USA','France','Other']
@@ -25,7 +26,6 @@ export default function PlantModal({ plant, onClose }) {
     }
     setSaving(true)
     try {
-      const { supabase } = await import('../../services/supabase')
       if (isEdit) {
         const { error } = await supabase
           .from('plants')
