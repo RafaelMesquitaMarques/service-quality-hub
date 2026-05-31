@@ -13,16 +13,28 @@ export function StatusBadge({ status }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────────
-export function KpiCard({ label, value, sub, subColor = 'text-gray-400', icon, iconBg }) {
+// trend: { label: '+8%', positive: true } — optional badge top-right
+export function KpiCard({ label, value, sub, subColor = 'text-gray-400', icon, iconColor, iconBg, trend }) {
   return (
     <div className="card p-4">
-      {icon && (
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${iconBg}`}>
-          <i className={`ti ${icon} text-lg`} aria-hidden="true" />
-        </div>
-      )}
+      <div className="flex items-start justify-between mb-3">
+        {icon && (
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${iconBg}`}>
+            <i className={`ti ${icon} text-lg ${iconColor || ''}`} aria-hidden="true" />
+          </div>
+        )}
+        {trend && (
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            trend.positive
+              ? 'bg-green-50 text-green-700'
+              : 'bg-red-50 text-red-600'
+          }`}>
+            {trend.label}
+          </span>
+        )}
+      </div>
+      <div className="text-2xl font-semibold text-gray-900 mb-0.5">{value}</div>
       <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">{label}</div>
-      <div className="text-2xl font-semibold text-gray-900">{value}</div>
       {sub && <div className={`text-xs mt-1 ${subColor}`}>{sub}</div>}
     </div>
   )
