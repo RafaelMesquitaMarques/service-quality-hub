@@ -15,6 +15,7 @@ import NewTicket from './pages/Tickets/NewTicket'
 import MeetingsPage from './pages/Meetings'
 import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
+import PlantsPage from './pages/Plants'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
@@ -64,6 +65,11 @@ function App() {
             <Route path="admin" element={
               <ProtectedRoute roles={['admin']}>
                 <AdminPage />
+              </ProtectedRoute>
+            } />
+            <Route path="plants" element={
+              <ProtectedRoute roles={['admin']}>
+                <PlantsPage />
               </ProtectedRoute>
             } />
           </Route>
