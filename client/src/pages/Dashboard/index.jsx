@@ -112,8 +112,8 @@ export default function Dashboard() {
             label={`Tickets FY${CURRENT_FISCAL_YEAR}`}
             value={tickets.length}
             icon="ti-clipboard-list"
-            iconBg="bg-blue-50"
-            iconColor="text-blue-600"
+            iconBg="#EFF6FF"
+            iconColor="#2563EB"
             trend={ticketTrend()}
             sub={`${kpis.open} open`}
           />
@@ -121,8 +121,8 @@ export default function Dashboard() {
             label={`Total Cost FY${CURRENT_FISCAL_YEAR}`}
             value={`$${Math.round(kpis.totalCost).toLocaleString()}`}
             icon="ti-currency-dollar"
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
+            iconBg="#FFFBEB"
+            iconColor="#D97706"
             trend={costTrend()}
             sub={`SC $${Math.round(kpis.scCost).toLocaleString()} (excl. Client)`}
           />
@@ -130,18 +130,18 @@ export default function Dashboard() {
             label="SC Cost % YTD"
             value={`${ytdPct.toFixed(2)}%`}
             icon="ti-chart-line"
-            iconBg={aboveTolerance ? "bg-red-50" : "bg-green-50"}
-            iconColor={aboveTolerance ? "text-red-600" : "text-green-600"}
+            iconBg={aboveTolerance ? "#FEF2F2" : "#F0FDF4"}
+            iconColor={aboveTolerance ? "#DC2626" : "#16A34A"}
             trend={{ label: aboveTolerance ? '⚠ Above limit' : '✓ Within limit', positive: !aboveTolerance }}
-            sub={`Tolerance 0.30%`}
+            sub="Tolerance 0.30%"
             subColor="text-gray-400"
           />
           <KpiCard
             label={t('dashboard.completion_rate')}
             value={`${kpis.completionPct}%`}
             icon="ti-circle-check"
-            iconBg="bg-green-50"
-            iconColor="text-green-600"
+            iconBg="#F0FDF4"
+            iconColor="#16A34A"
             trend={completionTrend()}
             sub={`${kpis.completed} completed`}
             subColor="text-green-500"
