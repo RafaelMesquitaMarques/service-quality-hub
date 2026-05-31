@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -6,13 +7,13 @@ import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
 export default function TicketDetail() {
- const { id } = useParams()
-const { t } = useTranslation()
-const navigate = useNavigate()
-const [searchParams] = useState(() => new URLSearchParams(window.location.search))
-const fromMeeting = searchParams.get('from') === 'meeting'
-const meetingId   = searchParams.get('meetingId')
+  const { id } = useParams()
+  const { t } = useTranslation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search))
+  const fromMeeting = searchParams.get('from') === 'meeting'
+  const meetingId   = searchParams.get('meetingId')
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['ticket', id],
@@ -23,7 +24,7 @@ const meetingId   = searchParams.get('meetingId')
     mutationFn: (data) => ticketApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['ticket', id])
-      toast.success('Ticket mis à jour')
+      toast.success('Ticket mis a jour')
     }
   })
 
@@ -37,14 +38,14 @@ const meetingId   = searchParams.get('meetingId')
         subtitle={`${ticket.id} · SC# ${ticket.sc_number || '—'}`}
         actions={
           <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
-            ← Retour
+            Retour
           </button>
         }
       />
       <div className="flex-1 overflow-y-auto p-5">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-4xl">
           <div className="card p-4 space-y-3">
-            <div className="text-sm font-semibold mb-3">Détails du ticket</div>
+            <div className="text-sm font-semibold mb-3">Details du ticket</div>
             {[
               ['Ship To', ticket.ship_to],
               ['Sold To', ticket.sold_to],
@@ -65,7 +66,7 @@ const meetingId   = searchParams.get('meetingId')
             ))}
           </div>
           <div className="card p-4">
-            <div className="text-sm font-semibold mb-3">Résolution</div>
+            <div className="text-sm font-semibold mb-3">Resolution</div>
             <div className="space-y-3">
               <div>
                 <label className="label">Root Cause</label>
