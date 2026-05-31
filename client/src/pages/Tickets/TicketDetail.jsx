@@ -32,9 +32,10 @@ export default function TicketDetail() {
   const fromMeeting     = searchParams.get('from') === 'meeting'
   const meetingId       = searchParams.get('meetingId')
 
-  const [rootCause,    setRootCause]    = useState('')
-  const [corrective,   setCorrective]   = useState('')
-  const [initialized,  setInitialized]  = useState(false)
+  const [rootCause,   setRootCause]   = useState('')
+  const [corrective,  setCorrective]  = useState('')
+  const [initialized, setInitialized] = useState(false)
+  const [lightbox,    setLightbox]    = useState(null)
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['ticket', id],
@@ -81,7 +82,7 @@ export default function TicketDetail() {
         .from('ticket-photos').getPublicUrl(path)
       const { error: dbErr } = await supabase.from('ticket_photos').insert({
         ticket_id: id,
-        url: urlData.publicUrl,
+        url:  urlData.publicUrl,
         name: file.name,
         path,
       })
@@ -96,10 +97,14 @@ export default function TicketDetail() {
 
   const deletePhotoMut = useMutation({
     mutationFn: async ({ photoId, path }) => {
-      await supabase.storage.from('ticket-photos').remove([path])
+      if (path) await supabase.storage.from('ticket-photos').remove([path])
       await supabase.from('ticket_photos').delete().eq('id', photoId)
     },
-    onSuccess: () => queryClient.invalidateQueries(['ticket-photos', id]),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['ticket-photos', id])
+      toast.success('Photo supprimee')
+    },
+    onError: () => toast.error('Erreur suppression'),
   })
 
   const handleSave = () => {
@@ -110,10 +115,19 @@ export default function TicketDetail() {
     Array.from(e.target.files).forEach(file => uploadPhotoMut.mutate(file))
   }
 
+  const handleDeletePhoto = (photo) => {
+    if (window.confirm('Supprimer cette photo ?')) {
+      deletePhotoMut.mutate({ photoId: photo.id, path: photo.path })
+      if (lightbox === photo.url) setLightbox(null)
+    }
+  }
+
   if (isLoading) return <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   if (!ticket) return null
 
   const sc = STATUS_CLR[ticket.status] || STATUS_CLR.not_started
+  const imgPhotos = (photos || []).filter(p => p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
+  const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
 
   return (
     <>
@@ -167,7 +181,7 @@ export default function TicketDetail() {
                 ].map(([label, value]) => value ? (
                   <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'0.5px solid #f3f4f6', fontSize:12 }}>
                     <span style={{ fontSize:11, color:'#9ca3af' }}>{label}</span>
-                    <span style={{ color:'#111827', fontWeight: label === 'Cout approx.' ? 500 : 400, color: label === 'Cout approx.' ? '#ef4444' : '#111827' }}>
+                    <span style={{ color: label === 'Cout approx.' ? '#ef4444' : '#111827', fontWeight: label === 'Cout approx.' ? 500 : 400 }}>
                       {label === 'Departement' ? (
                         <span style={{ fontSize:10, padding:'1px 7px', borderRadius:8, background:'#eff6ff', color:'#0c447c', fontWeight:500 }}>{value}</span>
                       ) : value}
@@ -285,6 +299,11 @@ export default function TicketDetail() {
                 <div style={{ fontSize:12, fontWeight:500, color:'#111827', display:'flex', alignItems:'center', gap:6 }}>
                   <i className="ti ti-photo" aria-hidden="true" style={{ fontSize:13, color:'#2563eb' }} />
                   Photos & Annexes
+                  {(photos || []).length > 0 && (
+                    <span style={{ fontSize:10, padding:'1px 6px', borderRadius:8, background:'#eff6ff', color:'#0c447c', fontWeight:500 }}>
+                      {(photos || []).length}
+                    </span>
+                  )}
                 </div>
                 <label style={{ padding:'3px 8px', borderRadius:6, fontSize:11, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff', display:'inline-flex', alignItems:'center', gap:4 }}>
                   <i className="ti ti-plus" aria-hidden="true" style={{ fontSize:11 }} /> Ajouter
@@ -300,27 +319,38 @@ export default function TicketDetail() {
                   </label>
                 ) : (
                   <>
-                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:8 }}>
-                      {(photos || []).filter(p => p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i)).map(p => (
-                        <div key={p.id} style={{ position:'relative', aspectRatio:'1', borderRadius:6, overflow:'hidden', border:'1px solid #e5e7eb' }}>
-                          <img src={p.url} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                          <button
-                            onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })}
-                            style={{ position:'absolute', top:3, right:3, background:'rgba(0,0,0,0.5)', border:'none', borderRadius:'50%', width:20, height:20, cursor:'pointer', color:'#fff', fontSize:10, display:'flex', alignItems:'center', justifyContent:'center' }}
-                          >
-                            <i className="ti ti-x" aria-hidden="true" />
-                          </button>
-                        </div>
-                      ))}
-                      <label style={{ aspectRatio:'1', border:'1.5px dashed #d1d5db', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:22, color:'#9ca3af', background:'#f9fafb' }}>
-                        +<input type="file" accept="image/*,.pdf" multiple onChange={handleFileUpload} style={{ display:'none' }} />
-                      </label>
-                    </div>
-                    {(photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i)).map(p => (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 8px', background:'#f9fafb', borderRadius:6, fontSize:11, marginBottom:4 }}>
-                        <span style={{ color:'#b91c1c' }}>📄</span>
-                        <span style={{ flex:1, color:'#111827' }}>{p.name}</span>
-                        <button onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })} style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:12 }}>
+                    {imgPhotos.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:8 }}>
+                        {imgPhotos.map(p => (
+                          <div key={p.id} style={{ position:'relative', aspectRatio:'1', borderRadius:6, overflow:'hidden', border:'1px solid #e5e7eb' }}>
+                            <img
+                              src={p.url}
+                              style={{ width:'100%', height:'100%', objectFit:'cover', cursor:'zoom-in' }}
+                              onClick={() => setLightbox(p.url)}
+                            />
+                            <button
+                              onClick={() => handleDeletePhoto(p)}
+                              style={{ position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.55)', border:'none', borderRadius:'50%', width:22, height:22, cursor:'pointer', color:'#fff', fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }}
+                              title="Supprimer"
+                            >
+                              <i className="ti ti-trash" aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                        <label style={{ aspectRatio:'1', border:'1.5px dashed #d1d5db', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:22, color:'#9ca3af', background:'#f9fafb' }}>
+                          +<input type="file" accept="image/*,.pdf" multiple onChange={handleFileUpload} style={{ display:'none' }} />
+                        </label>
+                      </div>
+                    )}
+                    {filePhotos.map(p => (
+                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', background:'#f9fafb', borderRadius:6, fontSize:11, marginBottom:4 }}>
+                        <span style={{ color:'#b91c1c', fontSize:14 }}>📄</span>
+                        <a href={p.url} target="_blank" rel="noreferrer" style={{ flex:1, color:'#2563eb', textDecoration:'none' }}>{p.name || 'Fichier'}</a>
+                        <button
+                          onClick={() => handleDeletePhoto(p)}
+                          style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:13, padding:0 }}
+                          title="Supprimer"
+                        >
                           <i className="ti ti-trash" aria-hidden="true" />
                         </button>
                       </div>
@@ -333,6 +363,26 @@ export default function TicketDetail() {
           </div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.88)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, cursor:'zoom-out', padding:20 }}
+        >
+          <img
+            src={lightbox}
+            style={{ maxWidth:'90vw', maxHeight:'90vh', borderRadius:8, objectFit:'contain', boxShadow:'0 0 40px rgba(0,0,0,0.5)' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setLightbox(null)}
+            style={{ position:'absolute', top:16, right:16, background:'rgba(255,255,255,0.15)', border:'none', borderRadius:'50%', width:36, height:36, cursor:'pointer', color:'#fff', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}
+          >
+            X
+          </button>
+        </div>
+      )}
     </>
   )
 }
