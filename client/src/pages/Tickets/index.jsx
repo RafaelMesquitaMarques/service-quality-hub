@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ticketApi, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
+import TicketModal from './TicketModal'
 import toast from 'react-hot-toast'
 
 const STATUSES = ['', 'not_started', 'wip', 'completed']
@@ -18,16 +19,13 @@ const PAGE_SIZE = 50
 export default function TicketsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [showModal, setShowModal] = useState(false)
   const [filters, setFilters] = useState({
     fiscal_year: CURRENT_FISCAL_YEAR,
-    status: '',
-    department: '',
-    brand: '',
-    search: '',
-    page: 1,
+    status: '', department: '', brand: '', search: '', page: 1,
   })
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', filters],
     queryFn: () => ticketApi.list(filters).then(r => r.data),
   })
@@ -41,8 +39,7 @@ export default function TicketsPage() {
       const rows = allTickets.map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv = [headers.join(','), ...rows].join('\n')
       const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
-      const a = document.createElement('a')
-      a.href = url; a.download = `sqh-fy${filters.fiscal_year}.csv`; a.click()
+      const a = document.createElement('a'); a.href = url; a.download = `sqh-fy${filters.fiscal_year}.csv`; a.click()
     } catch { toast.error('Export failed') }
   }
 
@@ -62,7 +59,7 @@ export default function TicketsPage() {
             <button className="btn-ghost" onClick={handleExport}>
               <i className="ti ti-download" aria-hidden="true" /> {t('common.export')}
             </button>
-            <button className="btn-primary" onClick={() => navigate('/tickets/new')}>
+            <button className="btn-primary" onClick={() => setShowModal(true)}>
               <i className="ti ti-plus" aria-hidden="true" /> {t('ticket.new')}
             </button>
           </>
@@ -72,44 +69,24 @@ export default function TicketsPage() {
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex flex-wrap gap-2">
         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-1.5 text-sm">
           <i className="ti ti-search text-gray-400 text-base" aria-hidden="true" />
-          <input
-            className="outline-none text-sm w-48 placeholder:text-gray-400"
-            placeholder={t('common.search')}
-            value={filters.search}
-            onChange={e => setFilter('search', e.target.value)}
-          />
+          <input className="outline-none text-sm w-48 placeholder:text-gray-400"
+            placeholder={t('common.search')} value={filters.search}
+            onChange={e => setFilter('search', e.target.value)} />
         </div>
-
-        <select
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
+        <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
           value={filters.fiscal_year}
-          onChange={e => setFilter('fiscal_year', e.target.value === 'all' ? 'all' : Number(e.target.value))}
-        >
-          {FISCAL_YEARS.map(fy => (
-            <option key={fy} value={fy}>{fy === 'all' ? 'Tous les FY' : `FY${fy}`}</option>
-          ))}
+          onChange={e => setFilter('fiscal_year', e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+          {FISCAL_YEARS.map(fy => <option key={fy} value={fy}>{fy === 'all' ? 'Tous les FY' : `FY${fy}`}</option>)}
         </select>
-
-        <select
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
-          value={filters.status}
-          onChange={e => setFilter('status', e.target.value)}
-        >
+        <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
+          value={filters.status} onChange={e => setFilter('status', e.target.value)}>
           <option value="">{t('common.all')} statuts</option>
-          {STATUSES.filter(Boolean).map(s => (
-            <option key={s} value={s}>{t(`status.${s}`)}</option>
-          ))}
+          {STATUSES.filter(Boolean).map(s => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
-
-        <select
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
-          value={filters.department}
-          onChange={e => setFilter('department', e.target.value)}
-        >
+        <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 focus:outline-none"
+          value={filters.department} onChange={e => setFilter('department', e.target.value)}>
           <option value="">{t('common.all')} depts.</option>
-          {DEPARTMENTS.filter(Boolean).map(d => (
-            <option key={d} value={d}>{d}</option>
-          ))}
+          {DEPARTMENTS.filter(Boolean).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
 
@@ -122,18 +99,16 @@ export default function TicketsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                {['SC#', 'Date réception', 'Problème', 'Ship To', 'Marque', 'Dépt.', 'Statut', 'Coût'].map(h => (
+                {['SC#','Date réception','Problème','Ship To','Marque','Dépt.','Statut','Coût'].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide border-b border-gray-200">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tickets.map(ticket => (
-                <tr
-                  key={ticket.id}
+                <tr key={ticket.id}
                   className="border-b border-gray-50 hover:bg-blue-50/30 cursor-pointer transition-colors"
-                  onClick={() => navigate(`/tickets/${ticket.id}`)}
-                >
+                  onClick={() => navigate(`/tickets/${ticket.id}`)}>
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
                   <td className="px-4 py-2.5 text-xs text-gray-500">{ticket.issue_reception_date}</td>
                   <td className="px-4 py-2.5 text-sm max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
@@ -165,6 +140,10 @@ export default function TicketsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {showModal && (
+        <TicketModal onClose={() => { setShowModal(false); refetch() }} />
       )}
     </>
   )
