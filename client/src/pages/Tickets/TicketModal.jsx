@@ -28,10 +28,10 @@ function makeArrow(x1, y1, x2, y2, color, lw) {
 }
 
 function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }) {
-  const canvasElRef = useRef(null)
-  const wrapRef     = useRef(null)
-  const fabricInst  = useRef(null)
-  const statesRef   = useRef({})
+  const canvasElRef  = useRef(null)
+  const wrapRef      = useRef(null)
+  const fabricInst   = useRef(null)
+  const statesRef    = useRef({})
   const [tool,  setTool]  = useState('select')
   const [color, setColor] = useState('#ef4444')
   const [thick, setThick] = useState(3)
@@ -42,6 +42,7 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
   const colorRef     = useRef('#ef4444')
   const thickRef     = useRef(3)
   const activeIdxRef = useRef(activeIdx)
+  const canvasReady  = useRef(false)
 
   useEffect(() => { toolRef.current  = tool  }, [tool])
   useEffect(() => { colorRef.current = color }, [color])
@@ -54,9 +55,34 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
     },
   }
 
+  const loadPhotoOnCanvas = useCallback((fc, photo, idx) => {
+    if (!fc || !photo) return
+    const wrap  = wrapRef.current
+    const maxW  = wrap ? wrap.clientWidth - 4 : 600
+    const maxH  = 340
+    const img   = photo.img
+    const scale = Math.min(maxW / img.width, maxH / img.height, 1)
+    const W     = Math.round(img.width  * scale)
+    const H     = Math.round(img.height * scale)
+    fc.setWidth(W)
+    fc.setHeight(H)
+    const saved = statesRef.current[idx]
+    if (saved) {
+      fc.loadFromJSON(saved, () => fc.renderAll())
+    } else {
+      fc.clear()
+      const fImg = new window.fabric.Image(img, {
+        left: 0, top: 0, scaleX: scale, scaleY: scale,
+        selectable: false, evented: false,
+      })
+      fc.setBackgroundImage(fImg, fc.renderAll.bind(fc))
+    }
+  }, [])
+
+  // Init Fabric once when canvas element is available
   useEffect(() => {
-    if (!canvasElRef.current || !window.fabric) return
-    if (fabricInst.current) fabricInst.current.dispose()
+    if (!canvasElRef.current || !window.fabric || canvasReady.current) return
+    canvasReady.current = true
 
     const fc = new window.fabric.Canvas(canvasElRef.current, {
       selection: true,
@@ -64,8 +90,11 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
     })
     fabricInst.current = fc
 
-    const onDown = (opt) => {
+    // ── mouse:down: only start drawing if tool is NOT select ──
+    fc.on('mouse:down', (opt) => {
       const t = toolRef.current
+      // If clicking on an existing object in any mode, let Fabric handle it natively
+      if (opt.target) return
       if (t === 'select') return
       if (t === 'text') {
         const p = fc.getPointer(opt.e)
@@ -74,8 +103,7 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
           fontSize: 14 + thickRef.current * 2,
           fill: colorRef.current,
           fontFamily: 'sans-serif',
-          editable: true,
-          selectable: true,
+          editable: true, selectable: true,
         })
         fc.add(itext)
         fc.setActiveObject(itext)
@@ -89,19 +117,16 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
       isDrawing.current = true
       const p = fc.getPointer(opt.e)
       startPt.current = { x: p.x, y: p.y }
-      fc.selection = false
-    }
+    })
 
-    const onMove = (opt) => {
+    fc.on('mouse:move', (opt) => {
       if (!isDrawing.current) return
       const t  = toolRef.current
       if (t === 'pen' || t === 'select' || t === 'text') return
       const p  = fc.getPointer(opt.e)
       const sx = startPt.current.x, sy = startPt.current.y
       const c  = colorRef.current, lw = thickRef.current
-
       if (activeObj.current) { fc.remove(activeObj.current); activeObj.current = null }
-
       let shape
       if (t === 'arrow') {
         shape = makeArrow(sx, sy, p.x, p.y, c, lw)
@@ -119,9 +144,9 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
         })
       }
       if (shape) { fc.add(shape); activeObj.current = shape; fc.renderAll() }
-    }
+    })
 
-    const onUp = () => {
+    fc.on('mouse:up', () => {
       if (!isDrawing.current) return
       isDrawing.current = false
       fc.isDrawingMode = false
@@ -133,16 +158,16 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
       }
       fc.renderAll()
       statesRef.current[activeIdxRef.current] = fc.toJSON()
-    }
+    })
 
-    fc.on('mouse:down', onDown)
-    fc.on('mouse:move', onMove)
-    fc.on('mouse:up',   onUp)
-    fc.on('object:modified', () => { statesRef.current[activeIdxRef.current] = fc.toJSON() })
+    fc.on('object:modified', () => {
+      statesRef.current[activeIdxRef.current] = fc.toJSON()
+    })
 
-    return () => fc.dispose()
-  }, [])
+    return () => { fc.dispose(); canvasReady.current = false }
+  }, [photos.length > 0])
 
+  // Sync tool mode to Fabric
   useEffect(() => {
     const fc = fabricInst.current
     if (!fc) return
@@ -150,7 +175,9 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
       fc.isDrawingMode = false
       fc.selection = true
       fc.defaultCursor = 'default'
+      fc.hoverCursor = 'move'
       fc.forEachObject(o => { o.selectable = true; o.evented = true })
+      fc.renderAll()
     } else if (tool === 'pen') {
       fc.isDrawingMode = true
       fc.freeDrawingBrush.color = color
@@ -164,41 +191,23 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
       fc.isDrawingMode = false
       fc.selection = false
       fc.defaultCursor = 'crosshair'
+      fc.forEachObject(o => { o.selectable = false; o.evented = false })
+      fc.renderAll()
     }
   }, [tool, color, thick])
 
+  // Load photo when activeIdx or photos change
   useEffect(() => {
     const fc = fabricInst.current
     if (!fc || !photos[activeIdx]) return
-    const wrap  = wrapRef.current
-    const maxW  = wrap ? wrap.clientWidth - 4 : 580
-    const img   = photos[activeIdx].img
-    const scale = Math.min(maxW / img.width, 320 / img.height, 1)
-    const W = Math.round(img.width  * scale)
-    const H = Math.round(img.height * scale)
-    fc.setWidth(W)
-    fc.setHeight(H)
-    const saved = statesRef.current[activeIdx]
-    if (saved) {
-      fc.loadFromJSON(saved, () => fc.renderAll())
-    } else {
-      fc.clear()
-      fc.setBackgroundImage(
-        new window.fabric.Image(img, { scaleX: scale, scaleY: scale }),
-        fc.renderAll.bind(fc)
-      )
-    }
-  }, [activeIdx, photos])
+    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
+  }, [activeIdx, photos, loadPhotoOnCanvas])
 
   const undo = () => {
     const fc = fabricInst.current
     if (!fc) return
     const objs = fc.getObjects()
-    if (objs.length > 0) {
-      fc.remove(objs[objs.length - 1])
-      fc.renderAll()
-      statesRef.current[activeIdx] = fc.toJSON()
-    }
+    if (objs.length > 0) { fc.remove(objs[objs.length - 1]); fc.renderAll(); statesRef.current[activeIdx] = fc.toJSON() }
   }
 
   const deleteSelected = () => {
@@ -211,16 +220,8 @@ function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }
   const clearAll = () => {
     const fc = fabricInst.current
     if (!fc || !photos[activeIdx]) return
-    const img   = photos[activeIdx].img
-    const wrap  = wrapRef.current
-    const maxW  = wrap ? wrap.clientWidth - 4 : 580
-    const scale = Math.min(maxW / img.width, 320 / img.height, 1)
-    fc.clear()
-    fc.setBackgroundImage(
-      new window.fabric.Image(img, { scaleX: scale, scaleY: scale }),
-      fc.renderAll.bind(fc)
-    )
     delete statesRef.current[activeIdx]
+    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
   }
 
   const toolNames = { select:'SÉLECTION', pen:'STYLO', arrow:'FLÈCHE', rect:'RECTANGLE', circle:'CERCLE', text:'TEXTE' }
@@ -409,7 +410,6 @@ export default function TicketModal({ onClose }) {
   return (
     <div style={S.overlay}>
       <div style={S.modal}>
-        {/* Header */}
         <div style={{ padding:'16px 44px 12px 20px', borderBottom:'1px solid #e5e7eb' }}>
           <div style={{ fontSize:15, fontWeight:500, color:'#111827' }}>Nouveau ticket qualité</div>
           <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>
@@ -418,7 +418,6 @@ export default function TicketModal({ onClose }) {
           <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>✕</button>
         </div>
 
-        {/* Tabs */}
         <div style={{ display:'flex', borderBottom:'1px solid #e5e7eb', padding:'0 20px' }}>
           {[
             { id:'info', label:'Informations',      icon:'ⓘ' },
@@ -437,7 +436,6 @@ export default function TicketModal({ onClose }) {
           ))}
         </div>
 
-        {/* INFORMATIONS */}
         {activeTab === 'info' && (
           <div style={S.body}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
@@ -507,7 +505,6 @@ export default function TicketModal({ onClose }) {
           </div>
         )}
 
-        {/* PIÈCES JOINTES */}
         {activeTab === 'pj' && (
           <div style={S.body}>
             <div style={S.secLabel}>PHOTOS D'INSPECTION</div>
@@ -534,7 +531,6 @@ export default function TicketModal({ onClose }) {
           </div>
         )}
 
-        {/* ACTION CORRECTIVE */}
         {activeTab === 'ac' && (
           <div style={S.body}>
             {[
@@ -576,7 +572,6 @@ export default function TicketModal({ onClose }) {
           </div>
         )}
 
-        {/* Footer */}
         <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <button onClick={onClose} style={{ padding:'8px 14px', borderRadius:7, fontSize:13, cursor:'pointer', background:'none', border:'none', color:'#6b7280', display:'inline-flex', alignItems:'center', gap:4 }}>
             ✕ Annuler
