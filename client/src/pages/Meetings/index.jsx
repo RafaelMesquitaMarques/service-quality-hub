@@ -418,7 +418,7 @@ export default function MeetingsPage() {
                       {tickets.map(t => (
                         <div key={t?.id} style={{ display:'grid', gridTemplateColumns:'52px 1fr 80px 64px 28px', gap:8, alignItems:'center', padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
                           <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af' }}>{t?.sc_number || '—'}</div>
-                          <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827', cursor:'pointer' }} onClick={() => navigate(`/tickets/${t?.id}`)}>
+                          <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827', cursor:'pointer' }} onClick={() => navigate(`/tickets/${t?.id}?from=meeting&meetingId=${selId}`)}>
                             {t?.quality_issue}
                           </div>
                           <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t?.department}</div>
