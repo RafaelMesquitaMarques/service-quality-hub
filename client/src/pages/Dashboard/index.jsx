@@ -90,7 +90,7 @@ export default function Dashboard() {
             sub={`${kpis.open} ouverts`}
           />
           <KpiCard
-            label={t('dashboard.total_cost')}
+           label={`Coût Total FY${CURRENT_FISCAL_YEAR}`}
             value={`$${Math.round(kpis.totalCost).toLocaleString()}`}
             icon="ti-currency-dollar" iconBg="bg-amber-50 text-amber-600"
             sub={`SC Cost $${Math.round(kpis.scCost).toLocaleString()} (excl. Client)`}
