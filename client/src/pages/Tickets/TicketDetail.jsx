@@ -33,7 +33,7 @@ export default function TicketDetail() {
         title={ticket.quality_issue}
         subtitle={`${ticket.id} · SC# ${ticket.sc_number || '—'}`}
         actions={
-          <button className="btn-ghost" onClick={() => navigate('/tickets')}>
+          <button className="btn-ghost" onClick={() => navigate(-1)}>
             ← Retour
           </button>
         }
