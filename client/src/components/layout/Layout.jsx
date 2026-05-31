@@ -32,7 +32,10 @@ export default function Layout() {
     ...((['admin','manager'].includes(user?.role))
       ? [{ to: '/import', icon: 'ti-file-import', label: t('nav.import') }] : []),
     ...(user?.role === 'admin'
-      ? [{ to: '/admin',  icon: 'ti-users',        label: t('nav.admin') }] : []),
+      ? [
+          { to: '/plants', icon: 'ti-building-factory', label: 'Usines' },
+          { to: '/admin',  icon: 'ti-users',             label: t('nav.admin') },
+        ] : []),
   ]
 
   return (
@@ -96,20 +99,20 @@ export default function Layout() {
               </span>
             </div>
           </div>
-       <div className="flex gap-2 mt-1">
-  <button
-    onClick={toggleLang}
-    className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left"
-  >
-    {i18n.language === 'fr' ? 'EN →' : 'FR →'}
-  </button>
-  <button
-    onClick={handleLogout}
-    className="text-xs text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
-  >
-    Logout
-  </button>
-</div>
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={toggleLang}
+              className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left"
+            >
+              {i18n.language === 'fr' ? 'EN →' : 'FR →'}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
 
