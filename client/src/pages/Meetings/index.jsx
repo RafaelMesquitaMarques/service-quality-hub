@@ -7,11 +7,17 @@ import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
-  todo:       { bg:'#eff6ff', color:'#0c447c', label:'A faire' },
-  in_progress:{ bg:'#fef3c7', color:'#633806', label:'En cours' },
-  done:       { bg:'#eaf3de', color:'#27500a', label:'Complete' },
-  late:       { bg:'#fcebeb', color:'#791f1f', label:'En retard' },
+  todo:        { bg:'#eff6ff', color:'#0c447c', label:'A faire' },
+  in_progress: { bg:'#fef3c7', color:'#633806', label:'En cours' },
+  done:        { bg:'#eaf3de', color:'#27500a', label:'Complete' },
+  late:        { bg:'#fcebeb', color:'#791f1f', label:'En retard' },
 }
+
+const DEPTS = [
+  'Client','Shipping','Supplier','Production','Logistics','Install',
+  'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
+  'Project Mgnt','EOI','Vietnam','Planning',
+]
 
 function formatDate(d) {
   if (!d) return ''
@@ -26,105 +32,185 @@ function weekLabel(d) {
   return `Week ${mm}-${dd}`
 }
 
+function TicketPicker({ tickets, selected, onAdd, onClose }) {
+  const [search,   setSearch]   = useState('')
+  const [dept,     setDept]     = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo,   setDateTo]   = useState('')
+
+  const selectedIds = new Set((selected || []).map(t => t?.id))
+
+  const filtered = (tickets || []).filter(t => {
+    if (selectedIds.has(t.id)) return false
+    if (dept && t.department !== dept) return false
+    if (dateFrom && t.issue_reception_date < dateFrom) return false
+    if (dateTo   && t.issue_reception_date > dateTo)   return false
+    if (search) {
+      const q = search.toLowerCase()
+      return (
+        t.quality_issue?.toLowerCase().includes(q) ||
+        t.sc_number?.toLowerCase().includes(q) ||
+        t.ship_to?.toLowerCase().includes(q) ||
+        t.department?.toLowerCase().includes(q)
+      )
+    }
+    return true
+  })
+
+  const inp = {
+    fontSize:13, padding:'6px 10px',
+    border:'1px solid #d1d5db', borderRadius:7,
+    background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', zIndex:1000, overflowY:'auto' }}>
+      <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:680, boxShadow:'0 24px 48px rgba(0,0,0,0.18)' }}>
+
+        <div style={{ padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ fontSize:14, fontWeight:500 }}>Ajouter des tickets a la reunion</div>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18 }}>X</button>
+        </div>
+
+        <div style={{ padding:'10px 20px', borderBottom:'1px solid #f3f4f6', display:'flex', gap:8, flexWrap:'wrap', background:'#f9fafb' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, flex:1, minWidth:160, border:'1px solid #d1d5db', borderRadius:7, background:'#fff', padding:'0 10px' }}>
+            <i className="ti ti-search" aria-hidden="true" style={{ fontSize:14, color:'#9ca3af', flexShrink:0 }} />
+            <input
+              style={{ border:'none', outline:'none', fontSize:13, color:'#111827', width:'100%', padding:'6px 0', background:'transparent' }}
+              placeholder="Rechercher SC#, client, probleme..."
+              value={search} onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <select style={{ ...inp, minWidth:140 }} value={dept} onChange={e => setDept(e.target.value)}>
+            <option value="">Tous les depts.</option>
+            {DEPTS.map(d => <option key={d}>{d}</option>)}
+          </select>
+          <input style={{ ...inp, minWidth:120 }} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="Date de" />
+          <input style={{ ...inp, minWidth:120 }} type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="Date a" />
+          {(search || dept || dateFrom || dateTo) && (
+            <button
+              onClick={() => { setSearch(''); setDept(''); setDateFrom(''); setDateTo('') }}
+              style={{ padding:'6px 10px', borderRadius:7, fontSize:12, cursor:'pointer', border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
+            >
+              Effacer
+            </button>
+          )}
+        </div>
+
+        <div style={{ padding:'5px 20px', fontSize:11, color:'#9ca3af', borderBottom:'1px solid #f3f4f6' }}>
+          {filtered.length} ticket{filtered.length !== 1 ? 's' : ''} — {selectedIds.size} deja selectionne{selectedIds.size !== 1 ? 's' : ''}
+        </div>
+
+        <div style={{ maxHeight:360, overflowY:'auto' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding:24, textAlign:'center', fontSize:13, color:'#9ca3af' }}>Aucun ticket trouve</div>
+          ) : filtered.map(t => (
+            <div key={t.id} style={{ display:'grid', gridTemplateColumns:'52px minmax(0,1fr) 80px 80px 64px 80px', gap:8, alignItems:'center', padding:'8px 20px', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
+              <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af' }}>{t.sc_number || '—'}</div>
+              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827' }}>{t.quality_issue}</div>
+              <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t.department}</div>
+              <div style={{ fontSize:11, color:'#9ca3af' }}>{t.issue_reception_date?.slice(0,10) || '—'}</div>
+              <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af', textAlign:'right' }}>
+                {t.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}
+              </div>
+              <button onClick={() => onAdd(t.id)} style={{ padding:'4px 10px', borderRadius:6, fontSize:11, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff' }}>
+                Ajouter
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <span style={{ fontSize:12, color:'#9ca3af' }}>{selectedIds.size} ticket{selectedIds.size !== 1 ? 's' : ''} dans la reunion</span>
+          <button onClick={onClose} style={{ padding:'7px 16px', borderRadius:7, fontSize:13, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#374151' }}>
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MeetingsPage() {
-  const navigate      = useNavigate()
-  const queryClient   = useQueryClient()
+  const navigate    = useNavigate()
+  const queryClient = useQueryClient()
   const [selId,  setSelId]   = useState(null)
   const [notes,  setNotes]   = useState('')
   const [newAction, setNewAction] = useState({ text:'', owner:'', due:'' })
-  const [showActionForm, setShowActionForm] = useState(false)
+  const [showActionForm,  setShowActionForm]  = useState(false)
   const [showTicketPicker, setShowTicketPicker] = useState(false)
-  const [showNewMeeting, setShowNewMeeting] = useState(false)
-  const [newMeetingDate, setNewMeetingDate] = useState('')
+  const [showNewMeeting,  setShowNewMeeting]  = useState(false)
+  const [newMeetingDate,  setNewMeetingDate]  = useState('')
 
-  // ── Meetings list ──────────────────────────────────────────────────────────
   const { data: meetings, isLoading: loadingMeetings } = useQuery({
     queryKey: ['meetings-v2'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('meetings')
-        .select('*')
-        .order('meeting_date', { ascending: false })
+        .from('meetings').select('*').order('meeting_date', { ascending: false })
       if (error) throw error
       return data || []
     },
   })
 
-  // ── Selected meeting ───────────────────────────────────────────────────────
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
-  // ── Tickets for selected meeting ───────────────────────────────────────────
   const { data: meetingTickets } = useQuery({
     queryKey: ['meeting-tickets', selId],
     queryFn: async () => {
       if (!selId) return []
       const { data, error } = await supabase
-        .from('meeting_tickets')
-        .select('ticket_id, tickets(*)')
-        .eq('meeting_id', selId)
+        .from('meeting_tickets').select('ticket_id, tickets(*)').eq('meeting_id', selId)
       if (error) return []
       return (data || []).map(r => r.tickets)
     },
     enabled: !!selId,
   })
 
-  // ── Actions for selected meeting ───────────────────────────────────────────
   const { data: actions } = useQuery({
     queryKey: ['meeting-actions', selId],
     queryFn: async () => {
       if (!selId) return []
       const { data, error } = await supabase
-        .from('meeting_actions')
-        .select('*')
-        .eq('meeting_id', selId)
-        .order('created_at')
+        .from('meeting_actions').select('*').eq('meeting_id', selId).order('created_at')
       if (error) return []
       return data || []
     },
     enabled: !!selId,
   })
 
-  // ── Previous week actions (follow-up) ─────────────────────────────────────
   const prevMeeting = (meetings || []).find((m, i) => {
     const idx = (meetings || []).findIndex(x => x.id === selId)
     return i === idx + 1
   })
+
   const { data: prevActions } = useQuery({
     queryKey: ['meeting-actions', prevMeeting?.id],
     queryFn: async () => {
       if (!prevMeeting?.id) return []
       const { data, error } = await supabase
-        .from('meeting_actions')
-        .select('*')
-        .eq('meeting_id', prevMeeting.id)
-        .order('created_at')
+        .from('meeting_actions').select('*').eq('meeting_id', prevMeeting.id).order('created_at')
       if (error) return []
       return data || []
     },
     enabled: !!prevMeeting?.id,
   })
 
-  // ── All tickets (for picker) ───────────────────────────────────────────────
   const { data: allTickets } = useQuery({
     queryKey: ['tickets-picker'],
     queryFn: () => ticketApi.list({ fiscal_year: CURRENT_FISCAL_YEAR }).then(r => r.data.tickets),
     enabled: showTicketPicker,
   })
 
-  // ── KPIs ──────────────────────────────────────────────────────────────────
-  const tickets   = meetingTickets || []
-  const actList   = actions        || []
+  const tickets  = meetingTickets || []
+  const actList  = actions        || []
   const totalCost = tickets.reduce((s, t) => s + Number(t?.cost_approx || 0), 0)
-  const openAct   = actList.filter(a => a.status !== 'done').length
-  const doneAct   = actList.filter(a => a.status === 'done').length
+  const openAct  = actList.filter(a => a.status !== 'done').length
+  const doneAct  = actList.filter(a => a.status === 'done').length
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
   const saveNotesMut = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
-        .from('meetings')
-        .update({ notes, updated_at: new Date().toISOString() })
-        .eq('id', selId)
+        .from('meetings').update({ notes, updated_at: new Date().toISOString() }).eq('id', selId)
       if (error) throw error
     },
     onSuccess: () => { queryClient.invalidateQueries(['meetings-v2']); toast.success('Notes sauvegardees') },
@@ -135,11 +221,8 @@ export default function MeetingsPage() {
     mutationFn: async () => {
       if (!newAction.text) throw new Error('Action obligatoire')
       const { error } = await supabase.from('meeting_actions').insert({
-        meeting_id: selId,
-        text:   newAction.text,
-        owner:  newAction.owner || null,
-        due:    newAction.due   || null,
-        status: 'todo',
+        meeting_id: selId, text: newAction.text,
+        owner: newAction.owner || null, due: newAction.due || null, status: 'todo',
       })
       if (error) throw error
     },
@@ -162,9 +245,8 @@ export default function MeetingsPage() {
 
   const addTicketMut = useMutation({
     mutationFn: async (ticketId) => {
-      const { error } = await supabase.from('meeting_tickets').upsert({
-        meeting_id: selId, ticket_id: ticketId
-      })
+      const { error } = await supabase.from('meeting_tickets')
+        .upsert({ meeting_id: selId, ticket_id: ticketId })
       if (error) throw error
     },
     onSuccess: () => {
@@ -186,9 +268,7 @@ export default function MeetingsPage() {
     mutationFn: async () => {
       if (!newMeetingDate) throw new Error('Date obligatoire')
       const { data, error } = await supabase.from('meetings').insert({
-        meeting_date: newMeetingDate,
-        type: 'quality_review',
-        notes: '',
+        meeting_date: newMeetingDate, type: 'quality_review', notes: '',
       }).select().single()
       if (error) throw error
       return data
@@ -236,7 +316,6 @@ export default function MeetingsPage() {
 
       <div className="flex-1 overflow-hidden flex">
 
-        {/* ── Sidebar ── */}
         <div style={{ width:200, flexShrink:0, borderRight:'1px solid #e5e7eb', overflowY:'auto', background:'#fff' }}>
           <div style={{ padding:'8px 12px', fontSize:10, fontWeight:500, color:'#9ca3af', letterSpacing:'0.06em', textTransform:'uppercase', borderBottom:'1px solid #f3f4f6' }}>
             Semaines FY{CURRENT_FISCAL_YEAR}
@@ -244,27 +323,20 @@ export default function MeetingsPage() {
           {loadingMeetings ? (
             <div style={{ display:'flex', justifyContent:'center', padding:16 }}><Spinner /></div>
           ) : (meetings || []).map(m => (
-            <div
-              key={m.id}
-              onClick={() => handleSelectMeeting(m)}
-              style={{
-                padding:'10px 12px', borderBottom:'1px solid #f3f4f6', cursor:'pointer',
-                background: selId === m.id ? '#eff6ff' : 'transparent',
-                borderLeft: selId === m.id ? '3px solid #2563eb' : '3px solid transparent',
-              }}
-            >
+            <div key={m.id} onClick={() => handleSelectMeeting(m)} style={{
+              padding:'10px 12px', borderBottom:'1px solid #f3f4f6', cursor:'pointer',
+              background: selId === m.id ? '#eff6ff' : 'transparent',
+              borderLeft: selId === m.id ? '3px solid #2563eb' : '3px solid transparent',
+            }}>
               <div style={{ fontSize:12, fontWeight:500, color:'#111827' }}>{weekLabel(m.meeting_date)}</div>
               <div style={{ fontSize:11, color:'#9ca3af', marginTop:1 }}>{formatDate(m.meeting_date)}</div>
             </div>
           ))}
           {(meetings || []).length === 0 && !loadingMeetings && (
-            <div style={{ padding:16, fontSize:12, color:'#9ca3af', textAlign:'center' }}>
-              Aucune reunion
-            </div>
+            <div style={{ padding:16, fontSize:12, color:'#9ca3af', textAlign:'center' }}>Aucune reunion</div>
           )}
         </div>
 
-        {/* ── Main content ── */}
         <div style={{ flex:1, overflowY:'auto', padding:16, display:'flex', flexDirection:'column', gap:10 }}>
           {!selId ? (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9ca3af', fontSize:13 }}>
@@ -272,7 +344,6 @@ export default function MeetingsPage() {
             </div>
           ) : (
             <>
-              {/* KPIs */}
               <div className="card p-4">
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
                   <div style={{ fontSize:13, fontWeight:500, color:'#111827', display:'flex', alignItems:'center', gap:6 }}>
@@ -283,10 +354,10 @@ export default function MeetingsPage() {
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
                   {[
-                    { v: tickets.length,           l:'Tickets discutes', c:'#2563eb' },
+                    { v: tickets.length, l:'Tickets discutes', c:'#2563eb' },
                     { v: `$${Math.round(totalCost).toLocaleString()}`, l:'Cout SC semaine', c:'#ef4444' },
-                    { v: openAct,                  l:'Actions ouvertes', c:'#f59e0b' },
-                    { v: doneAct,                  l:'Completes',        c:'#22c55e' },
+                    { v: openAct, l:'Actions ouvertes', c:'#f59e0b' },
+                    { v: doneAct, l:'Completes', c:'#22c55e' },
                   ].map(({ v, l, c }) => (
                     <div key={l} style={{ background:'#f9fafb', borderRadius:8, padding:'10px', textAlign:'center' }}>
                       <div style={{ fontSize:20, fontWeight:500, color:c }}>{v}</div>
@@ -296,7 +367,6 @@ export default function MeetingsPage() {
                 </div>
               </div>
 
-              {/* Follow-up semaine precedente */}
               {(prevActions || []).length > 0 && (
                 <div className="card">
                   <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', gap:8 }}>
@@ -324,7 +394,6 @@ export default function MeetingsPage() {
                 </div>
               )}
 
-              {/* Tickets a discuter */}
               <div className="card">
                 <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -366,7 +435,6 @@ export default function MeetingsPage() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="card">
                 <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -430,7 +498,6 @@ export default function MeetingsPage() {
                 </div>
               </div>
 
-              {/* Notes */}
               <div className="card p-4">
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                   <div style={{ fontSize:12, fontWeight:500, color:'#111827', display:'flex', alignItems:'center', gap:6 }}>
@@ -442,8 +509,7 @@ export default function MeetingsPage() {
                   </button>
                 </div>
                 <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
+                  value={notes} onChange={e => setNotes(e.target.value)}
                   style={{ width:'100%', border:'1px solid #e5e7eb', borderRadius:7, padding:'8px 10px', fontSize:12, color:'#111827', background:'#fff', resize:'vertical', height:90, outline:'none', boxSizing:'border-box' }}
                   placeholder="Decisions prises, points importants, observations..."
                 />
@@ -453,41 +519,15 @@ export default function MeetingsPage() {
         </div>
       </div>
 
-      {/* ── Ticket picker modal ── */}
       {showTicketPicker && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', zIndex:1000, overflowY:'auto' }}>
-          <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:600, boxShadow:'0 24px 48px rgba(0,0,0,0.18)' }}>
-            <div style={{ padding:'14px 44px 12px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <div style={{ fontSize:14, fontWeight:500 }}>Ajouter des tickets a la reunion</div>
-              <button onClick={() => setShowTicketPicker(false)} style={{ position:'absolute', top:16, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18 }}>X</button>
-            </div>
-            <div style={{ maxHeight:400, overflowY:'auto', padding:'8px 0' }}>
-              {(allTickets || []).filter(t => !tickets.find(mt => mt?.id === t.id)).map(t => (
-                <div key={t.id} style={{ display:'grid', gridTemplateColumns:'1fr 80px 64px 80px', gap:8, alignItems:'center', padding:'8px 20px', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
-                  <div style={{ color:'#111827', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                    <span style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af', marginRight:8 }}>{t.sc_number}</span>
-                    {t.quality_issue}
-                  </div>
-                  <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t.department}</div>
-                  <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af', textAlign:'right' }}>
-                    {t.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}
-                  </div>
-                  <button onClick={() => { addTicketMut.mutate(t.id); }} style={{ padding:'4px 10px', borderRadius:6, fontSize:11, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff' }}>
-                    Ajouter
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', textAlign:'right' }}>
-              <button onClick={() => setShowTicketPicker(false)} style={{ padding:'7px 16px', borderRadius:7, fontSize:13, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#374151' }}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
+        <TicketPicker
+          tickets={allTickets || []}
+          selected={tickets}
+          onAdd={(id) => addTicketMut.mutate(id)}
+          onClose={() => setShowTicketPicker(false)}
+        />
       )}
 
-      {/* ── New meeting modal ── */}
       {showNewMeeting && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
           <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:360, boxShadow:'0 24px 48px rgba(0,0,0,0.18)', padding:24, position:'relative' }}>
