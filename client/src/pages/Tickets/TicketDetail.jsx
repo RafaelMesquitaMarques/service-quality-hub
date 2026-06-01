@@ -78,14 +78,23 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
     if (!window.fabric) return
     const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 340 })
     fabricRef.current = canvas
-    window.fabric.Image.fromURL(photo.url || photo.preview, img => {
-      img.scaleToWidth(560)
-      canvas.setHeight(img.getScaledHeight())
-      canvas.add(img)
-      img.selectable = false
-      canvas.sendToBack(img)
+
+    const src = photo.url || photo.preview
+    const imgEl = new Image()
+    imgEl.onload = () => {
+      const fabricImg = new window.fabric.Image(imgEl)
+      const scale = Math.min(560 / imgEl.width, 1)
+      fabricImg.scale(scale)
+      canvas.setWidth(Math.round(imgEl.width * scale))
+      canvas.setHeight(Math.round(imgEl.height * scale))
+      canvas.add(fabricImg)
+      fabricImg.selectable = false
+      fabricImg.evented = false
+      canvas.sendToBack(fabricImg)
       canvas.renderAll()
-    }, { crossOrigin: 'anonymous' })
+    }
+    imgEl.src = src
+
     return () => canvas.dispose()
   }, [])
 
@@ -257,7 +266,15 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t })
 
   const saveAnnotationMut = useMutation({
     mutationFn: async ({ photoId, path, dataUrl }) => {
-      const blob = await (await fetch(dataUrl)).blob()
+      // Convert dataUrl to blob without fetch
+      const arr  = dataUrl.split(',')
+      const mime = arr[0].match(/:(.*?);/)[1]
+      const bstr = atob(arr[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) u8arr[n] = bstr.charCodeAt(n)
+      const blob = new Blob([u8arr], { type: mime })
+
       const newPath = path.replace(/\.[^.]+$/, '_annotated.jpg')
       await supabase.storage.from('ticket-photos').upload(newPath, blob, { upsert: true })
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(newPath)
