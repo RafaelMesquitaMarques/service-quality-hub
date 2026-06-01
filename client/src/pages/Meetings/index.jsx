@@ -242,12 +242,15 @@ export default function MeetingsPage() {
 
   const deleteMeetingMut = useMutation({
     mutationFn: async (id) => {
-      await supabase.from('meeting_actions').delete().eq('meeting_id', id)
-      await supabase.from('meeting_tickets').delete().eq('meeting_id', id)
-      const { error } = await supabase.from('meetings').delete().eq('id', id)
-      if (error) throw error
+      const { error: e1 } = await supabase.from('meeting_actions').delete().eq('meeting_id', id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('meeting_tickets').delete().eq('meeting_id', id)
+      if (e2) throw e2
+      const { error: e3 } = await supabase.from('meetings').delete().eq('id', id)
+      if (e3) throw e3
     },
     onSuccess: () => {
+      queryClient.removeQueries(['meetings-v2'])
       queryClient.invalidateQueries(['meetings-v2'])
       setSelId(null)
       setNotes('')
