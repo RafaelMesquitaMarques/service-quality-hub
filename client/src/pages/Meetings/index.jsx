@@ -7,6 +7,13 @@ import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
+  todo:        { bg:'#1e3a5f', color:'#93c5fd', label:'A faire' },
+  in_progress: { bg:'#3b2a00', color:'#fcd34d', label:'En cours' },
+  done:        { bg:'#14532d', color:'#86efac', label:'Complete' },
+  late:        { bg:'#4a1b0c', color:'#fca5a5', label:'En retard' },
+}
+
+const STATUS_STYLE_LIGHT = {
   todo:        { bg:'#eff6ff', color:'#0c447c', label:'A faire' },
   in_progress: { bg:'#fef3c7', color:'#633806', label:'En cours' },
   done:        { bg:'#eaf3de', color:'#27500a', label:'Complete' },
@@ -37,9 +44,7 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
   const [dept,     setDept]     = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
-
   const selectedIds = new Set((selected || []).map(t => t?.id))
-
   const filtered = (tickets || []).filter(t => {
     if (selectedIds.has(t.id)) return false
     if (dept && t.department !== dept) return false
@@ -47,84 +52,54 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
     if (dateTo   && t.issue_reception_date > dateTo)   return false
     if (search) {
       const q = search.toLowerCase()
-      return (
-        t.quality_issue?.toLowerCase().includes(q) ||
-        t.sc_number?.toLowerCase().includes(q) ||
-        t.ship_to?.toLowerCase().includes(q) ||
-        t.department?.toLowerCase().includes(q)
-      )
+      return t.quality_issue?.toLowerCase().includes(q) || t.sc_number?.toLowerCase().includes(q) || t.ship_to?.toLowerCase().includes(q)
     }
     return true
   })
 
-  const inp = {
-    fontSize:13, padding:'6px 10px',
-    border:'1px solid #d1d5db', borderRadius:7,
-    background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
-  }
-
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', zIndex:1000, overflowY:'auto' }}>
-      <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:680, boxShadow:'0 24px 48px rgba(0,0,0,0.18)' }}>
-
-        <div style={{ padding:'14px 20px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div style={{ fontSize:14, fontWeight:500 }}>Ajouter des tickets a la reunion</div>
-          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18 }}>X</button>
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center p-8 z-[1000] overflow-y-auto">
+      <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Ajouter des tickets à la réunion</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg">✕</button>
         </div>
-
-        <div style={{ padding:'10px 20px', borderBottom:'1px solid #f3f4f6', display:'flex', gap:8, flexWrap:'wrap', background:'#f9fafb' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6, flex:1, minWidth:160, border:'1px solid #d1d5db', borderRadius:7, background:'#fff', padding:'0 10px' }}>
-            <i className="ti ti-search" aria-hidden="true" style={{ fontSize:14, color:'#9ca3af', flexShrink:0 }} />
-            <input
-              style={{ border:'none', outline:'none', fontSize:13, color:'#111827', width:'100%', padding:'6px 0', background:'transparent' }}
-              placeholder="Rechercher SC#, client, probleme..."
-              value={search} onChange={e => setSearch(e.target.value)}
-            />
+        <div className="px-5 py-2.5 border-b border-gray-100 dark:border-gray-800 flex gap-2 flex-wrap bg-gray-50 dark:bg-[#0D1117]">
+          <div className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 flex-1 min-w-40 bg-white dark:bg-[#161B22]">
+            <i className="ti ti-search text-gray-400 text-sm" aria-hidden="true" />
+            <input className="outline-none text-xs w-full bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+              placeholder="Rechercher SC#, client, problème..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <select style={{ ...inp, minWidth:140 }} value={dept} onChange={e => setDept(e.target.value)}>
+          <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
+            value={dept} onChange={e => setDept(e.target.value)}>
             <option value="">Tous les depts.</option>
             {DEPTS.map(d => <option key={d}>{d}</option>)}
           </select>
-          <input style={{ ...inp, minWidth:120 }} type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="Date de" />
-          <input style={{ ...inp, minWidth:120 }} type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}   title="Date a" />
-          {(search || dept || dateFrom || dateTo) && (
-            <button
-              onClick={() => { setSearch(''); setDept(''); setDateFrom(''); setDateTo('') }}
-              style={{ padding:'6px 10px', borderRadius:7, fontSize:12, cursor:'pointer', border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
-            >
-              Effacer
-            </button>
-          )}
+          <input type="date" className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none"
+            value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <input type="date" className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none"
+            value={dateTo} onChange={e => setDateTo(e.target.value)} />
         </div>
-
-        <div style={{ padding:'5px 20px', fontSize:11, color:'#9ca3af', borderBottom:'1px solid #f3f4f6' }}>
-          {filtered.length} ticket{filtered.length !== 1 ? 's' : ''} — {selectedIds.size} deja selectionne{selectedIds.size !== 1 ? 's' : ''}
+        <div className="px-5 py-1.5 text-xs text-gray-400 border-b border-gray-100 dark:border-gray-800">
+          {filtered.length} ticket{filtered.length !== 1 ? 's' : ''} — {selectedIds.size} déjà sélectionné{selectedIds.size !== 1 ? 's' : ''}
         </div>
-
-        <div style={{ maxHeight:360, overflowY:'auto' }}>
+        <div className="max-h-80 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div style={{ padding:24, textAlign:'center', fontSize:13, color:'#9ca3af' }}>Aucun ticket trouve</div>
+            <div className="py-6 text-center text-xs text-gray-400">Aucun ticket trouvé</div>
           ) : filtered.map(t => (
-            <div key={t.id} style={{ display:'grid', gridTemplateColumns:'52px minmax(0,1fr) 80px 80px 64px 80px', gap:8, alignItems:'center', padding:'8px 20px', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
-              <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af' }}>{t.sc_number || '—'}</div>
-              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827' }}>{t.quality_issue}</div>
-              <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t.department}</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>{t.issue_reception_date?.slice(0,10) || '—'}</div>
-              <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af', textAlign:'right' }}>
-                {t.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}
-              </div>
-              <button onClick={() => onAdd(t.id)} style={{ padding:'4px 10px', borderRadius:6, fontSize:11, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff' }}>
-                Ajouter
-              </button>
+            <div key={t.id} className="grid gap-2 px-5 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px minmax(0,1fr) 80px 80px 64px 80px' }}>
+              <div className="font-mono text-gray-400">{t.sc_number || '—'}</div>
+              <div className="truncate text-gray-900 dark:text-gray-100">{t.quality_issue}</div>
+              <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{t.department}</div>
+              <div className="text-gray-400">{t.issue_reception_date?.slice(0,10) || '—'}</div>
+              <div className="font-mono text-gray-400 text-right">{t.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}</div>
+              <button onClick={() => onAdd(t.id)} className="btn-primary py-1 px-2 text-xs">Ajouter</button>
             </div>
           ))}
         </div>
-
-        <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontSize:12, color:'#9ca3af' }}>{selectedIds.size} ticket{selectedIds.size !== 1 ? 's' : ''} dans la reunion</span>
-          <button onClick={onClose} style={{ padding:'7px 16px', borderRadius:7, fontSize:13, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#374151' }}>
-            Fermer
-          </button>
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          <span className="text-xs text-gray-400">{selectedIds.size} ticket{selectedIds.size !== 1 ? 's' : ''} dans la réunion</span>
+          <button onClick={onClose} className="btn-ghost text-xs">Fermer</button>
         </div>
       </div>
     </div>
@@ -145,24 +120,19 @@ export default function MeetingsPage() {
   const { data: meetings, isLoading: loadingMeetings } = useQuery({
     queryKey: ['meetings-v2'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('meetings').select('*').order('meeting_date', { ascending: false })
+      const { data, error } = await supabase.from('meetings').select('*').order('meeting_date', { ascending: false })
       if (error) throw error
       return data || []
     },
   })
 
-  // Restore meeting from URL param (coming back from ticket detail)
   useEffect(() => {
     if (!meetings || meetings.length === 0) return
     const params = new URLSearchParams(window.location.search)
     const mid = params.get('meetingId')
     if (mid) {
       const m = meetings.find(x => x.id === mid)
-      if (m) {
-        setSelId(m.id)
-        setNotes(m.notes || '')
-      }
+      if (m) { setSelId(m.id); setNotes(m.notes || '') }
     }
   }, [meetings])
 
@@ -172,8 +142,7 @@ export default function MeetingsPage() {
     queryKey: ['meeting-tickets', selId],
     queryFn: async () => {
       if (!selId) return []
-      const { data, error } = await supabase
-        .from('meeting_tickets').select('ticket_id, tickets(*)').eq('meeting_id', selId)
+      const { data, error } = await supabase.from('meeting_tickets').select('ticket_id, tickets(*)').eq('meeting_id', selId)
       if (error) return []
       return (data || []).map(r => r.tickets)
     },
@@ -184,25 +153,20 @@ export default function MeetingsPage() {
     queryKey: ['meeting-actions', selId],
     queryFn: async () => {
       if (!selId) return []
-      const { data, error } = await supabase
-        .from('meeting_actions').select('*').eq('meeting_id', selId).order('created_at')
+      const { data, error } = await supabase.from('meeting_actions').select('*').eq('meeting_id', selId).order('created_at')
       if (error) return []
       return data || []
     },
     enabled: !!selId,
   })
 
-  const prevMeeting = (meetings || []).find((m, i) => {
-    const idx = (meetings || []).findIndex(x => x.id === selId)
-    return i === idx + 1
-  })
+  const prevMeeting = (meetings || []).find((m, i) => i === (meetings || []).findIndex(x => x.id === selId) + 1)
 
   const { data: prevActions } = useQuery({
     queryKey: ['meeting-actions', prevMeeting?.id],
     queryFn: async () => {
       if (!prevMeeting?.id) return []
-      const { data, error } = await supabase
-        .from('meeting_actions').select('*').eq('meeting_id', prevMeeting.id).order('created_at')
+      const { data, error } = await supabase.from('meeting_actions').select('*').eq('meeting_id', prevMeeting.id).order('created_at')
       if (error) return []
       return data || []
     },
@@ -210,11 +174,11 @@ export default function MeetingsPage() {
   })
 
   const { data: allTickets } = useQuery({
-  queryKey: ['tickets-picker'],
-  queryFn: () => ticketApi.list({ fiscal_year: 'all' }).then(r => r.data.tickets),
-  enabled: showTicketPicker,
-  staleTime: 0,
-})
+    queryKey: ['tickets-picker'],
+    queryFn: () => ticketApi.list({ fiscal_year: 'all' }).then(r => r.data.tickets),
+    enabled: showTicketPicker,
+    staleTime: 0,
+  })
 
   const tickets   = meetingTickets || []
   const actList   = actions        || []
@@ -224,20 +188,18 @@ export default function MeetingsPage() {
 
   const saveNotesMut = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
-        .from('meetings').update({ notes, updated_at: new Date().toISOString() }).eq('id', selId)
+      const { error } = await supabase.from('meetings').update({ notes, updated_at: new Date().toISOString() }).eq('id', selId)
       if (error) throw error
     },
-    onSuccess: () => { queryClient.invalidateQueries(['meetings-v2']); toast.success('Notes sauvegardees') },
-    onError: () => toast.error('Erreur'),
+    onSuccess: () => { queryClient.invalidateQueries(['meetings-v2']); toast.success('Notes sauvegardées') },
+    onError:   () => toast.error('Erreur'),
   })
 
   const addActionMut = useMutation({
     mutationFn: async () => {
       if (!newAction.text) throw new Error('Action obligatoire')
       const { error } = await supabase.from('meeting_actions').insert({
-        meeting_id: selId, text: newAction.text,
-        owner: newAction.owner || null, due: newAction.due || null, status: 'todo',
+        meeting_id: selId, text: newAction.text, owner: newAction.owner || null, due: newAction.due || null, status: 'todo',
       })
       if (error) throw error
     },
@@ -245,7 +207,7 @@ export default function MeetingsPage() {
       queryClient.invalidateQueries(['meeting-actions', selId])
       setNewAction({ text:'', owner:'', due:'' })
       setShowActionForm(false)
-      toast.success('Action ajoutee')
+      toast.success('Action ajoutée')
     },
     onError: (e) => toast.error(e.message),
   })
@@ -260,20 +222,15 @@ export default function MeetingsPage() {
 
   const addTicketMut = useMutation({
     mutationFn: async (ticketId) => {
-      const { error } = await supabase.from('meeting_tickets')
-        .upsert({ meeting_id: selId, ticket_id: ticketId })
+      const { error } = await supabase.from('meeting_tickets').upsert({ meeting_id: selId, ticket_id: ticketId })
       if (error) throw error
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['meeting-tickets', selId])
-      toast.success('Ticket ajoute')
-    },
+    onSuccess: () => { queryClient.invalidateQueries(['meeting-tickets', selId]); toast.success('Ticket ajouté') },
   })
 
   const removeTicketMut = useMutation({
     mutationFn: async (ticketId) => {
-      const { error } = await supabase.from('meeting_tickets')
-        .delete().eq('meeting_id', selId).eq('ticket_id', ticketId)
+      const { error } = await supabase.from('meeting_tickets').delete().eq('meeting_id', selId).eq('ticket_id', ticketId)
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries(['meeting-tickets', selId]),
@@ -282,32 +239,20 @@ export default function MeetingsPage() {
   const createMeetingMut = useMutation({
     mutationFn: async () => {
       if (!newMeetingDate) throw new Error('Date obligatoire')
-      const { data, error } = await supabase.from('meetings').insert({
-        meeting_date: newMeetingDate, type: 'quality_review', notes: '',
-      }).select().single()
+      const { data, error } = await supabase.from('meetings').insert({ meeting_date: newMeetingDate, type: 'quality_review', notes: '' }).select().single()
       if (error) throw error
       return data
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries(['meetings-v2'])
-      setSelId(data.id)
-      setShowNewMeeting(false)
-      setNewMeetingDate('')
-      toast.success('Reunion creee')
+      setSelId(data.id); setShowNewMeeting(false); setNewMeetingDate('')
+      toast.success('Réunion créée')
     },
     onError: (e) => toast.error(e.message),
   })
 
-  const handleSelectMeeting = (m) => {
-    setSelId(m.id)
-    setNotes(m.notes || '')
-  }
-
-  const inp = {
-    fontSize:13, padding:'6px 10px',
-    border:'1px solid #d1d5db', borderRadius:7,
-    background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
-  }
+  const isDark = document.documentElement.classList.contains('dark')
+  const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
 
   return (
     <>
@@ -315,13 +260,9 @@ export default function MeetingsPage() {
         title="Revue hebdomadaire"
         subtitle="Weekly Quality & Operations Review"
         actions={
-          <div style={{ display:'flex', gap:8 }}>
-            <button className="btn-ghost" style={{ fontSize:13 }}>
-              <i className="ti ti-file-export" aria-hidden="true" /> Export PDF
-            </button>
-            <button className="btn-ghost" style={{ fontSize:13 }}>
-              <i className="ti ti-table-export" aria-hidden="true" /> Export Excel
-            </button>
+          <div className="flex gap-2">
+            <button className="btn-ghost text-xs"><i className="ti ti-file-export" aria-hidden="true" /> Export PDF</button>
+            <button className="btn-ghost text-xs"><i className="ti ti-table-export" aria-hidden="true" /> Export Excel</button>
             <button className="btn-primary" onClick={() => setShowNewMeeting(true)}>
               <i className="ti ti-plus" aria-hidden="true" /> Nouvelle reunion
             </button>
@@ -330,78 +271,81 @@ export default function MeetingsPage() {
       />
 
       <div className="flex-1 overflow-hidden flex">
-
-        <div style={{ width:200, flexShrink:0, borderRight:'1px solid #e5e7eb', overflowY:'auto', background:'#fff' }}>
-          <div style={{ padding:'8px 12px', fontSize:10, fontWeight:500, color:'#9ca3af', letterSpacing:'0.06em', textTransform:'uppercase', borderBottom:'1px solid #f3f4f6' }}>
+        {/* ── Sidebar ── */}
+        <div className="w-48 flex-shrink-0 border-r border-gray-200 dark:border-gray-700/60 overflow-y-auto bg-white dark:bg-[#0D1117]">
+          <div className="px-3 py-2 text-xs font-medium text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">
             Semaines FY{CURRENT_FISCAL_YEAR}
           </div>
           {loadingMeetings ? (
-            <div style={{ display:'flex', justifyContent:'center', padding:16 }}><Spinner /></div>
+            <div className="flex justify-center p-4"><Spinner /></div>
           ) : (meetings || []).map(m => (
-            <div key={m.id} onClick={() => handleSelectMeeting(m)} style={{
-              padding:'10px 12px', borderBottom:'1px solid #f3f4f6', cursor:'pointer',
-              background: selId === m.id ? '#eff6ff' : 'transparent',
-              borderLeft: selId === m.id ? '3px solid #2563eb' : '3px solid transparent',
-            }}>
-              <div style={{ fontSize:12, fontWeight:500, color:'#111827' }}>{weekLabel(m.meeting_date)}</div>
-              <div style={{ fontSize:11, color:'#9ca3af', marginTop:1 }}>{formatDate(m.meeting_date)}</div>
+            <div key={m.id} onClick={() => { setSelId(m.id); setNotes(m.notes || '') }}
+              className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors"
+              style={{
+                background: selId === m.id ? (isDark ? '#1e3a5f' : '#eff6ff') : 'transparent',
+                borderLeft: selId === m.id ? '3px solid #2563eb' : '3px solid transparent',
+              }}>
+              <div className="text-xs font-medium text-gray-900 dark:text-gray-100">{weekLabel(m.meeting_date)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{formatDate(m.meeting_date)}</div>
             </div>
           ))}
           {(meetings || []).length === 0 && !loadingMeetings && (
-            <div style={{ padding:16, fontSize:12, color:'#9ca3af', textAlign:'center' }}>Aucune reunion</div>
+            <div className="p-4 text-xs text-gray-400 text-center">Aucune réunion</div>
           )}
         </div>
 
-        <div style={{ flex:1, overflowY:'auto', padding:16, display:'flex', flexDirection:'column', gap:10 }}>
+        {/* ── Main content ── */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-gray-50 dark:bg-[#0D1117]">
           {!selId ? (
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9ca3af', fontSize:13 }}>
+            <div className="flex items-center justify-center h-full text-sm text-gray-400">
               Selectionnez une reunion ou creez-en une nouvelle
             </div>
           ) : (
             <>
+              {/* KPIs */}
               <div className="card p-4">
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                  <div style={{ fontSize:13, fontWeight:500, color:'#111827', display:'flex', alignItems:'center', gap:6 }}>
-                    <i className="ti ti-chart-bar" aria-hidden="true" style={{ fontSize:14, color:'#2563eb' }} />
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <i className="ti ti-chart-bar text-blue-500" aria-hidden="true" />
                     KPIs — {weekLabel(selMeeting?.meeting_date)}
                   </div>
-                  <div style={{ fontSize:11, color:'#9ca3af' }}>{formatDate(selMeeting?.meeting_date)}</div>
+                  <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
                 </div>
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+                <div className="grid grid-cols-4 gap-2">
                   {[
-                    { v: tickets.length, l:'Tickets discutes', c:'#2563eb' },
-                    { v: `$${Math.round(totalCost).toLocaleString()}`, l:'Cout SC semaine', c:'#ef4444' },
+                    { v: tickets.length, l:'Tickets discutés', c:'#3b82f6' },
+                    { v: `$${Math.round(totalCost).toLocaleString()}`, l:'Coût SC semaine', c:'#ef4444' },
                     { v: openAct, l:'Actions ouvertes', c:'#f59e0b' },
-                    { v: doneAct, l:'Completes', c:'#22c55e' },
+                    { v: doneAct, l:'Complétés', c:'#22c55e' },
                   ].map(({ v, l, c }) => (
-                    <div key={l} style={{ background:'#f9fafb', borderRadius:8, padding:'10px', textAlign:'center' }}>
-                      <div style={{ fontSize:20, fontWeight:500, color:c }}>{v}</div>
-                      <div style={{ fontSize:10, color:'#9ca3af', marginTop:2 }}>{l}</div>
+                    <div key={l} className="bg-gray-50 dark:bg-[#161B22] rounded-lg p-2.5 text-center">
+                      <div className="text-xl font-medium" style={{ color: c }}>{v}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">{l}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
+              {/* Follow-up */}
               {(prevActions || []).length > 0 && (
                 <div className="card">
-                  <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', gap:8 }}>
-                    <i className="ti ti-clock-check" aria-hidden="true" style={{ fontSize:14, color:'#f59e0b' }} />
-                    <span style={{ fontSize:12, fontWeight:500 }}>Follow-up semaine precedente</span>
-                    <span style={{ fontSize:10, padding:'1px 6px', borderRadius:8, background:'#fef3c7', color:'#633806', fontWeight:500 }}>
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                    <i className="ti ti-clock-check text-amber-500 text-sm" aria-hidden="true" />
+                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100">Follow-up semaine précédente</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 font-medium">
                       {(prevActions || []).filter(a => a.status !== 'done').length} en attente
                     </span>
                   </div>
-                  <div style={{ padding:'6px 14px' }}>
+                  <div className="px-4 py-1">
                     {(prevActions || []).map(a => {
-                      const s = STATUS_STYLE[a.status] || STATUS_STYLE.todo
                       const isLate = a.due && new Date(a.due) < new Date() && a.status !== 'done'
-                      const ss = isLate ? STATUS_STYLE.late : s
+                      const s = SS[isLate ? 'late' : (a.status || 'todo')]
                       return (
-                        <div key={a.id} style={{ display:'grid', gridTemplateColumns:'1fr 90px 80px 80px', gap:8, alignItems:'center', padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
-                          <div style={{ color:'#111827', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.text}</div>
-                          <div style={{ fontSize:11, color:'#9ca3af' }}>{a.owner || '—'}</div>
-                          <div style={{ fontSize:11, color:'#9ca3af' }}>{a.due ? formatDate(a.due) : '—'}</div>
-                          <span style={{ fontSize:10, padding:'2px 7px', borderRadius:8, background:ss.bg, color:ss.color, fontWeight:500, textAlign:'center' }}>{ss.label}</span>
+                        <div key={a.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'1fr 90px 80px 80px' }}>
+                          <div className="text-gray-900 dark:text-gray-100 truncate">{a.text}</div>
+                          <div className="text-gray-400">{a.owner || '—'}</div>
+                          <div className="text-gray-400">{a.due ? formatDate(a.due) : '—'}</div>
+                          <span className="px-2 py-0.5 rounded-full text-center font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                         </div>
                       )
                     })}
@@ -409,41 +353,36 @@ export default function MeetingsPage() {
                 </div>
               )}
 
+              {/* Tickets */}
               <div className="card">
-                <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <i className="ti ti-clipboard-list" aria-hidden="true" style={{ fontSize:14, color:'#2563eb' }} />
-                    <span style={{ fontSize:12, fontWeight:500 }}>Tickets a discuter</span>
-                    <span style={{ fontSize:10, padding:'1px 6px', borderRadius:8, background:'#eff6ff', color:'#0c447c', fontWeight:500 }}>
-                      {tickets.length} selectionnes
-                    </span>
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <i className="ti ti-clipboard-list text-blue-500 text-sm" aria-hidden="true" />
+                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100">Tickets à discuter</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tickets.length} sélectionnés</span>
                   </div>
-                  <button onClick={() => setShowTicketPicker(true)} style={{ padding:'4px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff', display:'inline-flex', alignItems:'center', gap:4 }}>
-                    <i className="ti ti-plus" aria-hidden="true" style={{ fontSize:12 }} /> Ajouter ticket
+                  <button onClick={() => setShowTicketPicker(true)} className="btn-primary py-1 px-2.5 text-xs">
+                    <i className="ti ti-plus text-xs" aria-hidden="true" /> Ajouter ticket
                   </button>
                 </div>
-                <div style={{ padding:'4px 14px' }}>
+                <div className="px-4 py-1">
                   {tickets.length === 0 ? (
-                    <div style={{ padding:'16px 0', textAlign:'center', fontSize:12, color:'#9ca3af' }}>Aucun ticket selectionne</div>
+                    <div className="py-4 text-center text-xs text-gray-400">Aucun ticket sélectionné</div>
                   ) : (
                     <>
-                      <div style={{ display:'grid', gridTemplateColumns:'52px 1fr 80px 64px 28px', gap:8, padding:'6px 0', fontSize:10, fontWeight:500, color:'#9ca3af', borderBottom:'1px solid #f3f4f6' }}>
-                        <div>SC#</div><div>Probleme</div><div>Dept.</div><div style={{ textAlign:'right' }}>Cout</div><div></div>
+                      <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 80px 64px 28px' }}>
+                        <div>SC#</div><div>Problème</div><div>Dept.</div><div className="text-right">Coût</div><div></div>
                       </div>
                       {tickets.map(t => (
-                        <div key={t?.id} style={{ display:'grid', gridTemplateColumns:'52px 1fr 80px 64px 28px', gap:8, alignItems:'center', padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
-                          <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af' }}>{t?.sc_number || '—'}</div>
-                          <div
-                            style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color:'#111827', cursor:'pointer' }}
-                            onClick={() => navigate(`/tickets/${t?.id}?from=meeting&meetingId=${selId}`)}
-                          >
+                        <div key={t?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 80px 64px 28px' }}>
+                          <div className="font-mono text-gray-400">{t?.sc_number || '—'}</div>
+                          <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
+                            onClick={() => navigate(`/tickets/${t?.id}?from=meeting&meetingId=${selId}`)}>
                             {t?.quality_issue}
                           </div>
-                          <div style={{ fontSize:10, padding:'1px 6px', borderRadius:6, background:'#eff6ff', color:'#0c447c', fontWeight:500, textAlign:'center' }}>{t?.department}</div>
-                          <div style={{ fontFamily:'monospace', fontSize:11, color:'#9ca3af', textAlign:'right' }}>
-                            {t?.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}
-                          </div>
-                          <button onClick={() => removeTicketMut.mutate(t?.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:14, padding:0 }}>
+                          <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{t?.department}</div>
+                          <div className="font-mono text-gray-400 text-right">{t?.cost_approx ? `$${Number(t.cost_approx).toLocaleString()}` : '—'}</div>
+                          <button onClick={() => removeTicketMut.mutate(t?.id)} className="text-red-400 hover:text-red-600 text-sm p-0 bg-transparent border-0 cursor-pointer">
                             <i className="ti ti-x" aria-hidden="true" />
                           </button>
                         </div>
@@ -453,44 +392,42 @@ export default function MeetingsPage() {
                 </div>
               </div>
 
+              {/* Actions */}
               <div className="card">
-                <div style={{ padding:'10px 14px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <i className="ti ti-list-check" aria-hidden="true" style={{ fontSize:14, color:'#2563eb' }} />
-                    <span style={{ fontSize:12, fontWeight:500 }}>Actions de cette reunion</span>
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <i className="ti ti-list-check text-blue-500 text-sm" aria-hidden="true" />
+                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100">Actions de cette réunion</span>
                     {openAct > 0 && (
-                      <span style={{ fontSize:10, padding:'1px 6px', borderRadius:8, background:'#fef3c7', color:'#633806', fontWeight:500 }}>
-                        {openAct} ouvertes
-                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 font-medium">{openAct} ouvertes</span>
                     )}
                   </div>
-                  <button onClick={() => setShowActionForm(true)} style={{ padding:'4px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #2563eb', background:'#2563eb', color:'#fff', display:'inline-flex', alignItems:'center', gap:4 }}>
-                    <i className="ti ti-plus" aria-hidden="true" style={{ fontSize:12 }} /> Nouvelle action
+                  <button onClick={() => setShowActionForm(true)} className="btn-primary py-1 px-2.5 text-xs">
+                    <i className="ti ti-plus text-xs" aria-hidden="true" /> Nouvelle action
                   </button>
                 </div>
-                <div style={{ padding:'4px 14px' }}>
+                <div className="px-4 py-1">
                   {actList.length === 0 && !showActionForm ? (
-                    <div style={{ padding:'16px 0', textAlign:'center', fontSize:12, color:'#9ca3af' }}>Aucune action enregistree</div>
+                    <div className="py-4 text-center text-xs text-gray-400">Aucune action enregistrée</div>
                   ) : (
                     <>
                       {actList.length > 0 && (
-                        <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 80px 80px', gap:8, padding:'6px 0', fontSize:10, fontWeight:500, color:'#9ca3af', borderBottom:'1px solid #f3f4f6' }}>
-                          <div>Action</div><div>Responsable</div><div>Echeance</div><div>Statut</div>
+                        <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'1fr 90px 80px 80px' }}>
+                          <div>Action</div><div>Responsable</div><div>Échéance</div><div>Statut</div>
                         </div>
                       )}
                       {actList.map(a => {
                         const isLate = a.due && new Date(a.due) < new Date() && a.status !== 'done'
-                        const s = isLate ? STATUS_STYLE.late : (STATUS_STYLE[a.status] || STATUS_STYLE.todo)
+                        const s = SS[isLate ? 'late' : (a.status || 'todo')]
                         return (
-                          <div key={a.id} style={{ display:'grid', gridTemplateColumns:'1fr 90px 80px 80px', gap:8, alignItems:'center', padding:'6px 0', borderBottom:'1px solid #f3f4f6', fontSize:12 }}>
-                            <div style={{ color:'#111827', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.text}</div>
-                            <div style={{ fontSize:11, color:'#9ca3af' }}>{a.owner || '—'}</div>
-                            <div style={{ fontSize:11, color:'#9ca3af' }}>{a.due ? formatDate(a.due) : '—'}</div>
-                            <select
-                              value={a.status}
+                          <div key={a.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'1fr 90px 80px 80px' }}>
+                            <div className="text-gray-900 dark:text-gray-100 truncate">{a.text}</div>
+                            <div className="text-gray-400">{a.owner || '—'}</div>
+                            <div className="text-gray-400">{a.due ? formatDate(a.due) : '—'}</div>
+                            <select value={a.status}
                               onChange={e => updateActionMut.mutate({ id: a.id, status: e.target.value })}
-                              style={{ fontSize:10, padding:'2px 4px', borderRadius:6, border:'1px solid #e5e7eb', background:s.bg, color:s.color, fontWeight:500, cursor:'pointer' }}
-                            >
+                              className="text-xs px-1.5 py-1 rounded-lg border-0 font-medium cursor-pointer focus:outline-none"
+                              style={{ background: s.bg, color: s.color }}>
                               <option value="todo">A faire</option>
                               <option value="in_progress">En cours</option>
                               <option value="done">Complete</option>
@@ -501,35 +438,36 @@ export default function MeetingsPage() {
                     </>
                   )}
                   {showActionForm && (
-                    <div style={{ background:'#f9fafb', borderRadius:8, padding:12, margin:'8px 0', border:'1px solid #e5e7eb' }}>
-                      <div style={{ display:'grid', gridTemplateColumns:'1fr 120px 120px', gap:8, marginBottom:8 }}>
-                        <input style={{ ...inp, width:'100%' }} placeholder="Description de l'action..." value={newAction.text} onChange={e => setNewAction(a => ({ ...a, text: e.target.value }))} />
-                        <input style={{ ...inp, width:'100%' }} placeholder="Responsable" value={newAction.owner} onChange={e => setNewAction(a => ({ ...a, owner: e.target.value }))} />
-                        <input style={{ ...inp, width:'100%' }} type="date" value={newAction.due} onChange={e => setNewAction(a => ({ ...a, due: e.target.value }))} />
+                    <div className="bg-gray-50 dark:bg-[#161B22] rounded-lg p-3 my-2 border border-gray-200 dark:border-gray-700">
+                      <div className="grid gap-2 mb-2" style={{ gridTemplateColumns:'1fr 120px 120px' }}>
+                        <input className="input" placeholder="Description de l'action..." value={newAction.text} onChange={e => setNewAction(a => ({ ...a, text: e.target.value }))} />
+                        <input className="input" placeholder="Responsable" value={newAction.owner} onChange={e => setNewAction(a => ({ ...a, owner: e.target.value }))} />
+                        <input className="input" type="date" value={newAction.due} onChange={e => setNewAction(a => ({ ...a, due: e.target.value }))} />
                       </div>
-                      <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-                        <button onClick={() => setShowActionForm(false)} style={{ padding:'5px 12px', borderRadius:6, fontSize:12, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#6b7280' }}>Annuler</button>
-                        <button onClick={() => addActionMut.mutate()} style={{ padding:'5px 12px', borderRadius:6, fontSize:12, cursor:'pointer', border:'none', background:'#2563eb', color:'#fff' }}>Ajouter</button>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowActionForm(false)} className="btn-ghost text-xs">Annuler</button>
+                        <button onClick={() => addActionMut.mutate()} className="btn-primary text-xs">Ajouter</button>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* Notes */}
               <div className="card p-4">
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                  <div style={{ fontSize:12, fontWeight:500, color:'#111827', display:'flex', alignItems:'center', gap:6 }}>
-                    <i className="ti ti-notes" aria-hidden="true" style={{ fontSize:14, color:'#2563eb' }} />
-                    Notes de reunion
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <i className="ti ti-notes text-blue-500 text-sm" aria-hidden="true" />
+                    Notes de réunion
                   </div>
-                  <button onClick={() => saveNotesMut.mutate()} style={{ padding:'4px 10px', borderRadius:6, fontSize:12, cursor:'pointer', border:'none', background:'#2563eb', color:'#fff', display:'inline-flex', alignItems:'center', gap:4 }}>
-                    <i className="ti ti-device-floppy" aria-hidden="true" style={{ fontSize:12 }} /> Sauvegarder
+                  <button onClick={() => saveNotesMut.mutate()} className="btn-primary py-1 px-2.5 text-xs">
+                    <i className="ti ti-device-floppy text-xs" aria-hidden="true" /> Sauvegarder
                   </button>
                 </div>
                 <textarea
                   value={notes} onChange={e => setNotes(e.target.value)}
-                  style={{ width:'100%', border:'1px solid #e5e7eb', borderRadius:7, padding:'8px 10px', fontSize:12, color:'#111827', background:'#fff', resize:'vertical', height:90, outline:'none', boxSizing:'border-box' }}
-                  placeholder="Decisions prises, points importants, observations..."
+                  className="input resize-y h-20 text-xs"
+                  placeholder="Décisions prises, points importants, observations..."
                 />
               </div>
             </>
@@ -538,28 +476,21 @@ export default function MeetingsPage() {
       </div>
 
       {showTicketPicker && (
-        <TicketPicker
-          tickets={allTickets || []}
-          selected={tickets}
-          onAdd={(id) => addTicketMut.mutate(id)}
-          onClose={() => setShowTicketPicker(false)}
-        />
+        <TicketPicker tickets={allTickets || []} selected={tickets} onAdd={(id) => addTicketMut.mutate(id)} onClose={() => setShowTicketPicker(false)} />
       )}
 
       {showNewMeeting && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 }}>
-          <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:360, boxShadow:'0 24px 48px rgba(0,0,0,0.18)', padding:24, position:'relative' }}>
-            <div style={{ fontSize:14, fontWeight:500, marginBottom:16 }}>Nouvelle reunion</div>
-            <button onClick={() => setShowNewMeeting(false)} style={{ position:'absolute', top:16, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18 }}>X</button>
-            <div style={{ marginBottom:16 }}>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Date de la reunion *</label>
-              <input type="date" style={{ ...inp, width:'100%' }} value={newMeetingDate} onChange={e => setNewMeetingDate(e.target.value)} />
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[1000]">
+          <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 w-80 shadow-2xl p-6 relative">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Nouvelle réunion</div>
+            <button onClick={() => setShowNewMeeting(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+            <div className="mb-4">
+              <label className="label">Date de la réunion *</label>
+              <input type="date" className="input" value={newMeetingDate} onChange={e => setNewMeetingDate(e.target.value)} />
             </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-              <button onClick={() => setShowNewMeeting(false)} style={{ padding:'7px 14px', borderRadius:7, fontSize:13, cursor:'pointer', border:'1px solid #e5e7eb', background:'#fff', color:'#6b7280' }}>Annuler</button>
-              <button onClick={() => createMeetingMut.mutate()} style={{ padding:'7px 16px', borderRadius:7, fontSize:13, cursor:'pointer', border:'none', background:'#2563eb', color:'#fff', fontWeight:500 }}>
-                Creer
-              </button>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowNewMeeting(false)} className="btn-ghost text-xs">Annuler</button>
+              <button onClick={() => createMeetingMut.mutate()} className="btn-primary text-xs">Créer</button>
             </div>
           </div>
         </div>
