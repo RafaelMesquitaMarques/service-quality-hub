@@ -4,10 +4,12 @@ import { useTranslation } from 'react-i18next'
 export function StatusBadge({ status }) {
   const { t } = useTranslation()
   const cls = {
-    not_started: 'pill-ns',
-    wip:         'pill-wip',
-    completed:   'pill-done',
-    cancelled:   'pill-cancelled',
+    not_started:     'pill-ns',
+    wip:             'pill-wip',
+    service_desk:    'pill-sd',
+    quality_meeting: 'pill-qm',
+    completed:       'pill-done',
+    cancelled:       'pill-cancelled',
   }[status] || 'pill-ns'
   return <span className={cls}>{t(`status.${status}`)}</span>
 }
