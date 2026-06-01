@@ -4,28 +4,46 @@
 @tailwind utilities;
 
 @layer base {
-  body { @apply bg-gray-50 text-gray-900 antialiased; }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply dark:bg-gray-950 dark:text-gray-100;
+  }
 }
 
 @layer components {
+  /* ── Buttons ── */
   .btn-primary {
     @apply inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 active:scale-95 transition-all;
   }
   .btn-ghost {
     @apply inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 active:scale-95 transition-all;
+    @apply dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800;
   }
   .btn-danger {
     @apply inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 active:scale-95 transition-all;
   }
+
+  /* ── Card ── */
   .card {
     @apply bg-white border border-gray-200 rounded-xl;
+    @apply dark:bg-gray-900 dark:border-gray-700;
   }
-  .pill-ns   { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600; }
-  .pill-wip  { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800; }
-  .pill-done { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800; }
-  .pill-cancelled { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700; }
+
+  /* ── Status pills ── */
+  .pill-ns       { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300; }
+  .pill-wip      { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300; }
+  .pill-done     { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300; }
+  .pill-cancelled { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300; }
+
+  /* ── Input ── */
   .input {
     @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+    @apply dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder-gray-500;
   }
-  .label { @apply block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide; }
+
+  /* ── Label ── */
+  .label {
+    @apply block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide;
+    @apply dark:text-gray-400;
+  }
 }
