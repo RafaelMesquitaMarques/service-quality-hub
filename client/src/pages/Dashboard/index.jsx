@@ -294,16 +294,16 @@ export default function Dashboard() {
 
         {/* ── Recent tickets ── */}
         <div className="card">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <div className="text-sm font-semibold">{t('dashboard.recent')}</div>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t('dashboard.recent')}</div>
             <button className="btn-ghost text-xs" onClick={() => navigate('/tickets')}>
               {t('dashboard.see_all')} <i className="ti ti-arrow-right" aria-hidden="true" />
             </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
+              <thead className="bg-gray-50 dark:bg-[#161B22]">
+                <tr className="border-b border-gray-100 dark:border-gray-800">
                   {['SC#', 'Issue', 'Ship To', 'Brand', 'Dept.', 'Status', 'Cost'].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
@@ -311,14 +311,16 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {tickets.slice(0, 8).map(tk => (
-                  <tr key={tk.id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/tickets/${tk.id}`)}>
+                  <tr key={tk.id}
+                    className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/tickets/${tk.id}`)}>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{tk.sc_number || '—'}</td>
-                    <td className="px-4 py-2.5 text-sm max-w-xs truncate">{tk.quality_issue}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 max-w-32 truncate">{tk.ship_to}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">{tk.quality_issue}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-32 truncate">{tk.ship_to}</td>
                     <td className="px-4 py-2.5"><BrandTag brand={tk.brand} /></td>
-                    <td className="px-4 py-2.5"><span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{tk.department}</span></td>
+                    <td className="px-4 py-2.5"><span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">{tk.department}</span></td>
                     <td className="px-4 py-2.5"><StatusBadge status={tk.status} /></td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{tk.cost_approx ? `$${Number(tk.cost_approx).toLocaleString()}` : '—'}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-900 dark:text-gray-100">{tk.cost_approx ? `$${Number(tk.cost_approx).toLocaleString()}` : '—'}</td>
                   </tr>
                 ))}
               </tbody>
