@@ -290,7 +290,7 @@ export default function ImportPage() {
     <>
       <PageHeader
         title="Import SAP / Excel"
-        subtitle="Importer des tickets depuis S/4HANA ou un fichier Excel"
+        subtitle="Import tickets from S/4HANA or an Excel file"
       />
 
       <div className="flex-1 overflow-y-auto p-5 bg-gray-50 dark:bg-[#0D1117]">
@@ -305,7 +305,7 @@ export default function ImportPage() {
                   {['VBELN', 'ERDAT', 'KUNNR', 'NETWR', 'WERKS', 'Sales Order', 'Ship-To Party', 'Net Value', 'Plant', 'Cost Center'].map(c => (
                     <span key={c} className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded font-mono">{c}</span>
                   ))}
-                  <span className="text-gray-400">+ formatos personalizados</span>
+                  <span className="text-gray-400">+ custom formats</span>
                 </div>
               </div>
 
@@ -318,9 +318,9 @@ export default function ImportPage() {
                 {loading ? <Spinner /> : (
                   <>
                     <i className="ti ti-file-spreadsheet text-4xl text-gray-300 dark:text-gray-600 block mb-3" aria-hidden="true" />
-                    <div className="font-medium text-gray-600 dark:text-gray-300">Arrastar ficheiro aqui ou clicar para seleccionar</div>
-                    <div className="text-xs text-gray-400 mt-1">Excel .xlsx ou .xls — export SAP ou formato personalizado</div>
-                    <button className="btn-primary mt-4">Seleccionar ficheiro</button>
+                    <div className="font-medium text-gray-600 dark:text-gray-300">Drag file here or click to select</div>
+                    <div className="text-xs text-gray-400 mt-1">Excel .xlsx or .xls — SAP export or custom format</div>
+                    <button className="btn-primary mt-4">Select file</button>
                   </>
                 )}
               </div>
@@ -336,34 +336,34 @@ export default function ImportPage() {
               <div className="card p-4 flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{fileName}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{rows.length} lignes lues</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{rows.length} rows read</div>
                 </div>
                 <div className="flex items-center gap-3 text-xs flex-wrap">
                   <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400 font-medium">
-                    <i className="ti ti-circle-check" aria-hidden="true" /> {validCount} à importer
+                    <i className="ti ti-circle-check" aria-hidden="true" /> {validCount} to import
                   </span>
                   {dupeCount > 0 && (
                     <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
-                      <i className="ti ti-copy" aria-hidden="true" /> {dupeCount} doublon{dupeCount > 1 ? 's' : ''}
+                      <i className="ti ti-copy" aria-hidden="true" /> {dupeCount} duplicate{dupeCount > 1 ? 's' : ''}
                     </span>
                   )}
                   {errorCount > 0 && (
                     <span className="flex items-center gap-1.5 text-red-500 font-medium">
-                      <i className="ti ti-alert-circle" aria-hidden="true" /> {errorCount} erreur{errorCount > 1 ? 's' : ''}
+                      <i className="ti ti-alert-circle" aria-hidden="true" /> {errorCount} error{errorCount > 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
                 <div className="flex gap-2">
                   <button className="btn-ghost text-xs" onClick={reset}>Annuler</button>
                   <button className="btn-primary text-xs" onClick={handleImport} disabled={loading || validCount === 0}>
-                    {loading ? <Spinner size="sm" /> : `Importer ${validCount} tickets`}
+                    {loading ? <Spinner size="sm" /> : `Import ${validCount} tickets`}
                   </button>
                 </div>
               </div>
 
               {/* Column mapping */}
               <div className="card p-4">
-                <div className="text-xs font-semibold text-gray-900 dark:text-gray-100 mb-3">Mapeamento de colunas detectado</div>
+                <div className="text-xs font-semibold text-gray-900 dark:text-gray-100 mb-3">Detected column mapping</div>
                 <div className="grid grid-cols-2 gap-2">
                   {rawCols.map(col => {
                     const nk = normalizeKey(col)
@@ -373,7 +373,7 @@ export default function ImportPage() {
                         <span className="font-mono text-gray-500 dark:text-gray-400 truncate w-32">{col}</span>
                         <i className={`ti ${mapped ? 'ti-arrow-right text-green-500' : 'ti-minus text-gray-300'}`} aria-hidden="true" />
                         <span className={mapped ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-300 dark:text-gray-600 italic'}>
-                          {mapped || 'ignoré'}
+                          {mapped || 'ignored'}
                         </span>
                       </div>
                     )
@@ -384,7 +384,7 @@ export default function ImportPage() {
               {/* Preview table */}
               <div className="card overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 text-xs font-semibold text-gray-900 dark:text-gray-100">
-                  Aperçu — {Math.min(rows.length, 20)} premières lignes
+                  Aperçu — {Math.min(rows.length, 20)} first rows
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -417,9 +417,9 @@ export default function ImportPage() {
                             <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{row.status}</td>
                             <td className="px-3 py-2">
                               {isDupe ? (
-                                <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">doublon</span>
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">duplicate</span>
                               ) : hasErr ? (
-                                <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title={errors[i]?.join(', ')}>erreur</span>
+                                <span className="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium" title={errors[i]?.join(', ')}>error</span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">✓ ok</span>
                               )}
@@ -442,12 +442,12 @@ export default function ImportPage() {
                 <div>
                   <div className="font-semibold text-green-800 dark:text-green-300">{result.imported} tickets importés avec succès</div>
                   <div className="text-sm text-green-600 dark:text-green-400 mt-0.5">
-                    {result.dupes > 0 && `${result.dupes} doublons ignorés · `}
-                    {result.errors > 0 && `${result.errors} erreurs ignorées`}
+                    {result.dupes > 0 && `${result.dupes} duplicates skipped · `}
+                    {result.errors > 0 && `${result.errors} errors skipped`}
                   </div>
                 </div>
               </div>
-              <button className="btn-ghost" onClick={reset}>Nouvel import</button>
+              <button className="btn-ghost" onClick={reset}>New import</button>
             </div>
           )}
 
