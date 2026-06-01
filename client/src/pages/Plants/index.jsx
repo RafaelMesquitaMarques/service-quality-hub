@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner } from '../../components/ui'
@@ -15,6 +16,7 @@ export default function PlantsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editPlant, setEditPlant] = useState(null)
 
+  const { t } = useTranslation()
   const isDark = document.documentElement.classList.contains('dark')
 
   const { data: plants, isLoading } = useQuery({
@@ -65,11 +67,11 @@ export default function PlantsPage() {
   return (
     <>
       <PageHeader
-        title="Usines (Plants)"
-        subtitle={`${(plants || []).length} usines · ${active} actives`}
+        title={t('plants.title')}
+        subtitle={`${(plants || []).length} ${t('plants.title').toLowerCase()} · ${active} ${t('plants.subtitle_active')}`}
         actions={
           <button className="btn-primary" onClick={() => { setEditPlant(null); setShowModal(true) }}>
-            <i className="ti ti-plus" aria-hidden="true" /> Nouvelle usine
+            <i className="ti ti-plus" aria-hidden="true" /{t('plants.new')}
           </button>
         }
       />
@@ -82,7 +84,7 @@ export default function PlantsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 dark:bg-[#161B22] border-b border-gray-200 dark:border-gray-700">
-                  {['Usine','Pays','Ville','Contact','Statut','Actions'].map(h => (
+                  {[t('plants.name_col'),t('plants.country_col'),t('plants.city_col'),t('plants.contact_col'),t('plants.status_col'),t('plants.actions_col')].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -115,7 +117,7 @@ export default function PlantsPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(plant)} className="btn-ghost text-xs py-1 px-2.5">
-                          <i className="ti ti-edit text-sm" aria-hidden="true" /> Modifier
+                          <i className="ti ti-edit text-sm" aria-hidden="true" /{t('plants.edit')}
                         </button>
                         <button
                           onClick={() => toggleMutation.mutate({ id: plant.id, active: !plant.active })}
@@ -125,10 +127,10 @@ export default function PlantsPage() {
                             background: plant.active ? (isDark ? '#3b2a00' : '#fffbeb') : (isDark ? '#14532d' : '#f0fdf4'),
                             color:      plant.active ? (isDark ? '#fcd34d' : '#92400e') : (isDark ? '#86efac' : '#166634'),
                           }}>
-                          {plant.active ? 'Désactiver' : 'Activer'}
+                          {plant.active ? t('plants.deactivate') : t('plants.activate')}
                         </button>
                         <button
-                          onClick={() => { if (window.confirm('Supprimer ' + plant.name + ' ?')) deleteMutation.mutate(plant.id) }}
+                          onClick={() => { if (window.confirm(t('plants.delete_confirm') + ' ' + plant.name + ' ?')) deleteMutation.mutate(plant.id) }}
                           className="text-xs py-1 px-2.5 rounded-lg border cursor-pointer inline-flex items-center"
                           style={{ border: '1px solid ' + (isDark ? '#7f1d1d' : '#fecaca'), background: isDark ? '#1f0a0a' : '#fff5f5', color: '#ef4444' }}>
                           <i className="ti ti-trash text-sm" aria-hidden="true" />
@@ -138,7 +140,7 @@ export default function PlantsPage() {
                   </tr>
                 ))}
                 {(plants || []).length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Aucune usine</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400"{t('plants.no_plants')}</td></tr>
                 )}
               </tbody>
             </table>
