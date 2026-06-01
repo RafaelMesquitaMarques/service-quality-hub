@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ticketApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
+import { useTranslation } from 'react-i18next'
 import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
@@ -57,6 +58,7 @@ export default function TicketDetail() {
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
 
+  const { t } = useTranslation()
   const isDark = document.documentElement.classList.contains('dark')
   const SC = isDark ? STATUS_CLR_DARK : STATUS_CLR_LIGHT
 
@@ -113,7 +115,7 @@ export default function TicketDetail() {
   const handleSave        = () => updateMut.mutate({ root_cause: rootCause, corrective_action: corrective })
   const handleFileUpload  = (e) => Array.from(e.target.files).forEach(file => uploadPhotoMut.mutate(file))
   const handleDeletePhoto = (photo) => {
-    if (window.confirm('Supprimer cette photo ?')) {
+    if (window.confirm(t('ticket.delete_photo'))) {
       deletePhotoMut.mutate({ photoId: photo.id, path: photo.path })
       if (lightbox === photo.url) setLightbox(null)
     }
@@ -134,11 +136,11 @@ export default function TicketDetail() {
         actions={
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
-              <i className="ti ti-arrow-left" aria-hidden="true" /> Retour
+              <i className="ti ti-arrow-left" aria-hidden="true" /{t('ticket.back')}
             </button>
             <button className="btn-primary" onClick={handleSave} disabled={updateMut.isPending}>
               <i className="ti ti-device-floppy" aria-hidden="true" />
-              {updateMut.isPending ? 'Saving...' : 'Sauvegarder'}
+              {updateMut.isPending ? t('common.loading') : t('ticket.save')}
             </button>
           </div>
         }
@@ -152,7 +154,7 @@ export default function TicketDetail() {
 
             {/* Informations */}
             <div className="card">
-              <SectionHeader icon="ti-info-circle" title="Informations"
+              <SectionHeader icon="ti-info-circle" title={t('ticket.informations')}
                 right={
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: sc.bg, color: sc.color }}>
                     {STATUS_LBL[ticket.status] || ticket.status}
@@ -188,7 +190,7 @@ export default function TicketDetail() {
 
             {/* Statut */}
             <div className="card">
-              <SectionHeader icon="ti-circle-check" title="Statut" />
+              <SectionHeader icon="ti-circle-check" title={t('ticket.status')} />
               <div className="px-4 py-3 flex gap-2">
                 {STATUS_OPTS.map(s => (
                   <button key={s} onClick={() => updateMut.mutate({ status: s })}
@@ -206,11 +208,11 @@ export default function TicketDetail() {
 
             {/* Historique */}
             <div className="card">
-              <SectionHeader icon="ti-history" title="Historique" />
+              <SectionHeader icon="ti-history" title={t('ticket.history')} />
               <div className="px-4 py-2">
                 {[
-                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text:'Dernière modification' },
-                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text:`Ticket créé · SC# ${ticket.sc_number || '—'}` },
+                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text:t('ticket.last_modified') },
+                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text:`${t('ticket.created')} · SC# ${ticket.sc_number || '—'}` },
                 ].map((h, i) => (
                   <div key={i} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800/80 text-xs">
                     <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: h.dot }} />
@@ -227,7 +229,7 @@ export default function TicketDetail() {
 
             {/* Description */}
             <div className="card">
-              <SectionHeader icon="ti-file-description" title="Description du problème" />
+              <SectionHeader icon="ti-file-description" title={t('ticket.description')} />
               <div className="px-4 py-3">
                 <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed bg-gray-50 dark:bg-[#161B22] rounded-lg p-3">
                   {ticket.quality_issue}
@@ -237,18 +239,18 @@ export default function TicketDetail() {
 
             {/* Résolution */}
             <div className="card">
-              <SectionHeader icon="ti-tool" title="Résolution" />
+              <SectionHeader icon="ti-tool" title={t('ticket.resolution')} />
               <div className="px-4 py-3 flex flex-col gap-3">
                 <div>
-                  <label className="label">Cause racine</label>
+                  <label className="label">{t('ticket.root_cause')</label>
                   <textarea rows={3} value={rootCause} onChange={e => setRootCause(e.target.value)}
-                    placeholder="Décrire la cause racine..."
+                    placeholder={t('ticket.root_cause_placeholder')}
                     className="input resize-y text-xs" />
                 </div>
                 <div>
-                  <label className="label">Action corrective</label>
+                  <label className="label">{t('ticket.corrective_action')</label>
                   <textarea rows={3} value={corrective} onChange={e => setCorrective(e.target.value)}
-                    placeholder="Action corrective mise en place..."
+                    placeholder={t('ticket.corrective_placeholder')}
                     className="input resize-y text-xs" />
                 </div>
               </div>
@@ -256,7 +258,7 @@ export default function TicketDetail() {
 
             {/* Photos & Annexes */}
             <div className="card">
-              <SectionHeader icon="ti-photo" title="Photos & Annexes"
+              <SectionHeader icon="ti-photo" title={t('ticket.photos')}
                 right={
                   <label className="btn-primary py-1 px-2.5 text-xs cursor-pointer">
                     <i className="ti ti-plus text-xs" aria-hidden="true" /> Ajouter
@@ -268,7 +270,7 @@ export default function TicketDetail() {
                 {(photos || []).length === 0 ? (
                   <label className="block border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg p-5 text-center cursor-pointer bg-gray-50 dark:bg-[#161B22] hover:border-blue-400 transition-colors">
                     <i className="ti ti-paperclip text-2xl text-gray-300 dark:text-gray-600 block mb-2" aria-hidden="true" />
-                    <div className="text-xs text-gray-400">Glisser ou cliquer pour ajouter photos et fichiers</div>
+                    <div className="text-xs text-gray-400">{t('ticket.drag_photos')}</div>
                     <input type="file" accept="image/*,.pdf,.doc,.docx" multiple onChange={handleFileUpload} className="hidden" />
                   </label>
                 ) : (
