@@ -92,7 +92,7 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
               <div className="truncate text-gray-900 dark:text-gray-100">{tk.quality_issue}</div>
               <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tk.department}</div>
               <div className="text-gray-400">{tk.issue_reception_date?.slice(0,10) || '—'}</div>
-              <div className="font-mono text-gray-400 text-right">{tk.cost_approx ? `$${Number(tk.cost_approx).toLocaleString()}` : '—'}</div>
+              <div className="font-mono text-gray-400 text-right">{tk.cost_approx ? `$${Math.round(Number(tk.cost_approx)).toLocaleString()}` : '—'}</div>
               <button onClick={() => onAdd(tk.id)} className="btn-primary py-1 px-2 text-xs">{t('meeting.add')}</button>
             </div>
           ))}
@@ -186,7 +186,32 @@ export default function MeetingsPage() {
 
   const tickets   = meetingTickets || []
   const actList   = actions        || []
-  const totalCost = tickets.reduce((s, tk) => s + Number(tk?.cost_approx || 0), 0)
+
+  // Fetch real costs from occurrence_lines
+  const { data: lineCosts } = useQuery({
+    queryKey: ['line-costs-meeting', tickets.map(t => t?.id).join(',')],
+    queryFn: async () => {
+      if (!tickets.length) return {}
+      const ids = tickets.map(t => t?.id).filter(Boolean)
+      const { data: lines } = await supabase
+        .from('occurrence_lines')
+        .select('occurrence_id, cost_approx')
+        .in('occurrence_id', ids)
+      if (!lines) return {}
+      const costs = {}
+      lines.forEach(l => { costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0) })
+      return costs
+    },
+    enabled: tickets.length > 0,
+  })
+
+  const getTicketCost = (tk) => {
+    const lineTotal = lineCosts?.[tk?.id]
+    if (lineTotal && lineTotal > 0) return lineTotal
+    return tk?.cost_approx ? Number(tk.cost_approx) : 0
+  }
+
+  const totalCost = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
   const openAct   = actList.filter(a => a.status !== 'done').length
   const doneAct   = actList.filter(a => a.status === 'done').length
 
@@ -315,8 +340,8 @@ export default function MeetingsPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  if (window.confirm(t('meeting.delete_confirm') + ' ' + weekLabel(m.meeting_date) + ' ?'))
-                    deleteMeetingMut.mutate(m.id)
+                  e.preventDefault()
+                  deleteMeetingMut.mutate(m.id)
                 }}
                 className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 bg-transparent border-0 cursor-pointer"
                 title={t('common.delete')}>
@@ -414,7 +439,9 @@ export default function MeetingsPage() {
                             {tk?.quality_issue}
                           </div>
                           <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tk?.department}</div>
-                          <div className="font-mono text-gray-400 text-right">{tk?.cost_approx ? `$${Number(tk.cost_approx).toLocaleString()}` : '—'}</div>
+                          <div className="font-mono text-gray-400 text-right">
+                            {getTicketCost(tk) > 0 ? `$${Math.round(getTicketCost(tk)).toLocaleString()}` : '—'}
+                          </div>
                           <button onClick={() => removeTicketMut.mutate(tk?.id)} className="text-red-400 hover:text-red-600 text-sm p-0 bg-transparent border-0 cursor-pointer">
                             <i className="ti ti-x" aria-hidden="true" />
                           </button>
