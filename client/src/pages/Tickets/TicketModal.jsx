@@ -38,14 +38,14 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
   useEffect(() => {
     const init = () => {
       if (!canvasRef.current || !window.fabric) return
-      const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 380 })
+      const canvas = new window.fabric.Canvas(canvasRef.current, { width: 700, height: 500 })
       fabricRef.current = canvas
 
       const imgEl = new Image()
       imgEl.crossOrigin = 'anonymous'
       imgEl.onload = () => {
         const fabricImg = new window.fabric.Image(imgEl)
-        const scale = Math.min(560 / imgEl.width, 380 / imgEl.height, 1)
+        const scale = Math.min(700 / imgEl.width, 500 / imgEl.height, 1)
         fabricImg.scale(scale)
         canvas.setWidth(Math.round(imgEl.width * scale))
         canvas.setHeight(Math.round(imgEl.height * scale))
@@ -148,16 +148,21 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
     }
 
     if (['arrow','rect','circle','text'].includes(tool)) {
-      let origin = null; let shape = null
+      let origin = null
+      let shape  = null
+      let drawing = false
       canvas.on('mouse:down', o => {
+        if (o.target && o.target !== canvas.getObjects()[0]) return // don't start draw on existing object
         origin = canvas.getPointer(o.e)
+        drawing = true
         if (tool === 'text') {
           const txt = new window.fabric.IText('Text', { left:origin.x, top:origin.y, fontSize:16, fill:color, fontFamily:'sans-serif', editable:true })
-          canvas.add(txt); canvas.setActiveObject(txt); txt.enterEditing(); canvas.renderAll(); origin = null
+          canvas.add(txt); canvas.setActiveObject(txt); txt.enterEditing(); canvas.renderAll()
+          origin = null; drawing = false
         }
       })
       canvas.on('mouse:move', o => {
-        if (!origin) return
+        if (!drawing || !origin) return
         const p = canvas.getPointer(o.e)
         if (shape) canvas.remove(shape)
         if (tool === 'rect') {
@@ -175,7 +180,7 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
         }
         if (shape) { canvas.add(shape); canvas.renderAll() }
       })
-      canvas.on('mouse:up', () => { shape=null; origin=null })
+      canvas.on('mouse:up', () => { shape = null; origin = null; drawing = false })
     }
   }, [tool, color, thick, ready])
 
