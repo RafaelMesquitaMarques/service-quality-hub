@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ticketApi } from '../../services/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { supabase } from '../../services/supabase'
+import { getFiscalYear, getFiscalMonth } from '../../services/api'
+import { Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
 const DEPARTMENTS = [
@@ -8,604 +11,686 @@ const DEPARTMENTS = [
   'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
   'Project Mgnt','EOI','Vietnam','Planning',
 ]
-const CATEGORIES = ['Damaged','Missing Part','Wrong Item','Quality Defect','Packaging','Documentation','Delay']
-const BRANDS     = ['BDI','Casabianca','Euro Style','Nexera','Tvilum']
-const PLANTS     = ['Vietnam','China','Canada','USA']
-const STATUSES   = ['not_started','wip','completed','cancelled']
-const STATUS_LBL = { not_started:'Not started', wip:'WIP', completed:'Completed', cancelled:'Cancelled' }
-const ANN_COLORS = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#1f2937','#ffffff']
+const CATEGORIES = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
+const BRANDS     = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
+const COLORS     = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
+const TOOLS      = [
+  { id:'select',    icon:'ti-cursor-text',  label:'Sélection' },
+  { id:'pen',       icon:'ti-pencil',       label:'Stylo' },
+  { id:'arrow',     icon:'ti-arrow-up-right', label:'Flèche' },
+  { id:'rect',      icon:'ti-square',       label:'Rectangle' },
+  { id:'circle',    icon:'ti-circle',       label:'Cercle' },
+  { id:'text',      icon:'ti-letter-t',     label:'Texte' },
+  { id:'measure',   icon:'ti-ruler',        label:'Mesure' },
+]
 
-function makeArrow(x1, y1, x2, y2, color, lw) {
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-  const sz    = 10 + lw * 1.5
-  const line  = new window.fabric.Line([x1, y1, x2, y2], { stroke: color, strokeWidth: lw, selectable: false })
-  const head  = new window.fabric.Triangle({
-    left: x2, top: y2, width: sz, height: sz,
-    fill: color, angle: (angle * 180) / Math.PI + 90,
-    originX: 'center', originY: 'center', selectable: false,
-  })
-  return new window.fabric.Group([line, head], { selectable: false, evented: false })
-}
+// ── Photo Annotator Component ──────────────────────────────────────────────
+function PhotoAnnotator({ photo, onSave, onClose }) {
+  const canvasRef = useRef(null)
+  const fabricRef = useRef(null)
+  const [tool,      setTool]      = useState('select')
+  const [color,     setColor]     = useState('#E24B4A')
+  const [thickness, setThickness] = useState(3)
+  const [measuring, setMeasuring] = useState(false)
+  const [measurePts, setMeasurePts] = useState([])
+  const [measureVal, setMeasureVal] = useState('')
+  const [measureLine, setMeasureLine] = useState(null)
 
-function PhotoAnnotator({ photos, activeIdx, onActivate, onAddPhoto, fabricRef }) {
-  const canvasElRef  = useRef(null)
-  const wrapRef      = useRef(null)
-  const fabricInst   = useRef(null)
-  const statesRef    = useRef({})
-  const [tool,  setTool]  = useState('select')
-  const [color, setColor] = useState('#ef4444')
-  const [thick, setThick] = useState(3)
-  const isDrawing    = useRef(false)
-  const startPt      = useRef({ x:0, y:0 })
-  const activeObj    = useRef(null)
-  const toolRef      = useRef('select')
-  const colorRef     = useRef('#ef4444')
-  const thickRef     = useRef(3)
-  const activeIdxRef = useRef(activeIdx)
-  const canvasReady  = useRef(false)
+  useEffect(() => {
+    if (!window.fabric) return
+    const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 340 })
+    fabricRef.current = canvas
+    window.fabric.Image.fromURL(photo.url, img => {
+      img.scaleToWidth(560)
+      canvas.setHeight(img.getScaledHeight())
+      canvas.add(img)
+      img.selectable = false
+      canvas.sendToBack(img)
+      canvas.renderAll()
+    }, { crossOrigin: 'anonymous' })
+    return () => canvas.dispose()
+  }, [photo.url])
 
-  useEffect(() => { toolRef.current     = tool    }, [tool])
-  useEffect(() => { colorRef.current    = color   }, [color])
-  useEffect(() => { thickRef.current    = thick   }, [thick])
-  useEffect(() => { activeIdxRef.current = activeIdx }, [activeIdx])
+  useEffect(() => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    canvas.isDrawingMode = false
+    canvas.off('mouse:down')
+    canvas.off('mouse:move')
+    canvas.off('mouse:up')
 
-  fabricRef.current = {
-    saveState: () => {
-      if (fabricInst.current) statesRef.current[activeIdxRef.current] = fabricInst.current.toJSON()
-    },
-  }
-
-  const loadPhotoOnCanvas = useCallback((fc, photo, idx) => {
-    if (!fc || !photo) return
-    const wrap  = wrapRef.current
-    const maxW  = wrap ? wrap.clientWidth - 4 : 600
-    const maxH  = 340
-    const img   = photo.img
-    const scale = Math.min(maxW / img.width, maxH / img.height, 1)
-    const W     = Math.round(img.width  * scale)
-    const H     = Math.round(img.height * scale)
-    fc.setWidth(W)
-    fc.setHeight(H)
-    const saved = statesRef.current[idx]
-    if (saved) {
-      fc.loadFromJSON(saved, () => fc.renderAll())
-    } else {
-      fc.clear()
-      const fImg = new window.fabric.Image(img, {
-        left: 0, top: 0, scaleX: scale, scaleY: scale,
-        selectable: false, evented: false,
+    if (tool === 'pen') {
+      canvas.isDrawingMode = true
+      canvas.freeDrawingBrush.color = color
+      canvas.freeDrawingBrush.width = thickness
+    } else if (tool === 'select') {
+      canvas.selection = true
+    } else if (tool === 'measure') {
+      canvas.selection = false
+      let pts = []
+      let tempLine = null
+      canvas.on('mouse:down', o => {
+        const p = canvas.getPointer(o.e)
+        if (pts.length === 0) {
+          pts = [p]
+          setMeasurePts([p])
+        } else if (pts.length === 1) {
+          pts.push(p)
+          setMeasurePts([...pts])
+          if (tempLine) canvas.remove(tempLine)
+          const line = new window.fabric.Line(
+            [pts[0].x, pts[0].y, pts[1].x, pts[1].y],
+            { stroke: color, strokeWidth: 2, selectable: false, evented: false }
+          )
+          const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+          const dot1 = new window.fabric.Circle({ left: pts[0].x - 4, top: pts[0].y - 4, radius: 4, fill: color, selectable: false, evented: false })
+          const dot2 = new window.fabric.Circle({ left: pts[1].x - 4, top: pts[1].y - 4, radius: 4, fill: color, selectable: false, evented: false })
+          const grp = new window.fabric.Group([line, dot1, dot2], { selectable: true, id: 'measure_group' })
+          canvas.add(grp)
+          setMeasureLine(grp)
+          canvas.renderAll()
+          pts = []
+          setMeasuring(true)
+        }
       })
-      fc.setBackgroundImage(fImg, fc.renderAll.bind(fc))
-    }
-  }, [])
-
-  // Init Fabric once when first photo arrives
-  useEffect(() => {
-    if (!canvasElRef.current || !window.fabric || canvasReady.current) return
-    if (photos.length === 0) return
-    canvasReady.current = true
-
-    const fc = new window.fabric.Canvas(canvasElRef.current, {
-      selection: true,
-      preserveObjectStacking: true,
-    })
-    fabricInst.current = fc
-
-    fc.on('mouse:down', (opt) => {
-      const t = toolRef.current
-      if (opt.target) return   // clicking existing object — let Fabric handle natively
-      if (t === 'select') return
-      if (t === 'text') {
-        const p = fc.getPointer(opt.e)
-        const itext = new window.fabric.IText('Annotation', {
-          left: p.x, top: p.y,
-          fontSize: 14 + thickRef.current * 2,
-          fill: colorRef.current,
-          fontFamily: 'sans-serif',
-          editable: true, selectable: true,
-        })
-        fc.add(itext)
-        fc.setActiveObject(itext)
-        itext.enterEditing()
-        itext.selectAll()
-        fc.renderAll()
-        statesRef.current[activeIdxRef.current] = fc.toJSON()
-        return
-      }
-      if (t === 'pen') return
-      isDrawing.current = true
-      const p = fc.getPointer(opt.e)
-      startPt.current = { x: p.x, y: p.y }
-    })
-
-    fc.on('mouse:move', (opt) => {
-      if (!isDrawing.current) return
-      const t  = toolRef.current
-      if (t === 'pen' || t === 'select' || t === 'text') return
-      const p  = fc.getPointer(opt.e)
-      const sx = startPt.current.x, sy = startPt.current.y
-      const c  = colorRef.current, lw = thickRef.current
-      if (activeObj.current) { fc.remove(activeObj.current); activeObj.current = null }
-      let shape
-      if (t === 'arrow') {
-        shape = makeArrow(sx, sy, p.x, p.y, c, lw)
-      } else if (t === 'rect') {
-        shape = new window.fabric.Rect({
-          left: Math.min(sx, p.x), top: Math.min(sy, p.y),
-          width: Math.abs(p.x - sx), height: Math.abs(p.y - sy),
-          fill: 'transparent', stroke: c, strokeWidth: lw, selectable: false,
-        })
-      } else if (t === 'circle') {
-        const rx = Math.abs(p.x - sx) / 2, ry = Math.abs(p.y - sy) / 2
-        shape = new window.fabric.Ellipse({
-          left: Math.min(sx, p.x), top: Math.min(sy, p.y),
-          rx, ry, fill: 'transparent', stroke: c, strokeWidth: lw, selectable: false,
-        })
-      }
-      if (shape) { fc.add(shape); activeObj.current = shape; fc.renderAll() }
-    })
-
-    fc.on('mouse:up', () => {
-      if (!isDrawing.current) return
-      isDrawing.current = false
-      fc.isDrawingMode = false
-      fc.selection = true
-      if (activeObj.current) {
-        activeObj.current.set({ selectable: true, evented: true })
-        fc.setActiveObject(activeObj.current)
-        activeObj.current = null
-      }
-      fc.renderAll()
-      statesRef.current[activeIdxRef.current] = fc.toJSON()
-    })
-
-    fc.on('object:modified', () => {
-      statesRef.current[activeIdxRef.current] = fc.toJSON()
-    })
-
-    // Load first photo immediately
-    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
-  }, [photos.length > 0])
-
-  // Sync tool mode
-  useEffect(() => {
-    const fc = fabricInst.current
-    if (!fc) return
-    if (tool === 'select') {
-      fc.isDrawingMode = false
-      fc.selection = true
-      fc.defaultCursor = 'default'
-      fc.hoverCursor = 'move'
-      fc.forEachObject(o => { o.selectable = true; o.evented = true })
-      fc.renderAll()
-    } else if (tool === 'pen') {
-      fc.isDrawingMode = true
-      fc.freeDrawingBrush.color = color
-      fc.freeDrawingBrush.width = thick
-      fc.selection = false
-    } else if (tool === 'text') {
-      fc.isDrawingMode = false
-      fc.selection = false
-      fc.defaultCursor = 'text'
-    } else {
-      fc.isDrawingMode = false
-      fc.selection = false
-      fc.defaultCursor = 'crosshair'
-      fc.forEachObject(o => { o.selectable = false; o.evented = false })
-      fc.renderAll()
-    }
-  }, [tool, color, thick])
-
-  // Load photo when activeIdx changes
-  useEffect(() => {
-    const fc = fabricInst.current
-    if (!fc || !photos[activeIdx]) return
-    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
-  }, [activeIdx, photos, loadPhotoOnCanvas])
-
-  const undo = () => {
-    const fc = fabricInst.current
-    if (!fc) return
-    const objs = fc.getObjects()
-    if (objs.length > 0) { fc.remove(objs[objs.length - 1]); fc.renderAll(); statesRef.current[activeIdx] = fc.toJSON() }
-  }
-
-  const deleteSelected = () => {
-    const fc = fabricInst.current
-    if (!fc) return
-    const obj = fc.getActiveObject()
-    if (obj) { fc.remove(obj); fc.renderAll(); statesRef.current[activeIdx] = fc.toJSON() }
-  }
-
-  const clearAll = () => {
-    const fc = fabricInst.current
-    if (!fc || !photos[activeIdx]) return
-    delete statesRef.current[activeIdx]
-    loadPhotoOnCanvas(fc, photos[activeIdx], activeIdx)
-  }
-
-  const toolNames = { select:'SÉLECTION', pen:'STYLO', arrow:'FLÈCHE', rect:'RECTANGLE', circle:'CERCLE', text:'TEXTE' }
-
-  return (
-    <div>
-      <div style={S.toolbar}>
-        <span style={S.badge}>{toolNames[tool]}</span>
-        <VSep />
-        {[
-          { id:'select', icon:'⬡', title:'Sélectionner / déplacer / redimensionner' },
-          { id:'pen',    icon:'✏️', title:'Dessin libre' },
-          { id:'arrow',  icon:'↗',  title:'Flèche' },
-          { id:'rect',   icon:'▭',  title:'Rectangle' },
-          { id:'circle', icon:'◯',  title:'Ellipse' },
-          { id:'text',   icon:'T',  title:'Texte éditable' },
-        ].map(t => (
-          <TB key={t.id} active={tool === t.id} onClick={() => setTool(t.id)} title={t.title}>{t.icon}</TB>
-        ))}
-        <VSep />
-        {ANN_COLORS.map(c => (
-          <div key={c} onClick={() => setColor(c)} style={{
-            width:15, height:15, borderRadius:'50%', background:c, cursor:'pointer', flexShrink:0,
-            border: color === c ? '2.5px solid #374151' : c === '#ffffff' ? '1px solid #d1d5db' : '1.5px solid transparent',
-            transform: color === c ? 'scale(1.25)' : 'scale(1)', transition:'transform 0.1s',
-          }} />
-        ))}
-        <VSep />
-        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-          <span style={{ fontSize:10, color:'#6b7280' }}>≡</span>
-          <input type="range" min="1" max="12" step="1" value={thick}
-            onChange={e => setThick(Number(e.target.value))}
-            style={{ width:46, accentColor:'#2563eb' }} />
-          <span style={{ fontSize:10, fontWeight:500, color:'#374151', minWidth:12 }}>{thick}</span>
-        </div>
-        <VSep />
-        <TB onClick={undo} title="Annuler dernier">↩</TB>
-        <TB onClick={deleteSelected} title="Supprimer sélection">🗑</TB>
-        <TB onClick={clearAll} title="Tout effacer">⌫</TB>
-      </div>
-
-      <div ref={wrapRef} style={S.canvasWrap}>
-        {photos.length === 0 ? (
-          <div style={S.uploadPh}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, width:260 }}>
-              {[
-                { label:'Prendre photo', icon:'📷', capture:'environment' },
-                { label:'Depuis galerie', icon:'🖼️', capture:undefined },
-              ].map(({ label, icon, capture }) => (
-                <label key={label} style={S.upBtn}>
-                  <span style={{ fontSize:22 }}>{icon}</span>
-                  {label}
-                  <input type="file" accept="image/*" multiple capture={capture}
-                    onChange={onAddPhoto} style={{ display:'none' }} />
-                </label>
-              ))}
-            </div>
-            <small style={{ fontSize:11, color:'#9ca3af' }}>Ou faites glisser une image ici</small>
-          </div>
-        ) : (
-          <canvas ref={canvasElRef} />
-        )}
-      </div>
-
-      {photos.length > 0 && (
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
-          {photos.map((p, i) => (
-            <img key={i} src={p.src} onClick={() => onActivate(i)} style={{
-              width:48, height:48, objectFit:'cover', borderRadius:6, cursor:'pointer',
-              border: i === activeIdx ? '2px solid #2563eb' : '1.5px solid #e5e7eb',
-            }} />
-          ))}
-          <label style={S.addThumb}>
-            +<input type="file" accept="image/*" multiple onChange={onAddPhoto} style={{ display:'none' }} />
-          </label>
-        </div>
-      )}
-      <div style={{ fontSize:11, color:'#9ca3af', marginTop:6 }}>{photos.length} photo(s)</div>
-    </div>
-  )
-}
-
-function VSep() { return <div style={{ width:'0.5px', height:18, background:'#e5e7eb', margin:'0 3px', flexShrink:0 }} /> }
-function TB({ children, active, onClick, title }) {
-  return (
-    <button onClick={onClick} title={title} style={{
-      width:28, height:28, border: active ? '1px solid #374151' : '1px solid transparent',
-      borderRadius:6, background: active ? '#fff' : 'none', cursor:'pointer',
-      display:'flex', alignItems:'center', justifyContent:'center',
-      fontSize:13, color: active ? '#111827' : '#6b7280', flexShrink:0,
-    }}>{children}</button>
-  )
-}
-
-export default function TicketModal({ onClose }) {
-  const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('info')
-  const [saving,    setSaving]    = useState(false)
-  const fabricRef  = useRef({})
-  const [photos,   setPhotos]    = useState([])
-  const [activePhoto, setActivePhoto] = useState(0)
-  const [fabricLoaded, setFabricLoaded] = useState(!!window.fabric)
-
-  const [form, setForm] = useState({
-    issue_reception_date:'', meeting_date:'', department:'', categories:'',
-    brand:'', plant:'', status:'not_started', quality_issue:'',
-    ship_to:'', sold_to:'', ref_so:'', sc_number:'', qty_affected:'', cost_approx:'',
-  })
-  const [ac, setAc] = useState({
-    assigned_to:'', due_date:'', description:'', status:'À faire', close_date:'', notes:'',
-  })
-
-  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const sa = (k, v) => setAc(a => ({ ...a, [k]: v }))
-
-  useEffect(() => {
-    if (window.fabric) { setFabricLoaded(true); return }
-    const s = document.createElement('script')
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
-    s.onload = () => setFabricLoaded(true)
-    document.head.appendChild(s)
-  }, [])
-
-  const handleAddPhoto = useCallback((e) => {
-    Array.from(e.target.files).forEach(file => {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const img = new Image()
-        img.onload = () => {
-          setPhotos(prev => {
-            const next = [...prev, { img, src: ev.target.result }]
-            if (next.length === 1) setActivePhoto(0)
-            return next
+      canvas.on('mouse:move', o => {
+        if (pts.length === 1) {
+          if (tempLine) canvas.remove(tempLine)
+          const p = canvas.getPointer(o.e)
+          tempLine = new window.fabric.Line(
+            [pts[0].x, pts[0].y, p.x, p.y],
+            { stroke: color, strokeWidth: 2, selectable: false, evented: false, strokeDashArray: [4, 4] }
+          )
+          canvas.add(tempLine)
+          canvas.renderAll()
+        }
+      })
+    } else if (['arrow','rect','circle','text'].includes(tool)) {
+      canvas.selection = false
+      let origin = null
+      let shape  = null
+      canvas.on('mouse:down', o => {
+        origin = canvas.getPointer(o.e)
+        if (tool === 'text') {
+          const txt = new window.fabric.IText('Text', {
+            left: origin.x, top: origin.y,
+            fontSize: 16, fill: color,
+            fontFamily: 'sans-serif', editable: true,
+          })
+          canvas.add(txt)
+          canvas.setActiveObject(txt)
+          txt.enterEditing()
+          canvas.renderAll()
+          origin = null
+        }
+      })
+      canvas.on('mouse:move', o => {
+        if (!origin) return
+        const p = canvas.getPointer(o.e)
+        if (shape) canvas.remove(shape)
+        if (tool === 'rect') {
+          shape = new window.fabric.Rect({
+            left: Math.min(origin.x, p.x), top: Math.min(origin.y, p.y),
+            width: Math.abs(p.x - origin.x), height: Math.abs(p.y - origin.y),
+            stroke: color, strokeWidth: thickness, fill: 'transparent',
+          })
+        } else if (tool === 'circle') {
+          const r = Math.sqrt(Math.pow(p.x - origin.x, 2) + Math.pow(p.y - origin.y, 2)) / 2
+          shape = new window.fabric.Circle({
+            left: Math.min(origin.x, p.x), top: Math.min(origin.y, p.y),
+            radius: r, stroke: color, strokeWidth: thickness, fill: 'transparent',
+          })
+        } else if (tool === 'arrow') {
+          const angle = Math.atan2(p.y - origin.y, p.x - origin.x) * 180 / Math.PI
+          const len   = Math.sqrt(Math.pow(p.x - origin.x, 2) + Math.pow(p.y - origin.y, 2))
+          const line  = new window.fabric.Line([0, 0, len, 0], { stroke: color, strokeWidth: thickness })
+          const head  = new window.fabric.Triangle({ width: 12, height: 14, fill: color, left: len - 6, top: -7 })
+          shape = new window.fabric.Group([line, head], {
+            left: origin.x, top: origin.y, angle,
+            originX: 'left', originY: 'center',
           })
         }
-        img.src = ev.target.result
-      }
-      reader.readAsDataURL(file)
+        if (shape) { canvas.add(shape); canvas.renderAll() }
+      })
+      canvas.on('mouse:up', () => { shape = null; origin = null })
+    }
+  }, [tool, color, thickness])
+
+  const handleUndo = () => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    const objects = canvas.getObjects()
+    if (objects.length > 1) { canvas.remove(objects[objects.length - 1]); canvas.renderAll() }
+  }
+
+  const handleSaveMeasure = () => {
+    if (!measureVal || !measureLine || !fabricRef.current) return
+    const canvas = fabricRef.current
+    const bounds = measureLine.getBoundingRect()
+    const label  = new window.fabric.Rect({
+      left: bounds.left + bounds.width / 2 - 30,
+      top:  bounds.top - 22,
+      width: 60, height: 20,
+      fill: '#BA7517', rx: 4, ry: 4, selectable: false,
     })
-  }, [])
-
-  const handleActivate = useCallback((idx) => {
-    setActivePhoto(idx)
-  }, [])
-
-  // KEY FIX: just switch tab — never unmount PhotoAnnotator
-  const handleTabChange = (tab) => {
-    setActiveTab(tab)
+    const txt = new window.fabric.Text(`${measureVal} cm`, {
+      left: bounds.left + bounds.width / 2,
+      top:  bounds.top - 20,
+      fontSize: 11, fill: 'white', fontFamily: 'sans-serif',
+      originX: 'center', selectable: false,
+    })
+    canvas.add(label, txt)
+    canvas.renderAll()
+    setMeasuring(false)
+    setMeasureVal('')
+    setMeasureLine(null)
+    setTool('select')
   }
 
-  const handleSubmit = async (asDraft = false) => {
-    if (!form.issue_reception_date || !form.department || !form.categories || !form.quality_issue) {
-      toast.error('Veuillez remplir tous les champs obligatoires')
-      setActiveTab('info')
-      return
-    }
-    setSaving(true)
-    try {
-      const payload = {
-        ...form,
-        qty_affected: form.qty_affected ? Number(form.qty_affected) : null,
-        cost_approx:  form.cost_approx  ? Number(form.cost_approx)  : null,
-        status: asDraft ? 'not_started' : form.status,
-        date_yyyy_mm: form.issue_reception_date?.slice(0, 7) || null,
-        action_corrective: ac.description ? ac : null,
-      }
-      const { data } = await ticketApi.create(payload)
-      toast.success('Ticket créé avec succès')
-      onClose?.()
-      navigate(`/tickets/${data.id}`)
-    } catch (err) {
-      toast.error('Erreur lors de la création du ticket')
-      console.error(err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const inp = {
-    width:'100%', fontSize:13, padding:'7px 10px',
-    border:'1px solid #d1d5db', borderRadius:7,
-    background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
+  const handleSave = () => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    const dataUrl = canvas.toDataURL({ format: 'jpeg', quality: 0.85 })
+    onSave(dataUrl)
   }
 
   return (
-    <div style={S.overlay}>
-      <div style={S.modal}>
-        <div style={{ padding:'16px 44px 12px 20px', borderBottom:'1px solid #e5e7eb' }}>
-          <div style={{ fontSize:15, fontWeight:500, color:'#111827' }}>Nouveau ticket qualité</div>
-          <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>
-            Tous les champs marqués <span style={{ color:'#ef4444' }}>*</span> sont obligatoires
-          </div>
-          <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>✕</button>
+    <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" style={{ maxWidth: 620 }}>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Annotation</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer text-lg">✕</button>
         </div>
-
-        <div style={{ display:'flex', borderBottom:'1px solid #e5e7eb', padding:'0 20px' }}>
-          {[
-            { id:'info', label:'Informations',      icon:'ⓘ' },
-            { id:'pj',   label:`Pièces jointes ${photos.length}`, icon:'📎' },
-            { id:'ac',   label:'Action corrective', icon:'🔧' },
-          ].map(tab => (
-            <button key={tab.id} onClick={() => handleTabChange(tab.id)} style={{
-              padding:'10px 14px 9px', fontSize:13, cursor:'pointer', border:'none', background:'none',
-              borderBottom: activeTab === tab.id ? '2px solid #2563eb' : '2px solid transparent',
-              color: activeTab === tab.id ? '#2563eb' : '#6b7280',
-              fontWeight: activeTab === tab.id ? 500 : 400,
-              display:'flex', alignItems:'center', gap:5, whiteSpace:'nowrap',
-            }}>
-              {tab.icon} {tab.label}
+        <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-1.5 flex-wrap bg-gray-50 dark:bg-[#0D1117]">
+          {TOOLS.map(t => (
+            <button key={t.id} onClick={() => setTool(t.id)} title={t.label} aria-label={t.label}
+              className="w-7 h-7 rounded flex items-center justify-center border cursor-pointer transition-all"
+              style={{
+                border: tool === t.id ? `1.5px solid ${color}` : '0.5px solid var(--color-border-tertiary)',
+                background: tool === t.id ? color + '22' : 'var(--color-background-primary)',
+                color: tool === t.id ? color : 'var(--color-text-secondary)',
+              }}>
+              <i className={`ti ${t.icon}`} style={{ fontSize: 13 }} aria-hidden="true" />
             </button>
           ))}
-        </div>
-
-        {/* ── INFORMATIONS — shown/hidden via display, never unmounted ── */}
-        <div style={{ ...S.body, display: activeTab === 'info' ? 'block' : 'none' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-            <F2 label="Date réception *"><input style={inp} type="date" value={form.issue_reception_date} onChange={e => sf('issue_reception_date', e.target.value)} /></F2>
-            <F2 label="Date réunion"><input style={inp} type="date" value={form.meeting_date} onChange={e => sf('meeting_date', e.target.value)} /></F2>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-            <F2 label="Département *">
-              <select style={inp} value={form.department} onChange={e => sf('department', e.target.value)}>
-                <option value="">Sélectionner...</option>
-                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-              </select>
-            </F2>
-            <F2 label="Catégorie *">
-              <select style={inp} value={form.categories} onChange={e => sf('categories', e.target.value)}>
-                <option value="">Sélectionner...</option>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </F2>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10 }}>
-            <F2 label="Marque (Brand)">
-              <select style={inp} value={form.brand} onChange={e => sf('brand', e.target.value)}>
-                <option value="">Sélectionner...</option>
-                {BRANDS.map(b => <option key={b}>{b}</option>)}
-              </select>
-            </F2>
-            <F2 label="Usine (Plant)">
-              <select style={inp} value={form.plant} onChange={e => sf('plant', e.target.value)}>
-                <option value="">Sélectionner...</option>
-                {PLANTS.map(p => <option key={p}>{p}</option>)}
-              </select>
-            </F2>
-            <F2 label="Statut">
-              <select style={inp} value={form.status} onChange={e => sf('status', e.target.value)}>
-                {STATUSES.map(s => <option key={s} value={s}>{STATUS_LBL[s]}</option>)}
-              </select>
-            </F2>
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <F2 label="Problème qualité (Quality issue) *">
-              <textarea style={{ ...inp, resize:'vertical', height:80 }}
-                placeholder="Décrire le problème en détail..."
-                value={form.quality_issue} onChange={e => sf('quality_issue', e.target.value)} />
-            </F2>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-            <F2 label="Ship To"><input style={inp} placeholder="Ex: HIEX Page, AZ" value={form.ship_to} onChange={e => sf('ship_to', e.target.value)} /></F2>
-            <F2 label="Sold To"><input style={inp} placeholder="Ex: Hilton Supply Management" value={form.sold_to} onChange={e => sf('sold_to', e.target.value)} /></F2>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:10, marginBottom:10 }}>
-            <F2 label="REF SO"><input style={inp} placeholder="66882" value={form.ref_so} onChange={e => sf('ref_so', e.target.value)} /></F2>
-            <F2 label="SC#"><input style={inp} placeholder="68489" value={form.sc_number} onChange={e => sf('sc_number', e.target.value)} /></F2>
-            <F2 label="Qté affectée"><input style={inp} type="number" placeholder="1" value={form.qty_affected} onChange={e => sf('qty_affected', e.target.value)} /></F2>
-            <F2 label="Coût approx. $"><input style={inp} type="number" placeholder="800" value={form.cost_approx} onChange={e => sf('cost_approx', e.target.value)} /></F2>
-          </div>
-          <div onClick={() => handleTabChange('pj')} style={S.dropZone}>
-            <div style={{ fontSize:24, marginBottom:6 }}>☁</div>
-            <div style={{ fontSize:13, fontWeight:500, color:'#374151', marginBottom:3 }}>Glisser les fichiers ici ou cliquer pour parcourir</div>
-            <div style={{ fontSize:11, color:'#9ca3af', marginBottom:8 }}>JPG, PNG, PDF, Word, Excel, Vidéo · Max 20 MB par fichier</div>
-            <div style={{ display:'flex', gap:6, justifyContent:'center', flexWrap:'wrap' }}>
-              {[['📷','Photo','#eff6ff','#1d4ed8'],['📄','PDF','#fef2f2','#b91c1c'],['📊','Excel','#f0fdf4','#15803d'],['🎬','Vidéo','#fdf4ff','#9333ea']].map(([ic,lb,bg,cl]) => (
-                <span key={lb} style={{ fontSize:11, padding:'3px 8px', borderRadius:4, background:bg, color:cl, fontWeight:500 }}>{ic} {lb}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── PIÈCES JOINTES — always mounted, hidden when not active ── */}
-        <div style={{ ...S.body, display: activeTab === 'pj' ? 'block' : 'none' }}>
-          <div style={S.secLabel}>PHOTOS D'INSPECTION</div>
-          {fabricLoaded ? (
-            <PhotoAnnotator
-              photos={photos} activeIdx={activePhoto}
-              onActivate={handleActivate} onAddPhoto={handleAddPhoto}
-              fabricRef={fabricRef}
-            />
-          ) : (
-            <div style={{ padding:30, textAlign:'center', color:'#9ca3af', fontSize:13 }}>
-              Chargement des outils d'annotation…
-            </div>
-          )}
-          <div style={{ marginTop:16 }}>
-            <div style={S.secLabel}>AUTRES PIÈCES JOINTES</div>
-            <label style={{ ...S.dropZone, cursor:'pointer' }}>
-              <div style={{ fontSize:22, marginBottom:4 }}>📁</div>
-              <div style={{ fontSize:13, fontWeight:500, color:'#374151' }}>PDF, Word, Excel, Vidéo</div>
-              <div style={{ fontSize:11, color:'#9ca3af' }}>Max 20 MB par fichier</div>
-              <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.mp4,.mov" multiple style={{ display:'none' }} />
-            </label>
-          </div>
-        </div>
-
-        {/* ── ACTION CORRECTIVE — always mounted, hidden when not active ── */}
-        <div style={{ ...S.body, display: activeTab === 'ac' ? 'block' : 'none' }}>
-          {[
-            {
-              title:'👤 Responsable',
-              body:(
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                  <F2 label="Assigné à"><input style={inp} placeholder="Nom du responsable" value={ac.assigned_to} onChange={e => sa('assigned_to', e.target.value)} /></F2>
-                  <F2 label="Date limite"><input style={inp} type="date" value={ac.due_date} onChange={e => sa('due_date', e.target.value)} /></F2>
-                </div>
-              ),
-            },
-            {
-              title:"📋 Description de l'action",
-              body:<F2 label=""><textarea style={{ ...inp, resize:'vertical', height:90 }} placeholder="Décrire l'action corrective…" value={ac.description} onChange={e => sa('description', e.target.value)} /></F2>,
-            },
-            {
-              title:'✅ Suivi',
-              body:(
-                <>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:8 }}>
-                    <F2 label="Statut action">
-                      <select style={inp} value={ac.status} onChange={e => sa('status', e.target.value)}>
-                        {['À faire','En cours','Complétée'].map(s => <option key={s}>{s}</option>)}
-                      </select>
-                    </F2>
-                    <F2 label="Date de clôture"><input style={inp} type="date" value={ac.close_date} onChange={e => sa('close_date', e.target.value)} /></F2>
-                  </div>
-                  <F2 label="Notes"><textarea style={{ ...inp, resize:'vertical', height:56 }} placeholder="Notes additionnelles…" value={ac.notes} onChange={e => sa('notes', e.target.value)} /></F2>
-                </>
-              ),
-            },
-          ].map(({ title, body }) => (
-            <div key={title} style={S.acBlock}>
-              <div style={{ fontSize:12, fontWeight:500, marginBottom:8, color:'#374151' }}>{title}</div>
-              {body}
-            </div>
+          <div style={{ width: 1, height: 20, background: 'var(--color-border-tertiary)', margin: '0 4px' }} />
+          {COLORS.map(c => (
+            <div key={c} onClick={() => setColor(c)}
+              style={{ width: 14, height: 14, borderRadius: '50%', background: c, cursor: 'pointer',
+                border: color === c ? '2px solid #185FA5' : '1px solid var(--color-border-tertiary)', flexShrink: 0 }} />
           ))}
-        </div>
-
-        <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <button onClick={onClose} style={{ padding:'8px 14px', borderRadius:7, fontSize:13, cursor:'pointer', background:'none', border:'none', color:'#6b7280', display:'inline-flex', alignItems:'center', gap:4 }}>
-            ✕ Annuler
+          <div style={{ width: 1, height: 20, background: 'var(--color-border-tertiary)', margin: '0 4px' }} />
+          <input type="range" min="1" max="8" value={thickness} onChange={e => setThickness(Number(e.target.value))}
+            style={{ width: 60 }} />
+          <div style={{ width: 1, height: 20, background: 'var(--color-border-tertiary)', margin: '0 4px' }} />
+          <button onClick={handleUndo} title="Undo" aria-label="Undo"
+            className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+            <i className="ti ti-arrow-back-up" style={{ fontSize: 13, color: 'var(--color-text-secondary)' }} aria-hidden="true" />
           </button>
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={() => handleSubmit(true)} disabled={saving} style={{ padding:'8px 16px', borderRadius:7, fontSize:13, cursor:'pointer', background:'#fff', color:'#374151', border:'1px solid #d1d5db', display:'inline-flex', alignItems:'center', gap:5 }}>
-              💾 Brouillon
-            </button>
-            <button onClick={() => handleSubmit(false)} disabled={saving} style={{ padding:'8px 18px', borderRadius:7, fontSize:13, cursor:'pointer', background:'#2563eb', color:'#fff', border:'1px solid #2563eb', display:'inline-flex', alignItems:'center', gap:5, fontWeight:500 }}>
-              {saving ? 'Création…' : '📤 Créer le ticket'}
-            </button>
+        </div>
+        {measuring && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center gap-3">
+            <i className="ti ti-ruler text-amber-600 text-sm" aria-hidden="true" />
+            <span className="text-xs text-amber-700 dark:text-amber-300">Mesure tracée — entrez la valeur:</span>
+            <input type="text" value={measureVal} onChange={e => setMeasureVal(e.target.value)}
+              className="border border-amber-300 rounded px-2 py-1 text-xs w-20 outline-none dark:bg-[#161B22] dark:text-gray-100"
+              placeholder="ex: 35" autoFocus />
+            <span className="text-xs text-amber-600">cm</span>
+            <button onClick={handleSaveMeasure}
+              className="btn-primary text-xs py-1 px-3">OK</button>
           </div>
+        )}
+        <div style={{ overflow: 'auto', maxHeight: 400 }}>
+          <canvas ref={canvasRef} />
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+          <button onClick={onClose} className="btn-ghost text-xs">Annuler</button>
+          <button onClick={handleSave} className="btn-primary text-xs">Sauvegarder annotation</button>
         </div>
       </div>
     </div>
   )
 }
 
-function F2({ label, children }) {
+// ── Line Row Component ─────────────────────────────────────────────────────
+function LineRow({ line, idx, onChange, onDelete, onPhotoUpload, onAnnotate, plants, t }) {
+  const fileRef = useRef(null)
+
   return (
-    <div>
-      {label && <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{label}</label>}
-      {children}
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 mb-2 bg-gray-50 dark:bg-[#0D1117]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{t('ticket.line_n')} {idx + 1}</span>
+        <button onClick={() => onDelete(idx)} className="text-red-400 hover:text-red-600 bg-transparent border-0 cursor-pointer p-0">
+          <i className="ti ti-trash text-sm" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="col-span-2">
+          <label className="label">{t('ticket.issue')} *</label>
+          <input className="input text-xs" value={line.quality_issue || ''} onChange={e => onChange(idx, 'quality_issue', e.target.value)} placeholder="Description du problème..." />
+        </div>
+        <div>
+          <label className="label">{t('ticket.categories')}</label>
+          <select className="input text-xs" value={line.categories || ''} onChange={e => onChange(idx, 'categories', e.target.value)}>
+            <option value="">—</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('ticket.department')}</label>
+          <select className="input text-xs" value={line.department || ''} onChange={e => onChange(idx, 'department', e.target.value)}>
+            <option value="">—</option>
+            {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('ticket.line_item')}</label>
+          <input className="input text-xs" value={line.line_item || ''} onChange={e => onChange(idx, 'line_item', e.target.value)} placeholder="Line item..." />
+        </div>
+        <div>
+          <label className="label">{t('ticket.foliot_id')}</label>
+          <input className="input text-xs" value={line.foliot_id || ''} onChange={e => onChange(idx, 'foliot_id', e.target.value)} placeholder="Foliot ID..." />
+        </div>
+        <div>
+          <label className="label">{t('ticket.plant')}</label>
+          <select className="input text-xs" value={line.plant || ''} onChange={e => onChange(idx, 'plant', e.target.value)}>
+            <option value="">—</option>
+            {(plants || []).map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">{t('ticket.affected_qty')}</label>
+          <input className="input text-xs" type="number" min="0" value={line.affected_qty || ''} onChange={e => onChange(idx, 'affected_qty', e.target.value)} placeholder="0" />
+        </div>
+        <div>
+          <label className="label">{t('ticket.cost')}</label>
+          <input className="input text-xs" value={line.cost_approx || ''} onChange={e => onChange(idx, 'cost_approx', e.target.value)} placeholder="$0.00" />
+        </div>
+      </div>
+
+      {/* Photos section */}
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+        <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Photos</div>
+
+        {/* Annotation toolbar */}
+        {line.photos && line.photos.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap mb-2">
+            {TOOLS.map(tool => (
+              <button key={tool.id}
+                onClick={() => onChange(idx, '_activeTool', tool.id)}
+                title={tool.label} aria-label={tool.label}
+                className="w-6 h-6 rounded flex items-center justify-center border cursor-pointer"
+                style={{
+                  border: line._activeTool === tool.id ? '1.5px solid #185FA5' : '0.5px solid var(--color-border-tertiary)',
+                  background: line._activeTool === tool.id ? '#E6F1FB' : 'var(--color-background-primary)',
+                  color: line._activeTool === tool.id ? '#185FA5' : 'var(--color-text-secondary)',
+                }}>
+                <i className={`ti ${tool.icon}`} style={{ fontSize: 11 }} aria-hidden="true" />
+              </button>
+            ))}
+            <div style={{ width: 1, height: 16, background: 'var(--color-border-tertiary)', margin: '0 2px' }} />
+            {COLORS.map(c => (
+              <div key={c} onClick={() => onChange(idx, '_color', c)}
+                style={{ width: 12, height: 12, borderRadius: '50%', background: c, cursor: 'pointer',
+                  border: (line._color || '#E24B4A') === c ? '2px solid #185FA5' : '0.5px solid var(--color-border-tertiary)' }} />
+            ))}
+            <div style={{ width: 1, height: 16, background: 'var(--color-border-tertiary)', margin: '0 2px' }} />
+            <button title="Undo" aria-label="Undo"
+              className="w-6 h-6 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 bg-transparent cursor-pointer">
+              <i className="ti ti-arrow-back-up" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {/* Photo thumbnails */}
+        {line.photos && line.photos.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {line.photos.map((p, pi) => (
+              <div key={pi} className="relative group cursor-pointer" onClick={() => onAnnotate(idx, pi)}>
+                <img src={p.preview || p.url} alt="" className="w-14 h-14 object-cover rounded border border-gray-200 dark:border-gray-700" />
+                <button
+                  onClick={e => { e.stopPropagation(); onChange(idx, '_removePhoto', pi) }}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-xs items-center justify-center hidden group-hover:flex border-0 cursor-pointer">
+                  <i className="ti ti-x" style={{ fontSize: 8 }} aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <label className="btn-ghost text-xs py-1 px-2 cursor-pointer">
+            <i className="ti ti-upload text-xs" aria-hidden="true" /> Importer
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={e => onPhotoUpload(idx, Array.from(e.target.files))} />
+          </label>
+        </div>
+      </div>
     </div>
   )
 }
 
-const S = {
-  overlay:    { position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'28px 16px', zIndex:1000, overflowY:'auto' },
-  modal:      { background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:640, boxShadow:'0 24px 48px rgba(0,0,0,0.18)', position:'relative' },
-  body:       { padding:'16px 20px', maxHeight:'calc(100vh - 280px)', overflowY:'auto' },
-  toolbar:    { display:'flex', alignItems:'center', gap:3, flexWrap:'wrap', background:'#f3f4f6', border:'1px solid #e5e7eb', borderRadius:8, padding:'5px 8px', marginBottom:8 },
-  badge:      { fontSize:10, fontWeight:500, color:'#2563eb', background:'#eff6ff', padding:'2px 7px', borderRadius:4, border:'1px solid #bfdbfe', marginRight:4, whiteSpace:'nowrap' },
-  canvasWrap: { border:'1.5px dashed #d1d5db', borderRadius:8, background:'#f9fafb', overflow:'hidden', position:'relative', minHeight:200 },
-  uploadPh:   { position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 },
-  upBtn:      { padding:'12px 8px', border:'1px dashed #d1d5db', borderRadius:8, background:'#fff', cursor:'pointer', textAlign:'center', color:'#6b7280', fontSize:12, display:'flex', flexDirection:'column', alignItems:'center', gap:5 },
-  addThumb:   { width:48, height:48, borderRadius:6, border:'1.5px dashed #d1d5db', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:20, color:'#9ca3af', background:'#f9fafb' },
-  dropZone:   { border:'1.5px dashed #d1d5db', borderRadius:8, padding:'18px 16px', textAlign:'center', cursor:'pointer', background:'#f9fafb', display:'block', marginTop:4 },
-  secLabel:   { fontSize:10, fontWeight:600, letterSpacing:'0.08em', color:'#9ca3af', marginBottom:8 },
-  acBlock:    { background:'#f9fafb', borderRadius:8, padding:12, marginBottom:10, border:'1px solid #e5e7eb' },
+// ── Step Indicator ─────────────────────────────────────────────────────────
+function StepIndicator({ current, t }) {
+  const steps = [
+    { n: 1, label: t('ticket.step1'), desc: t('ticket.step1_desc') },
+    { n: 2, label: 'Confirmation', desc: 'Vérifier et soumettre' },
+  ]
+  return (
+    <div className="flex items-center px-5 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#161B22]">
+      {steps.map((s, i) => (
+        <div key={s.n} className="flex items-center flex-1">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 transition-all"
+              style={{
+                background: current === s.n ? '#185FA5' : current > s.n ? '#1D9E75' : 'var(--color-background-secondary)',
+                color: current >= s.n ? 'white' : 'var(--color-text-secondary)',
+                border: current < s.n ? '0.5px solid var(--color-border-tertiary)' : 'none',
+              }}>
+              {current > s.n ? <i className="ti ti-check" style={{ fontSize: 10 }} /> : s.n}
+            </div>
+            <div>
+              <div className="text-xs font-medium" style={{ color: current === s.n ? '#185FA5' : current > s.n ? '#1D9E75' : 'var(--color-text-secondary)' }}>{s.label}</div>
+              <div className="text-xs" style={{ color: 'var(--color-text-secondary)', fontSize: 9 }}>{s.desc}</div>
+            </div>
+          </div>
+          {i < steps.length - 1 && (
+            <div className="flex-1 mx-3" style={{ height: 1, background: current > s.n ? '#1D9E75' : 'var(--color-border-tertiary)' }} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Main Modal ─────────────────────────────────────────────────────────────
+export default function TicketModal({ onClose }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [step, setStep] = useState(1)
+  const [annotating, setAnnotating] = useState(null) // { lineIdx, photoIdx }
+
+  const [form, setForm] = useState({
+    issue_reception_date: new Date().toISOString().slice(0, 10),
+    brand: '', ship_to: '', sold_to: '', ref_so: '', sc_number: '',
+  })
+  const [lines, setLines] = useState([{
+    quality_issue: '', categories: '', department: '', line_item: '',
+    foliot_id: '', plant: '', affected_qty: '', cost_approx: '',
+    photos: [], _activeTool: 'select', _color: '#E24B4A',
+  }])
+
+  // Load Fabric.js
+  useEffect(() => {
+    if (window.fabric) return
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+    document.head.appendChild(script)
+  }, [])
+
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const updateLine = (idx, key, val) => {
+    if (key === '_removePhoto') {
+      setLines(ls => ls.map((l, i) => i === idx ? { ...l, photos: l.photos.filter((_, pi) => pi !== val) } : l))
+      return
+    }
+    setLines(ls => ls.map((l, i) => i === idx ? { ...l, [key]: val } : l))
+  }
+
+  const addLine = () => setLines(ls => [...ls, {
+    quality_issue: '', categories: '', department: '', line_item: '',
+    foliot_id: '', plant: '', affected_qty: '', cost_approx: '',
+    photos: [], _activeTool: 'select', _color: '#E24B4A',
+  }])
+
+  const deleteLine = (idx) => { if (lines.length > 1) setLines(ls => ls.filter((_, i) => i !== idx)) }
+
+  const handlePhotoUpload = (lineIdx, files) => {
+    const newPhotos = files.map(f => ({ file: f, preview: URL.createObjectURL(f), url: URL.createObjectURL(f), name: f.name }))
+    setLines(ls => ls.map((l, i) => i === lineIdx ? { ...l, photos: [...l.photos, ...newPhotos] } : l))
+  }
+
+  const handleAnnotateSave = (dataUrl) => {
+    if (!annotating) return
+    const { lineIdx, photoIdx } = annotating
+    setLines(ls => ls.map((l, i) => {
+      if (i !== lineIdx) return l
+      const newPhotos = [...l.photos]
+      newPhotos[photoIdx] = { ...newPhotos[photoIdx], preview: dataUrl, annotated: true }
+      return { ...l, photos: newPhotos }
+    }))
+    setAnnotating(null)
+  }
+
+  const { data: plants } = useQuery({
+    queryKey: ['plants'],
+    queryFn: async () => {
+      const { data } = await supabase.from('plants').select('id, name').eq('active', true).order('name')
+      return data || []
+    },
+  })
+
+  const createMut = useMutation({
+    mutationFn: async () => {
+      const dateYYYYMM = form.issue_reception_date?.slice(0, 7)
+      const { data: occ, error: occErr } = await supabase.from('tickets').insert({
+        issue_reception_date: form.issue_reception_date,
+        date_yyyy_mm:  dateYYYYMM,
+        fiscal_year:   getFiscalYear(dateYYYYMM),
+        fiscal_month:  getFiscalMonth(dateYYYYMM),
+        brand:         form.brand    || null,
+        ship_to:       form.ship_to  || null,
+        sold_to:       form.sold_to  || null,
+        ref_so:        form.ref_so   || null,
+        sc_number:     form.sc_number || null,
+        status:        'service_desk',
+        quality_issue: lines[0]?.quality_issue || null,
+        plant:         lines[0]?.plant || null,
+        categories:    lines[0]?.categories || null,
+        affected_qty:  lines[0]?.affected_qty ? Number(lines[0].affected_qty) : null,
+        department:    lines[0]?.department || null,
+        cost_approx:   lines[0]?.cost_approx ? Number(lines[0].cost_approx) : null,
+      }).select().single()
+      if (occErr) throw occErr
+
+      const linesData = lines.map((l, i) => ({
+        occurrence_id: occ.id,
+        quality_issue: l.quality_issue || null,
+        categories:    l.categories    || null,
+        department:    l.department    || null,
+        line_item:     l.line_item     || null,
+        foliot_id:     l.foliot_id     || null,
+        plant:         l.plant         || null,
+        affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
+        cost_approx:   l.cost_approx   ? Number(l.cost_approx) : null,
+        sort_order:    i,
+      }))
+      const { error: linesErr } = await supabase.from('occurrence_lines').insert(linesData)
+      if (linesErr) throw linesErr
+
+      // Upload photos
+      for (let li = 0; li < lines.length; li++) {
+        const lineData = lines[li]
+        if (!lineData.photos || lineData.photos.length === 0) continue
+        const { data: lineRows } = await supabase.from('occurrence_lines')
+          .select('id').eq('occurrence_id', occ.id).eq('sort_order', li).single()
+        const lineId = lineRows?.id
+        for (const photo of lineData.photos) {
+          if (!photo.file && !photo.annotated) continue
+          let blob
+          if (photo.annotated && photo.preview) {
+            const res = await fetch(photo.preview)
+            blob = await res.blob()
+          } else {
+            blob = photo.file
+          }
+          const ext = photo.name?.split('.').pop() || 'jpg'
+          const path = `tickets/${occ.id}/${Date.now()}_${li}.${ext}`
+          const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob)
+          if (upErr) continue
+          const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+          await supabase.from('ticket_photos').insert({
+            ticket_id: occ.id, url: urlData.publicUrl, name: photo.name, path, line_id: lineId || null,
+          })
+        }
+      }
+      return occ
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['tickets'])
+      toast.success('Occurrence soumise au Service Desk')
+      onClose()
+    },
+    onError: (e) => toast.error(e.message || t('common.error')),
+  })
+
+  const canSubmit = form.issue_reception_date && lines.some(l => l.quality_issue)
+  const totalPhotos = lines.reduce((s, l) => s + (l.photos?.length || 0), 0)
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl shadow-2xl flex flex-col" style={{ maxHeight: '92vh' }}>
+
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t('ticket.new')}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-transparent border-0 cursor-pointer text-lg">✕</button>
+          </div>
+
+          <StepIndicator current={step} t={t} />
+
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+
+            {step === 1 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">{t('ticket.reception_date')} *</label>
+                    <input type="date" className="input" value={form.issue_reception_date} onChange={e => setField('issue_reception_date', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.brand')}</label>
+                    <select className="input" value={form.brand} onChange={e => setField('brand', e.target.value)}>
+                      <option value="">—</option>
+                      {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.sc_number')}</label>
+                    <input className="input" value={form.sc_number} onChange={e => setField('sc_number', e.target.value)} placeholder="SC#..." />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.ship_to')}</label>
+                    <input className="input" value={form.ship_to} onChange={e => setField('ship_to', e.target.value)} placeholder="Ship To..." />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.sold_to')}</label>
+                    <input className="input" value={form.sold_to} onChange={e => setField('sold_to', e.target.value)} placeholder="Sold To..." />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.ref_so')}</label>
+                    <input className="input" value={form.ref_so} onChange={e => setField('ref_so', e.target.value)} placeholder="REF SO..." />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="label mb-0">{t('ticket.lines')} *</label>
+                    <button onClick={addLine} className="btn-ghost text-xs py-1 px-2.5">
+                      <i className="ti ti-plus text-xs" aria-hidden="true" /> {t('ticket.add_line')}
+                    </button>
+                  </div>
+                  {lines.map((line, idx) => (
+                    <LineRow key={idx} line={line} idx={idx}
+                      onChange={updateLine} onDelete={deleteLine}
+                      onPhotoUpload={handlePhotoUpload}
+                      onAnnotate={(li, pi) => setAnnotating({ lineIdx: li, photoIdx: pi })}
+                      plants={plants} t={t} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="space-y-3">
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                  <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Informations générales</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {[
+                      [t('ticket.reception_date'), form.issue_reception_date],
+                      [t('ticket.brand'), form.brand],
+                      [t('ticket.ship_to'), form.ship_to],
+                      [t('ticket.sold_to'), form.sold_to],
+                      [t('ticket.ref_so'), form.ref_so],
+                      [t('ticket.sc_number'), form.sc_number],
+                    ].filter(([,v]) => v).map(([l, v]) => (
+                      <div key={l} className="flex justify-between text-xs py-1 border-b border-gray-50 dark:border-gray-800">
+                        <span className="text-gray-400">{l}</span>
+                        <span className="text-gray-900 dark:text-gray-100 font-medium">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                  <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
+                    {lines.length} {t('ticket.lines').toLowerCase()} · {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''}
+                  </div>
+                  {lines.map((l, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-[#0D1117] rounded-lg mb-1.5 text-xs">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-medium"
+                        style={{ background: '#E6F1FB', color: '#185FA5', fontSize: 9 }}>{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 dark:text-gray-100 truncate">{l.quality_issue || '—'}</div>
+                        <div className="text-gray-400">{[l.department, l.plant, l.line_item, l.affected_qty ? `Qté: ${l.affected_qty}` : '', l.cost_approx ? `$${l.cost_approx}` : ''].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      {l.photos?.length > 0 && (
+                        <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded text-xs">
+                          {l.photos.length} photo{l.photos.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+                  <i className="ti ti-send text-sm" aria-hidden="true" />
+                  {t('ticket.submit_to_sd')} — le statut passera à Service Desk
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 dark:border-gray-800">
+            <button onClick={step === 1 ? onClose : () => setStep(1)} className="btn-ghost text-xs">
+              {step === 1 ? t('common.cancel') : <><i className="ti ti-arrow-left text-xs" /> {t('common.previous')}</>}
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">{t('common.step')} {step}/2</span>
+              {step === 1 ? (
+                <button onClick={() => setStep(2)} disabled={!canSubmit}
+                  className="btn-primary text-xs disabled:opacity-40 disabled:cursor-not-allowed">
+                  {t('common.next')} <i className="ti ti-arrow-right text-xs" />
+                </button>
+              ) : (
+                <button onClick={() => createMut.mutate()} disabled={createMut.isPending}
+                  className="btn-primary text-xs">
+                  {createMut.isPending ? <Spinner size="sm" /> : <><i className="ti ti-send text-xs" /> {t('ticket.submit_to_sd')}</>}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {annotating && lines[annotating.lineIdx]?.photos[annotating.photoIdx] && (
+        <PhotoAnnotator
+          photo={lines[annotating.lineIdx].photos[annotating.photoIdx]}
+          onSave={handleAnnotateSave}
+          onClose={() => setAnnotating(null)}
+        />
+      )}
+    </>
+  )
 }
