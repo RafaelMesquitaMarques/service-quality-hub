@@ -101,7 +101,7 @@ export default function TicketsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-[#161B22] sticky top-0">
               <tr>
-                {['SC#', 'Date réception', 'Problème', 'Ship To', 'Marque', 'Dépt.', 'Statut', 'Coût'].map(h => (
+                {['SC#', t('ticket.reception_date'), t('ticket.issue'), t('ticket.ship_to'), t('ticket.brand'), t('ticket.department'), t('ticket.status'), t('ticket.cost')].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide border-b border-gray-200 dark:border-gray-700/60">{h}</th>
                 ))}
               </tr>
@@ -129,16 +129,16 @@ export default function TicketsPage() {
       {/* ── Pagination ── */}
       {(hasMore || filters.page > 1) && (
         <div className="bg-white dark:bg-[#0D1117] border-t border-gray-200 dark:border-gray-700/60 px-5 py-3 flex justify-between items-center text-sm text-gray-500 dark:text-gray-400">
-          <span>Affichage {start + 1}–{Math.min(start + PAGE_SIZE, total)} / {total}</span>
+          <span>{t('common.showing')} {start + 1}–{Math.min(start + PAGE_SIZE, total)} {t('common.of')} {total}</span>
           <div className="flex gap-2">
             {filters.page > 1 && (
               <button className="btn-ghost" onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}>
-                <i className="ti ti-arrow-left" aria-hidden="true" /> Précédent
+                <i className="ti ti-arrow-left" aria-hidden="true" /{t('common.previous')}
               </button>
             )}
             {hasMore && (
               <button className="btn-ghost" onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}>
-                Suivant <i className="ti ti-arrow-right" aria-hidden="true" />
+                {t('common.next')} <i className="ti ti-arrow-right" aria-hidden="true" />
               </button>
             )}
           </div>
