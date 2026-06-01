@@ -479,7 +479,7 @@ export default function TicketDetail() {
   useEffect(() => {
     if (window.fabric) return
     const script = document.createElement('script')
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.6.0/fabric.min.js'
     document.head.appendChild(script)
   }, [])
 
