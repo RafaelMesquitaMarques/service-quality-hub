@@ -18,6 +18,13 @@ import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
 
+// Preload Fabric.js for photo annotation
+if (!window.fabric) {
+  const s = document.createElement('script')
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+  document.head.appendChild(s)
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
 })
