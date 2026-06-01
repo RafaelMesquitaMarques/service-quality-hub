@@ -193,7 +193,7 @@ export default function Dashboard() {
                 label={{ position: 'top', formatter: v => v > 0.5 ? `${v.toFixed(1)}%` : '', fontSize: 10, fill: '#374151' }}
               >
                 {scPctData.map((entry, i) => (
-                  <Cell key={i} fill={entry.pct > TOLERANCE_PCT * 100 ? '#DC2626' : '#2563EB'} />
+                  <Cell key={i} fill={entry.pct > 0.3 ? '#DC2626' : '#2563EB'} />
                 ))}
               </Bar>
             </BarChart>
