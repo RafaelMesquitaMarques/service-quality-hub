@@ -73,9 +73,26 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
   const [measuring, setMeasuring] = useState(false)
   const [measureVal, setMeasureVal] = useState('')
   const [measureGrp, setMeasureGrp] = useState(null)
+  const [fabricReady, setFabricReady] = useState(!!window.fabric)
+
+  // Ensure Fabric.js is loaded
+  useEffect(() => {
+    if (window.fabric) { setFabricReady(true); return }
+    const s = document.createElement('script')
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+    s.onload = () => setFabricReady(true)
+    s.onerror = () => {
+      // Try jsdelivr as fallback
+      const s2 = document.createElement('script')
+      s2.src = 'https://cdn.jsdelivr.net/npm/fabric@5.3.1/dist/fabric.min.js'
+      s2.onload = () => setFabricReady(true)
+      document.head.appendChild(s2)
+    }
+    document.head.appendChild(s)
+  }, [])
 
   useEffect(() => {
-    if (!window.fabric) return
+    if (!fabricReady || !canvasRef.current) return
     const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 340 })
     fabricRef.current = canvas
 
@@ -106,13 +123,10 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
         reader.onload = e => addImageToCanvas(e.target.result)
         reader.readAsDataURL(blob)
       })
-      .catch(() => {
-        // Final fallback - load directly
-        addImageToCanvas(src)
-      })
+      .catch(() => addImageToCanvas(src))
 
     return () => canvas.dispose()
-  }, [])
+  }, [fabricReady])
 
   useEffect(() => {
     const canvas = fabricRef.current
@@ -173,7 +187,7 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
       })
       canvas.on('mouse:up', () => { shape=null; origin=null })
     }
-  }, [tool, color, thick])
+  }, [tool, color, thick, fabricReady])
 
   const handleSaveMeasure = () => {
     if (!measureVal || !measureGrp || !fabricRef.current) return
