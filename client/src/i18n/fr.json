@@ -1,7 +1,7 @@
 {
   "nav": {
     "dashboard": "Tableau de bord",
-    "tickets": "Tickets",
+    "tickets": "Occurrences",
     "weekly_review": "Revue hebdomadaire",
     "import": "Importer Excel",
     "admin": "Administration"
@@ -20,7 +20,7 @@
     "viewer": "Visualiseur"
   },
   "ticket": {
-    "new": "Nouveau ticket",
+    "new": "Nouvelle occurrence",
     "edit": "Modifier",
     "delete": "Supprimer",
     "id": "ID",
@@ -49,13 +49,13 @@
     "history": "Historique"
   },
   "dashboard": {
-    "open_tickets": "Tickets ouverts",
+    "open_tickets": "Occurrences ouvertes",
     "total_cost": "Coût total (mois)",
     "completion_rate": "Taux de complétion",
     "next_meeting": "Prochaine réunion",
     "by_category": "Par catégorie",
     "by_department": "Coût par département",
-    "recent": "Tickets récents",
+    "recent": "Occurrences récentes",
     "see_all": "Voir tout"
   },
   "import": {
@@ -66,8 +66,8 @@
     "preview": "Aperçu",
     "confirm": "Confirmer l'import",
     "skip_duplicates": "Ignorer les doublons (SC#)",
-    "success": "{{count}} tickets importés",
-    "skipped": "{{count}} ignorés"
+    "success": "{{count}} occurrences importées",
+    "skipped": "{{count}} ignorées"
   },
   "common": {
     "save": "Enregistrer",
