@@ -80,20 +80,44 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
     fabricRef.current = canvas
 
     const src = photo.url || photo.preview
-    const imgEl = new Image()
-    imgEl.onload = () => {
-      const fabricImg = new window.fabric.Image(imgEl)
-      const scale = Math.min(560 / imgEl.width, 1)
-      fabricImg.scale(scale)
-      canvas.setWidth(Math.round(imgEl.width * scale))
-      canvas.setHeight(Math.round(imgEl.height * scale))
-      canvas.add(fabricImg)
-      fabricImg.selectable = false
-      fabricImg.evented = false
-      canvas.sendToBack(fabricImg)
-      canvas.renderAll()
+
+    // Convert image to dataURL via auxiliary canvas to bypass CORS
+    const loadImage = (url) => {
+      return new Promise((resolve) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => {
+          try {
+            const aux = document.createElement('canvas')
+            aux.width  = img.width
+            aux.height = img.height
+            aux.getContext('2d').drawImage(img, 0, 0)
+            resolve(aux.toDataURL('image/jpeg', 0.9))
+          } catch {
+            resolve(url) // fallback to original URL
+          }
+        }
+        img.onerror = () => resolve(url)
+        img.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now()
+      })
     }
-    imgEl.src = src
+
+    loadImage(src).then(dataUrl => {
+      const imgEl = new Image()
+      imgEl.onload = () => {
+        const fabricImg = new window.fabric.Image(imgEl)
+        const scale = Math.min(560 / imgEl.width, 380 / imgEl.height, 1)
+        fabricImg.scale(scale)
+        canvas.setWidth(Math.round(imgEl.width * scale))
+        canvas.setHeight(Math.round(imgEl.height * scale))
+        canvas.add(fabricImg)
+        fabricImg.selectable = false
+        fabricImg.evented = false
+        canvas.sendToBack(fabricImg)
+        canvas.renderAll()
+      }
+      imgEl.src = dataUrl
+    })
 
     return () => canvas.dispose()
   }, [])
