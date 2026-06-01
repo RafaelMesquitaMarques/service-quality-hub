@@ -18,7 +18,7 @@ export default function Layout() {
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
 
-  const handleLogout = async () => { await logout(); navigate('/login') }
+  const handleLogout = async () => { await logout(); window.location.href = '/login' }
   const toggleLang = () => {
     const next = i18n.language === 'fr' ? 'en' : 'fr'
     i18n.changeLanguage(next)
@@ -49,7 +49,7 @@ export default function Layout() {
           <img
             src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
             alt="Quality Hub"
-            style={{ height: 36, width: 'auto', mixBlendMode: 'screen' }}
+            style={{ height: 36, width: 'auto', filter: 'invert(1)' }}
           />
         </div>
 
