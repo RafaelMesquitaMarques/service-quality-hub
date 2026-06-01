@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ticketApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
-import { useTranslation } from 'react-i18next'
 import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
@@ -29,7 +28,6 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric' })
 }
 
-// card section header
 function SectionHeader({ icon, title, right }) {
   return (
     <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
@@ -58,7 +56,6 @@ export default function TicketDetail() {
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
 
-  const { t } = useTranslation()
   const isDark = document.documentElement.classList.contains('dark')
   const SC = isDark ? STATUS_CLR_DARK : STATUS_CLR_LIGHT
 
@@ -85,8 +82,8 @@ export default function TicketDetail() {
 
   const updateMut = useMutation({
     mutationFn: (payload) => ticketApi.update(id, payload),
-    onSuccess: () => { queryClient.invalidateQueries(['ticket', id]); toast.success('Ticket mis à jour') },
-    onError: () => toast.error('Erreur'),
+    onSuccess: () => { queryClient.invalidateQueries(['ticket', id]); toast.success(t('common.save')) },
+    onError: () => toast.error(t('common.error')),
   })
 
   const uploadPhotoMut = useMutation({
@@ -100,7 +97,7 @@ export default function TicketDetail() {
       if (dbErr) throw dbErr
     },
     onSuccess: () => { queryClient.invalidateQueries(['ticket-photos', id]); toast.success('Photo ajoutée') },
-    onError: () => toast.error('Erreur upload'),
+    onError: () => toast.error(t('common.error')),
   })
 
   const deletePhotoMut = useMutation({
@@ -109,11 +106,11 @@ export default function TicketDetail() {
       await supabase.from('ticket_photos').delete().eq('id', photoId)
     },
     onSuccess: () => { queryClient.invalidateQueries(['ticket-photos', id]); toast.success('Photo supprimée') },
-    onError: () => toast.error('Erreur suppression'),
+    onError: () => toast.error(t('common.error')),
   })
 
-  const handleSave        = () => updateMut.mutate({ root_cause: rootCause, corrective_action: corrective })
-  const handleFileUpload  = (e) => Array.from(e.target.files).forEach(file => uploadPhotoMut.mutate(file))
+  const handleSave       = () => updateMut.mutate({ root_cause: rootCause, corrective_action: corrective })
+  const handleFileUpload = (e) => Array.from(e.target.files).forEach(file => uploadPhotoMut.mutate(file))
   const handleDeletePhoto = (photo) => {
     if (window.confirm(t('ticket.delete_photo'))) {
       deletePhotoMut.mutate({ photoId: photo.id, path: photo.path })
@@ -136,11 +133,10 @@ export default function TicketDetail() {
         actions={
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
-              <i className="ti ti-arrow-left" aria-hidden="true" /{t('ticket.back')}
+              <i className="ti ti-arrow-left" aria-hidden="true" /> {t('ticket.back')}
             </button>
             <button className="btn-primary" onClick={handleSave} disabled={updateMut.isPending}>
-              <i className="ti ti-device-floppy" aria-hidden="true" />
-              {updateMut.isPending ? t('common.loading') : t('ticket.save')}
+              <i className="ti ti-device-floppy" aria-hidden="true" /> {updateMut.isPending ? t('common.loading') : t('ticket.save')}
             </button>
           </div>
         }
@@ -151,8 +147,6 @@ export default function TicketDetail() {
 
           {/* ── COL 1 ── */}
           <div className="flex flex-col gap-3">
-
-            {/* Informations */}
             <div className="card">
               <SectionHeader icon="ti-info-circle" title={t('ticket.informations')}
                 right={
@@ -163,23 +157,23 @@ export default function TicketDetail() {
               />
               <div className="px-4 py-2">
                 {[
-                  ['Ship To',        ticket.ship_to],
-                  ['Sold To',        ticket.sold_to],
-                  ['Brand',          ticket.brand],
-                  ['Département',    ticket.department],
-                  ['Catégorie',      ticket.categories],
-                  ['Plant',          ticket.plant],
-                  ['REF SO',         ticket.ref_so],
-                  ['SC#',            ticket.sc_number],
-                  ['Qté affectée',   ticket.affected_qty || ticket.qty_affected],
-                  ['Coût approx.',   ticket.cost_approx ? `$${Number(ticket.cost_approx).toLocaleString()}` : null],
-                  ['Date réception', formatDate(ticket.issue_reception_date)],
-                  ['Date réunion',   formatDate(ticket.meeting_date)],
+                  [t('ticket.ship_to'),      ticket.ship_to],
+                  [t('ticket.sold_to'),      ticket.sold_to],
+                  [t('ticket.brand'),        ticket.brand],
+                  [t('ticket.department'),   ticket.department],
+                  [t('ticket.categories'),   ticket.categories],
+                  [t('ticket.plant'),        ticket.plant],
+                  [t('ticket.ref_so'),       ticket.ref_so],
+                  [t('ticket.sc_number'),    ticket.sc_number],
+                  [t('ticket.affected_qty'), ticket.affected_qty || ticket.qty_affected],
+                  [t('ticket.cost'),         ticket.cost_approx ? `$${Number(ticket.cost_approx).toLocaleString()}` : null],
+                  [t('ticket.reception_date'), formatDate(ticket.issue_reception_date)],
+                  [t('ticket.meeting_date'),   formatDate(ticket.meeting_date)],
                 ].filter(([, v]) => v).map(([label, value]) => (
                   <div key={label} className="flex justify-between items-center py-1.5 border-b border-gray-50 dark:border-gray-800/80 text-xs">
                     <span className="text-gray-400">{label}</span>
-                    <span className={`${label === 'Coût approx.' ? 'text-red-500 font-medium' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {label === 'Département' ? (
+                    <span className={label === t('ticket.cost') ? 'text-red-500 font-medium' : 'text-gray-900 dark:text-gray-100'}>
+                      {label === t('ticket.department') ? (
                         <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{value}</span>
                       ) : value}
                     </span>
@@ -188,17 +182,16 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Statut */}
             <div className="card">
               <SectionHeader icon="ti-circle-check" title={t('ticket.status')} />
               <div className="px-4 py-3 flex gap-2">
                 {STATUS_OPTS.map(s => (
                   <button key={s} onClick={() => updateMut.mutate({ status: s })}
-                    className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border"
+                    className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
                     style={{
-                      border:      ticket.status === s ? '1px solid #2563eb' : '1px solid ' + (isDark ? '#374151' : '#e5e7eb'),
-                      background:  ticket.status === s ? '#2563eb' : (isDark ? '#161B22' : '#fff'),
-                      color:       ticket.status === s ? '#fff' : (isDark ? '#9ca3af' : '#6b7280'),
+                      border:     ticket.status === s ? '1px solid #2563eb' : '1px solid ' + (isDark ? '#374151' : '#e5e7eb'),
+                      background: ticket.status === s ? '#2563eb' : (isDark ? '#161B22' : '#fff'),
+                      color:      ticket.status === s ? '#fff' : (isDark ? '#9ca3af' : '#6b7280'),
                     }}>
                     {STATUS_LBL[s]}
                   </button>
@@ -206,13 +199,12 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Historique */}
             <div className="card">
               <SectionHeader icon="ti-history" title={t('ticket.history')} />
               <div className="px-4 py-2">
                 {[
-                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text:t('ticket.last_modified') },
-                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text:`${t('ticket.created')} · SC# ${ticket.sc_number || '—'}` },
+                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text: t('ticket.last_modified') },
+                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text: `${t('ticket.created')} · SC# ${ticket.sc_number || '—'}` },
                 ].map((h, i) => (
                   <div key={i} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800/80 text-xs">
                     <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: h.dot }} />
@@ -226,8 +218,6 @@ export default function TicketDetail() {
 
           {/* ── COL 2 ── */}
           <div className="flex flex-col gap-3">
-
-            {/* Description */}
             <div className="card">
               <SectionHeader icon="ti-file-description" title={t('ticket.description')} />
               <div className="px-4 py-3">
@@ -237,18 +227,17 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Résolution */}
             <div className="card">
               <SectionHeader icon="ti-tool" title={t('ticket.resolution')} />
               <div className="px-4 py-3 flex flex-col gap-3">
                 <div>
-                  <label className="label">{t('ticket.root_cause')</label>
+                  <label className="label">{t('ticket.root_cause')}</label>
                   <textarea rows={3} value={rootCause} onChange={e => setRootCause(e.target.value)}
                     placeholder={t('ticket.root_cause_placeholder')}
                     className="input resize-y text-xs" />
                 </div>
                 <div>
-                  <label className="label">{t('ticket.corrective_action')</label>
+                  <label className="label">{t('ticket.corrective_action')}</label>
                   <textarea rows={3} value={corrective} onChange={e => setCorrective(e.target.value)}
                     placeholder={t('ticket.corrective_placeholder')}
                     className="input resize-y text-xs" />
@@ -256,12 +245,11 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Photos & Annexes */}
             <div className="card">
               <SectionHeader icon="ti-photo" title={t('ticket.photos')}
                 right={
                   <label className="btn-primary py-1 px-2.5 text-xs cursor-pointer">
-                    <i className="ti ti-plus text-xs" aria-hidden="true" /> Ajouter
+                    <i className="ti ti-plus text-xs" aria-hidden="true" /> {t('common.edit')}
                     <input ref={fileRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple onChange={handleFileUpload} className="hidden" />
                   </label>
                 }
@@ -282,7 +270,7 @@ export default function TicketDetail() {
                             <img src={p.url} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setLightbox(p.url)} />
                             <button onClick={() => handleDeletePhoto(p)}
                               className="absolute top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs border-none cursor-pointer"
-                              style={{ background:'rgba(0,0,0,0.55)' }} title="Supprimer">
+                              style={{ background:'rgba(0,0,0,0.55)' }}>
                               <i className="ti ti-trash" aria-hidden="true" />
                             </button>
                           </div>
@@ -306,12 +294,10 @@ export default function TicketDetail() {
                 )}
               </div>
             </div>
-
           </div>
         </div>
       </div>
 
-      {/* Lightbox */}
       {lightbox && (
         <div onClick={() => setLightbox(null)}
           className="fixed inset-0 flex items-center justify-center z-[2000] cursor-zoom-out p-5"
