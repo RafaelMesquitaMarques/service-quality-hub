@@ -542,7 +542,10 @@ export default function TicketModal({ onClose }) {
       toast.success('Occurrence soumise au Service Desk')
       onClose()
     },
-    onError: (e) => toast.error(e.message || t('common.error')),
+    onError: (e) => {
+      console.error('CREATE OCCURRENCE ERROR:', e)
+      toast.error(e.message || t('common.error'))
+    },
   })
 
   const canSubmit = form.issue_reception_date && lines.some(l => l.quality_issue)
