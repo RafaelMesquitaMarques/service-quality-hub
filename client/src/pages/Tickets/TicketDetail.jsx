@@ -81,28 +81,7 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
 
     const src = photo.url || photo.preview
 
-    // Convert image to dataURL via auxiliary canvas to bypass CORS
-    const loadImage = (url) => {
-      return new Promise((resolve) => {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => {
-          try {
-            const aux = document.createElement('canvas')
-            aux.width  = img.width
-            aux.height = img.height
-            aux.getContext('2d').drawImage(img, 0, 0)
-            resolve(aux.toDataURL('image/jpeg', 0.9))
-          } catch {
-            resolve(url) // fallback to original URL
-          }
-        }
-        img.onerror = () => resolve(url)
-        img.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now()
-      })
-    }
-
-    loadImage(src).then(dataUrl => {
+    const addImageToCanvas = (dataUrl) => {
       const imgEl = new Image()
       imgEl.onload = () => {
         const fabricImg = new window.fabric.Image(imgEl)
@@ -117,7 +96,20 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
         canvas.renderAll()
       }
       imgEl.src = dataUrl
-    })
+    }
+
+    // Download via fetch with blob to avoid CORS
+    fetch(src)
+      .then(r => r.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onload = e => addImageToCanvas(e.target.result)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => {
+        // Final fallback - load directly
+        addImageToCanvas(src)
+      })
 
     return () => canvas.dispose()
   }, [])
