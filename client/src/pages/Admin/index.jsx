@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '../../services/api'
 import { PageHeader, Spinner } from '../../components/ui'
@@ -34,6 +35,7 @@ export default function AdminPage() {
   const [showModal, setShowModal] = useState(false)
   const [editUser,  setEditUser]  = useState(null)
 
+  const { t } = useTranslation()
   const isDark = document.documentElement.classList.contains('dark')
 
   const { data: users, isLoading } = useQuery({
@@ -63,11 +65,11 @@ export default function AdminPage() {
   return (
     <>
       <PageHeader
-        title="Administration"
-        subtitle={stats ? `${stats.totalUsers || 0} utilisateurs · ${stats.totalTickets || 0} tickets` : ''}
+        title={t('admin.title')}
+        subtitle={stats ? `${stats.totalUsers || 0} ${t('admin.users')} · ${stats.totalTickets || 0} tickets` : ''}
         actions={
           <button className="btn-primary" onClick={() => { setEditUser(null); setShowModal(true) }}>
-            <i className="ti ti-user-plus" aria-hidden="true" /> Nouvel utilisateur
+            <i className="ti ti-user-plus" aria-hidden="true" /> {t('admin.new_user')}
           </button>
         }
       />
@@ -80,7 +82,7 @@ export default function AdminPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 dark:bg-[#161B22] border-b border-gray-200 dark:border-gray-700">
-                  {['Utilisateur','Role','Département','Usine','Statut','Actions'].map(h => (
+                  {[t('admin.user_col'),t('admin.role_col'),t('admin.dept_col'),t('admin.plant_col'),t('admin.status_col'),t('admin.actions_col')].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -139,10 +141,10 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button onClick={() => handleEdit(user)} className="btn-ghost text-xs py-1 px-2.5">
-                            <i className="ti ti-edit text-sm" aria-hidden="true" /> Modifier
+                            <i className="ti ti-edit text-sm" aria-hidden="true" /{t('admin.edit')}
                           </button>
                           <button
-                            onClick={() => { if (window.confirm('Désactiver ' + user.full_name + ' ?')) deleteMutation.mutate(user.id) }}
+                            onClick={() => { if (window.confirm(t('admin.deactivate_confirm') + ' ' + user.full_name + ' ?')) deleteMutation.mutate(user.id) }}
                             className="text-xs py-1 px-2.5 rounded-lg border cursor-pointer inline-flex items-center"
                             style={{ border: '1px solid ' + (isDark ? '#7f1d1d' : '#fecaca'), background: isDark ? '#1f0a0a' : '#fff5f5', color: '#ef4444' }}>
                             <i className="ti ti-trash text-sm" aria-hidden="true" />
@@ -153,7 +155,7 @@ export default function AdminPage() {
                   )
                 })}
                 {(users || []).length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Aucun utilisateur</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400"{t('admin.no_users')}</td></tr>
                 )}
               </tbody>
             </table>
