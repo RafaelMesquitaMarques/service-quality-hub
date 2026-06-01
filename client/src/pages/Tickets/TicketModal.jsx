@@ -37,7 +37,7 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
   // Load fabric + init canvas
   useEffect(() => {
     const init = () => {
-      if (!canvasRef.current) return
+      if (!canvasRef.current || !window.fabric) return
       const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 380 })
       fabricRef.current = canvas
       window.fabric.Image.fromURL(photoUrl, (img) => {
@@ -56,10 +56,21 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
     if (window.fabric) {
       init()
     } else {
-      const s = document.createElement('script')
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.6.0/fabric.min.js'
-      s.onload = init
-      document.head.appendChild(s)
+      // Try cdnjs first, fallback to jsdelivr
+      const urls = [
+        'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
+        'https://cdn.jsdelivr.net/npm/fabric@5.3.1/dist/fabric.min.js',
+      ]
+      let tried = 0
+      const tryLoad = () => {
+        if (tried >= urls.length) { setReady(false); return }
+        const s = document.createElement('script')
+        s.src = urls[tried++]
+        s.onload = init
+        s.onerror = tryLoad
+        document.head.appendChild(s)
+      }
+      tryLoad()
     }
     return () => { if (fabricRef.current) fabricRef.current.dispose() }
   }, [photoUrl])
@@ -253,14 +264,16 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
   const fileInputRef = useRef(null)
   const [annotating, setAnnotating] = useState(null) // photo index being annotated
 
-  const handleFiles = (files) => {
-    const newPhotos = Array.from(files).map(f => ({
+  const handleFiles = async (files) => {
+    const newPhotos = await Promise.all(Array.from(files).map(async f => ({
       file: f,
+      buffer: await f.arrayBuffer(),
+      type: f.type || 'image/jpeg',
       name: f.name,
       preview: URL.createObjectURL(f),
       dataUrl: null,
       annotated: false,
-    }))
+    })))
     onChange(idx, '_addPhotos', newPhotos)
   }
 
@@ -454,11 +467,13 @@ export default function TicketModal({ onClose }) {
         const lineId = createdLines?.[li]?.id || null
         for (const photo of linePhotos) {
           try {
-            // Get blob: annotated uses dataUrl, otherwise use file
+            // Get blob: annotated uses dataUrl, otherwise use stored buffer
             let blob
             if (photo.annotated && photo.dataUrl) {
               const res = await fetch(photo.dataUrl)
               blob = await res.blob()
+            } else if (photo.buffer) {
+              blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' })
             } else if (photo.file) {
               blob = photo.file
             } else continue
