@@ -57,7 +57,7 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
       init()
     } else {
       const s = document.createElement('script')
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.6.0/fabric.min.js'
       s.onload = init
       document.head.appendChild(s)
     }
