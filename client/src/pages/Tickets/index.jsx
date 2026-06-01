@@ -82,6 +82,8 @@ export default function TicketsPage() {
   const [fDept,   setFDept]     = useState(new Set())
   const [fPlant,  setFPlant]    = useState(new Set())
   const [fShipTo, setFShipTo]   = useState(new Set())
+  const [fSC,     setFSC]       = useState(new Set())
+  const [fDate,   setFDate]     = useState(new Set())
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
@@ -134,6 +136,8 @@ export default function TicketsPage() {
     if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department))
     if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
     if (fShipTo.size > 0) result = result.filter(tk => fShipTo.has(tk.ship_to))
+    if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
+    if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
 
     return result
   }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo])
@@ -147,13 +151,14 @@ export default function TicketsPage() {
   const hasMore = start + PAGE_SIZE < filtered.length
 
   // Reset page when filters change
-  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fiscalYear])
+  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fiscalYear])
 
-  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size
+  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size || fSC.size || fDate.size
 
   const clearAll = () => {
     setSearch(''); setFStatus(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFShipTo(new Set())
+    setFSC(new Set()); setFDate(new Set())
   }
 
   const handleExport = () => {
@@ -224,17 +229,15 @@ export default function TicketsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-[#161B22] sticky top-0 z-10">
               <tr>
-                {/* Simple columns */}
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">SC#</span>
+                  <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={setFSC} onClear={() => setFSC(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.reception_date')}</span>
+                  <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={setFDate} onClear={() => setFDate(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.issue')}</span>
                 </th>
-                {/* Filterable columns */}
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label="Ship To" values={uniq('ship_to')} selected={fShipTo} onChange={setFShipTo} onClear={() => setFShipTo(new Set())} />
                 </th>
@@ -245,7 +248,7 @@ export default function TicketsPage() {
                   <ColumnFilter label={t('ticket.department')} values={uniq('department')} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.status')} values={uniq('status').map(s => s)} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())} />
+                  <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.cost')}</span>
