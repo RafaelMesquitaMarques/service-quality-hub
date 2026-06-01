@@ -248,15 +248,20 @@ export default function MeetingsPage() {
       if (e2) throw e2
       const { error: e3 } = await supabase.from('meetings').delete().eq('id', id)
       if (e3) throw e3
+      return id
     },
-    onSuccess: () => {
-      queryClient.removeQueries(['meetings-v2'])
-      queryClient.invalidateQueries(['meetings-v2'])
-      setSelId(null)
-      setNotes('')
+    onSuccess: (deletedId) => {
+      // Update cache directly without refetch
+      queryClient.setQueryData(['meetings-v2'], (old) =>
+        (old || []).filter(m => m.id !== deletedId)
+      )
+      if (selId === deletedId) {
+        setSelId(null)
+        setNotes('')
+      }
       toast.success(t('meeting.deleted'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (e) => toast.error(e.message || t('common.error')),
   })
 
   const createMeetingMut = useMutation({
