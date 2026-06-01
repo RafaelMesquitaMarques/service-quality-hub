@@ -240,6 +240,22 @@ export default function MeetingsPage() {
     onSuccess: () => queryClient.invalidateQueries(['meeting-tickets', selId]),
   })
 
+  const deleteMeetingMut = useMutation({
+    mutationFn: async (id) => {
+      await supabase.from('meeting_actions').delete().eq('meeting_id', id)
+      await supabase.from('meeting_tickets').delete().eq('meeting_id', id)
+      const { error } = await supabase.from('meetings').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['meetings-v2'])
+      setSelId(null)
+      setNotes('')
+      toast.success(t('meeting.deleted'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
   const createMeetingMut = useMutation({
     mutationFn: async () => {
       if (!newMeetingDate) throw new Error(t('meeting.meeting_date'))
@@ -279,14 +295,25 @@ export default function MeetingsPage() {
           {loadingMeetings ? (
             <div className="flex justify-center p-4"><Spinner /></div>
           ) : (meetings || []).map(m => (
-            <div key={m.id} onClick={() => { setSelId(m.id); setNotes(m.notes || '') }}
-              className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors"
+            <div key={m.id}
+              className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 cursor-pointer transition-colors group relative"
               style={{
                 background: selId === m.id ? (isDark ? '#1e3a5f' : '#eff6ff') : 'transparent',
                 borderLeft: selId === m.id ? '3px solid #2563eb' : '3px solid transparent',
-              }}>
+              }}
+              onClick={() => { setSelId(m.id); setNotes(m.notes || '') }}>
               <div className="text-xs font-medium text-gray-900 dark:text-gray-100">{weekLabel(m.meeting_date)}</div>
               <div className="text-xs text-gray-400 mt-0.5">{formatDate(m.meeting_date)}</div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (window.confirm(t('meeting.delete_confirm') + ' ' + weekLabel(m.meeting_date) + ' ?'))
+                    deleteMeetingMut.mutate(m.id)
+                }}
+                className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 bg-transparent border-0 cursor-pointer"
+                title={t('common.delete')}>
+                <i className="ti ti-trash text-xs" aria-hidden="true" />
+              </button>
             </div>
           ))}
           {(meetings || []).length === 0 && !loadingMeetings && (
