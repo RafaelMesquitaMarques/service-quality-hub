@@ -141,7 +141,7 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           <button onClick={() => handleEdit(user)} className="btn-ghost text-xs py-1 px-2.5">
-                            <i className="ti ti-edit text-sm" aria-hidden="true" /{t('admin.edit')}
+                            <i className="ti ti-edit text-sm" aria-hidden="true" /> {t('admin.edit')}
                           </button>
                           <button
                             onClick={() => { if (window.confirm(t('admin.deactivate_confirm') + ' ' + user.full_name + ' ?')) deleteMutation.mutate(user.id) }}
