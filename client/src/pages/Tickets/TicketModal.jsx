@@ -457,7 +457,7 @@ export default function TicketModal({ onClose }) {
     setLines(ls => ls.map((l, i) => {
       if (i !== lineIdx) return l
       const newPhotos = [...l.photos]
-      newPhotos[photoIdx] = { ...newPhotos[photoIdx], preview: dataUrl, annotated: true }
+      newPhotos[photoIdx] = { ...newPhotos[photoIdx], preview: dataUrl, dataUrl, annotated: true }
       return { ...l, photos: newPhotos }
     }))
     setAnnotating(null)
@@ -474,26 +474,29 @@ export default function TicketModal({ onClose }) {
   const createMut = useMutation({
     mutationFn: async () => {
       const dateYYYYMM = form.issue_reception_date?.slice(0, 7)
+
+      // Step 1: Create ticket
       const { data: occ, error: occErr } = await supabase.from('tickets').insert({
         issue_reception_date: form.issue_reception_date,
         date_yyyy_mm:  dateYYYYMM,
         fiscal_year:   getFiscalYear(dateYYYYMM),
         fiscal_month:  getFiscalMonth(dateYYYYMM),
-        brand:         form.brand    || null,
-        ship_to:       form.ship_to  || null,
-        sold_to:       form.sold_to  || null,
-        ref_so:        form.ref_so   || null,
+        brand:         form.brand     || null,
+        ship_to:       form.ship_to   || null,
+        sold_to:       form.sold_to   || null,
+        ref_so:        form.ref_so    || null,
         sc_number:     form.sc_number || null,
         status:        'service_desk',
         quality_issue: lines[0]?.quality_issue || null,
-        plant:         lines[0]?.plant || null,
-        categories:    lines[0]?.categories || null,
-        affected_qty:  lines[0]?.affected_qty ? Number(lines[0].affected_qty) : null,
-        department:    lines[0]?.department || null,
-        cost_approx:   lines[0]?.cost_approx ? Number(lines[0].cost_approx) : null,
+        plant:         lines[0]?.plant         || null,
+        categories:    lines[0]?.categories    || null,
+        affected_qty:  lines[0]?.affected_qty  ? Number(lines[0].affected_qty) : null,
+        department:    lines[0]?.department    || null,
+        cost_approx:   lines[0]?.cost_approx   ? Number(lines[0].cost_approx)  : null,
       }).select().single()
       if (occErr) throw occErr
 
+      // Step 2: Create lines
       const linesData = lines.map((l, i) => ({
         occurrence_id: occ.id,
         quality_issue: l.quality_issue || null,
@@ -503,43 +506,17 @@ export default function TicketModal({ onClose }) {
         foliot_id:     l.foliot_id     || null,
         plant:         l.plant         || null,
         affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
-        cost_approx:   l.cost_approx   ? Number(l.cost_approx) : null,
+        cost_approx:   l.cost_approx   ? Number(l.cost_approx)  : null,
         sort_order:    i,
       }))
       const { error: linesErr } = await supabase.from('occurrence_lines').insert(linesData)
       if (linesErr) throw linesErr
 
-      // Upload photos
-      for (let li = 0; li < lines.length; li++) {
-        const lineData = lines[li]
-        if (!lineData.photos || lineData.photos.length === 0) continue
-        const { data: lineRows } = await supabase.from('occurrence_lines')
-          .select('id').eq('occurrence_id', occ.id).eq('sort_order', li).single()
-        const lineId = lineRows?.id
-        for (const photo of lineData.photos) {
-          if (!photo.file && !photo.annotated) continue
-          let blob
-          if (photo.annotated && photo.preview) {
-            const res = await fetch(photo.preview)
-            blob = await res.blob()
-          } else {
-            blob = photo.file
-          }
-          const ext = photo.name?.split('.').pop() || 'jpg'
-          const path = `tickets/${occ.id}/${Date.now()}_${li}.${ext}`
-          const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob)
-          if (upErr) continue
-          const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-          await supabase.from('ticket_photos').insert({
-            ticket_id: occ.id, url: urlData.publicUrl, name: photo.name, path, line_id: lineId || null,
-          })
-        }
-      }
       return occ
     },
-    onSuccess: () => {
+    onSuccess: (occ) => {
       queryClient.invalidateQueries(['tickets'])
-      toast.success('Occurrence soumise au Service Desk')
+      toast.success('Occurrence créée — ajoutez les photos dans le détail')
       onClose()
     },
     onError: (e) => {
