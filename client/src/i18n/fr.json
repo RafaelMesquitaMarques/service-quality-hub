@@ -123,7 +123,9 @@
     "action_todo": "À faire",
     "action_in_progress": "En cours",
     "action_done": "Complété",
-    "action_late": "En retard"
+    "action_late": "En retard",
+    "deleted": "Réunion supprimée",
+    "delete_confirm": "Supprimer la réunion"
   },
   "admin": {
     "title": "Administration",
