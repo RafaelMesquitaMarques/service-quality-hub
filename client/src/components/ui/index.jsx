@@ -25,10 +25,9 @@ export function KpiCard({ label, value, sub, subColor = 'text-gray-400', icon, i
         )}
         {trend && (
           <span style={{
-            fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 20,
-            background: trend.positive ? '#14532d33' : '#7f1d1d33',
-            color:      trend.positive ? '#4ade80'   : '#f87171',
-            border: `1px solid ${trend.positive ? '#166534' : '#991b1b'}`,
+            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+            background: trend.positive ? '#16a34a' : '#dc2626',
+            color: '#ffffff',
           }}>
             {trend.label}
           </span>
