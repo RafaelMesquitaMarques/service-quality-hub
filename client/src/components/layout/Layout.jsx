@@ -49,7 +49,7 @@ export default function Layout() {
           <img
             src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
             alt="Quality Hub"
-            style={{ height: 36, width: 'auto', filter: 'invert(1)' }}
+            style={{ height: 36, width: 'auto', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
           />
         </div>
 
