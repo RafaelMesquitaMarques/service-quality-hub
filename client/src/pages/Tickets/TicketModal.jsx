@@ -40,18 +40,41 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
       if (!canvasRef.current || !window.fabric) return
       const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 380 })
       fabricRef.current = canvas
-      window.fabric.Image.fromURL(photoUrl, (img) => {
-        const scale = Math.min(560 / img.width, 380 / img.height, 1)
-        img.scale(scale)
-        canvas.setWidth(img.getScaledWidth())
-        canvas.setHeight(img.getScaledHeight())
-        canvas.add(img)
-        img.selectable = false
-        img.evented = false
-        canvas.sendToBack(img)
+
+      const imgEl = new Image()
+      imgEl.crossOrigin = 'anonymous'
+      imgEl.onload = () => {
+        const fabricImg = new window.fabric.Image(imgEl)
+        const scale = Math.min(560 / imgEl.width, 380 / imgEl.height, 1)
+        fabricImg.scale(scale)
+        canvas.setWidth(Math.round(imgEl.width * scale))
+        canvas.setHeight(Math.round(imgEl.height * scale))
+        canvas.add(fabricImg)
+        fabricImg.selectable = false
+        fabricImg.evented = false
+        canvas.sendToBack(fabricImg)
         canvas.renderAll()
         setReady(true)
-      })
+      }
+      imgEl.onerror = () => {
+        // If crossOrigin fails, try without it
+        const imgEl2 = new Image()
+        imgEl2.onload = () => {
+          const fabricImg = new window.fabric.Image(imgEl2)
+          const scale = Math.min(560 / imgEl2.width, 380 / imgEl2.height, 1)
+          fabricImg.scale(scale)
+          canvas.setWidth(Math.round(imgEl2.width * scale))
+          canvas.setHeight(Math.round(imgEl2.height * scale))
+          canvas.add(fabricImg)
+          fabricImg.selectable = false
+          fabricImg.evented = false
+          canvas.sendToBack(fabricImg)
+          canvas.renderAll()
+          setReady(true)
+        }
+        imgEl2.src = photoUrl
+      }
+      imgEl.src = photoUrl
     }
     if (window.fabric) {
       init()
@@ -470,8 +493,14 @@ export default function TicketModal({ onClose }) {
             // Get blob: annotated uses dataUrl, otherwise use stored buffer
             let blob
             if (photo.annotated && photo.dataUrl) {
-              const res = await fetch(photo.dataUrl)
-              blob = await res.blob()
+              // Convert dataUrl to blob without fetch
+              const arr = photo.dataUrl.split(',')
+              const mime = arr[0].match(/:(.*?);/)[1]
+              const bstr = atob(arr[1])
+              let n = bstr.length
+              const u8arr = new Uint8Array(n)
+              while (n--) u8arr[n] = bstr.charCodeAt(n)
+              blob = new Blob([u8arr], { type: mime })
             } else if (photo.buffer) {
               blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' })
             } else if (photo.file) {
