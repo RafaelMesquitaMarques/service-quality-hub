@@ -15,7 +15,6 @@ export default function PlantsPage() {
   const queryClient = useQueryClient()
   const [showModal, setShowModal] = useState(false)
   const [editPlant, setEditPlant] = useState(null)
-
   const { t } = useTranslation()
   const isDark = document.documentElement.classList.contains('dark')
 
@@ -71,7 +70,7 @@ export default function PlantsPage() {
         subtitle={`${(plants || []).length} ${t('plants.title').toLowerCase()} · ${active} ${t('plants.subtitle_active')}`}
         actions={
           <button className="btn-primary" onClick={() => { setEditPlant(null); setShowModal(true) }}>
-            <i className="ti ti-plus" aria-hidden="true" /{t('plants.new')}
+            <i className="ti ti-plus" aria-hidden="true" /> {t('plants.new')}
           </button>
         }
       />
@@ -84,7 +83,7 @@ export default function PlantsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 dark:bg-[#161B22] border-b border-gray-200 dark:border-gray-700">
-                  {[t('plants.name_col'),t('plants.country_col'),t('plants.city_col'),t('plants.contact_col'),t('plants.status_col'),t('plants.actions_col')].map(h => (
+                  {[t('plants.name_col'), t('plants.country_col'), t('plants.city_col'), t('plants.contact_col'), t('plants.status_col'), t('plants.actions_col')].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -111,13 +110,13 @@ export default function PlantsPage() {
                           background: plant.active ? (isDark ? '#14532d' : '#f0fdf4') : (isDark ? '#1f2937' : '#f3f4f6'),
                           color:      plant.active ? (isDark ? '#86efac' : '#166634') : (isDark ? '#9ca3af' : '#6b7280'),
                         }}>
-                        {plant.active ? 'Actif' : 'Inactif'}
+                        {plant.active ? t('plants.active') : t('plants.inactive')}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(plant)} className="btn-ghost text-xs py-1 px-2.5">
-                          <i className="ti ti-edit text-sm" aria-hidden="true" /{t('plants.edit')}
+                          <i className="ti ti-edit text-sm" aria-hidden="true" /> {t('plants.edit')}
                         </button>
                         <button
                           onClick={() => toggleMutation.mutate({ id: plant.id, active: !plant.active })}
@@ -140,7 +139,7 @@ export default function PlantsPage() {
                   </tr>
                 ))}
                 {(plants || []).length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400"{t('plants.no_plants')}</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">{t('plants.no_plants')}</td></tr>
                 )}
               </tbody>
             </table>
