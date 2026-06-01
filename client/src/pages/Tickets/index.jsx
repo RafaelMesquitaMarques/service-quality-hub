@@ -133,7 +133,7 @@ export default function TicketsPage() {
           <div className="flex gap-2">
             {filters.page > 1 && (
               <button className="btn-ghost" onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}>
-                <i className="ti ti-arrow-left" aria-hidden="true" /{t('common.previous')}
+                <i className="ti ti-arrow-left" aria-hidden="true" /> {t('common.previous')}
               </button>
             )}
             {hasMore && (
