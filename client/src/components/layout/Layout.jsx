@@ -40,9 +40,11 @@ export default function Layout() {
         ] : []),
   ]
 
+  const navBg = dark ? '#0D1117' : '#1A3A5C'
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <nav className="w-52 flex-shrink-0 flex flex-col" style={{ background: '#1A3A5C' }}>
+      <nav className="w-52 flex-shrink-0 flex flex-col transition-colors" style={{ background: navBg }}>
         <div className="px-4 py-4 border-b border-white/10">
           <div className="text-white font-semibold text-sm tracking-wide">Service Quality Hub</div>
           <div className="text-white/40 text-xs mt-0.5 uppercase tracking-widest">Foliot</div>
@@ -55,8 +57,8 @@ export default function Layout() {
               className={({ isActive }) =>
                 `flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 ${
                   isActive
-                    ? 'text-white bg-white/12 border-amber-400'
-                    : 'text-white/60 border-transparent hover:text-white hover:bg-white/7'
+                    ? 'text-white bg-white/10 border-amber-400'
+                    : 'text-white/60 border-transparent hover:text-white hover:bg-white/5'
                 }`
               }
             >
@@ -76,8 +78,8 @@ export default function Layout() {
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 ${
                       isActive
-                        ? 'text-white bg-white/12 border-amber-400'
-                        : 'text-white/60 border-transparent hover:text-white hover:bg-white/7'
+                        ? 'text-white bg-white/10 border-amber-400'
+                        : 'text-white/60 border-transparent hover:text-white hover:bg-white/5'
                     }`
                   }
                 >
@@ -102,13 +104,9 @@ export default function Layout() {
             </div>
           </div>
           <div className="flex gap-2 mt-1">
-            <button
-              onClick={toggleLang}
-              className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left"
-            >
+            <button onClick={toggleLang} className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left">
               {i18n.language === 'fr' ? 'EN →' : 'FR →'}
             </button>
-            {/* ── Dark mode toggle ── */}
             <button
               onClick={toggle}
               title={dark ? 'Light mode' : 'Dark mode'}
@@ -116,17 +114,14 @@ export default function Layout() {
             >
               <i className={`ti ${dark ? 'ti-sun' : 'ti-moon'} text-sm`} aria-hidden="true" />
             </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
-            >
+            <button onClick={handleLogout} className="text-xs text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded">
               Logout
             </button>
           </div>
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col overflow-hidden dark:bg-gray-950">
+      <main className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0D1117] transition-colors">
         <Outlet />
       </main>
     </div>
