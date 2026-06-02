@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { ticketApi, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { usePermissions } from '../../hooks/usePermissions'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
 import TicketModal from './TicketModal'
 import toast from 'react-hot-toast'
@@ -72,11 +73,13 @@ function ColumnFilter({ label, values, selected, onChange, onClear }) {
 export default function TicketsPage() {
   const { t }    = useTranslation()
   const navigate = useNavigate()
+  const qc       = useQueryClient()
+  const { isManager } = usePermissions()
+
   const [showModal, setShowModal] = useState(false)
   const [fiscalYear, setFiscalYear] = useState(CURRENT_FISCAL_YEAR)
   const [search,     setSearch]     = useState('')
 
-  // Per-column filters (Excel style) — Set of selected values
   const [fStatus, setFStatus]   = useState(new Set())
   const [fBrand,  setFBrand]    = useState(new Set())
   const [fDept,   setFDept]     = useState(new Set())
@@ -93,7 +96,6 @@ export default function TicketsPage() {
 
   const allTickets = data?.tickets || []
 
-  // Fetch costs from occurrence_lines
   const { data: lineCosts } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id).join(',')],
     queryFn: async () => {
@@ -116,11 +118,30 @@ export default function TicketsPage() {
     return ticket.cost_approx ? Number(ticket.cost_approx) : null
   }
 
-  // Apply search + column filters
+  // ── Delete mutation ──────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: async (ticketId) => {
+      // Apagar em cascade: fotos → linhas → ticket
+      await supabase.from('ticket_photos').delete().eq('ticket_id', ticketId)
+      await supabase.from('occurrence_lines').delete().eq('occurrence_id', ticketId)
+      const { error } = await supabase.from('tickets').delete().eq('id', ticketId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success(t('ticket.deleted') || 'Occurrence supprimée')
+      qc.invalidateQueries(['tickets'])
+    },
+    onError: () => toast.error(t('common.error') || 'Erreur'),
+  })
+
+  const handleDelete = (e, ticket) => {
+    e.stopPropagation() // éviter navigation vers le détail
+    const msg = `Supprimer l'occurrence SC# ${ticket.sc_number || ticket.id} ?\n\nCette action est irréversible.`
+    if (window.confirm(msg)) deleteMutation.mutate(ticket.id)
+  }
+
   const filtered = useMemo(() => {
     let result = allTickets
-
-    // Global search — all columns
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(tk =>
@@ -129,8 +150,6 @@ export default function TicketsPage() {
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
-
-    // Column filters
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
     if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department))
@@ -138,11 +157,9 @@ export default function TicketsPage() {
     if (fShipTo.size > 0) result = result.filter(tk => fShipTo.has(tk.ship_to))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
-
     return result
-  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo])
+  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate])
 
-  // Unique values per column (from full dataset)
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
 
   const [page, setPage] = useState(1)
@@ -150,7 +167,6 @@ export default function TicketsPage() {
   const tickets = filtered.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < filtered.length
 
-  // Reset page when filters change
   useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fiscalYear])
 
   const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size || fSC.size || fDate.size
@@ -188,7 +204,7 @@ export default function TicketsPage() {
         }
       />
 
-      {/* ── Top bar: search + FY ── */}
+      {/* ── Top bar ── */}
       <div className="bg-white dark:bg-[#0D1117] border-b border-gray-200 dark:border-gray-700/60 px-5 py-3 flex flex-wrap gap-2 items-center">
         <div className="flex items-center gap-2 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 bg-white dark:bg-[#161B22] flex-1 min-w-56">
           <i className="ti ti-search text-gray-400 text-base" aria-hidden="true" />
@@ -253,14 +269,19 @@ export default function TicketsPage() {
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.cost')}</span>
                 </th>
+                {/* Coluna de acções — só visível para admin/manager */}
+                {isManager && (
+                  <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-12" />
+                )}
               </tr>
             </thead>
             <tbody>
               {tickets.map(ticket => {
                 const cost = getCost(ticket)
+                const isDeleting = deleteMutation.isLoading && deleteMutation.variables === ticket.id
                 return (
                   <tr key={ticket.id}
-                    className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                    className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group"
                     onClick={() => navigate(`/tickets/${ticket.id}`)}>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
@@ -276,6 +297,23 @@ export default function TicketsPage() {
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
                       {cost ? `$${Math.round(cost).toLocaleString()}` : '—'}
                     </td>
+                    {/* Botão apagar — só admin/manager */}
+                    {isManager && (
+                      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleDelete(e, ticket)}
+                          disabled={isDeleting}
+                          title="Supprimer l'occurrence"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs py-1 px-2 rounded border cursor-pointer inline-flex items-center"
+                          style={{ border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
+                        >
+                          {isDeleting
+                            ? <i className="ti ti-loader-2 text-sm animate-spin" />
+                            : <i className="ti ti-trash text-sm" />
+                          }
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
