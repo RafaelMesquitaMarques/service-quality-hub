@@ -46,7 +46,7 @@ export default function Layout() {
   const isMobile = window.innerWidth < 768
 
 return (
-  <div className="flex h-screen overflow-hidden">
+  <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
     <nav className={`${isMobile ? 'hidden' : 'w-52'} flex-shrink-0 flex flex-col transition-colors`} style={{ background: navBg }}>
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-center">
           <img
@@ -127,7 +127,7 @@ return (
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0D1117] transition-colors">
+      <main className={`flex-1 flex flex-col ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'} bg-gray-50 dark:bg-[#0D1117] transition-colors`}>
         <Outlet />
       </main>
 
