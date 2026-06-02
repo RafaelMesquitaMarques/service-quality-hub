@@ -449,7 +449,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               [t('ticket.cost'), line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
               [t('ticket.cost_final'), line.cost_final ? `$${Number(line.cost_final).toLocaleString()}` : null],
             ].filter(([,v]) => v).map(([label, val]) => (
-              <div key={label} className="flex justify-between border-b border-gray-200 dark:border-gray-700 py-1 px-2 even:bg-gray-50 dark:even:bg-gray-800/50 rounded">
+              <div key={label} className="flex justify-between py-1.5 px-2 odd:bg-white dark:odd:bg-gray-900 even:bg-gray-100 dark:even:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
                 <span className="text-gray-400">{label}</span>
                 <span className={`text-gray-900 dark:text-gray-100 ${label === t('ticket.cost_final') ? 'text-red-500 font-medium' : ''}`}>{val}</span>
               </div>
