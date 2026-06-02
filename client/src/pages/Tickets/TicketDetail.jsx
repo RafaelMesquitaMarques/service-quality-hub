@@ -305,6 +305,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   const saveAnnotationMut = useMutation({
     mutationFn: async ({ photoId, path, dataUrl }) => {
+  console.log('Saving annotation:', { photoId, path })
       // Convert dataUrl to blob
       const arr  = dataUrl.split(',')
       const mime = arr[0].match(/:(.*?);/)[1]
