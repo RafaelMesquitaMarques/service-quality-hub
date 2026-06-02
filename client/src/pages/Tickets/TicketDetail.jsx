@@ -1,665 +1,941 @@
-// src/pages/Tickets/TicketDetail.jsx
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
-import { supabase } from '../../services/supabase';
-import { usePermissions } from '../../hooks/usePermissions';
-import {
-  ArrowLeft, CheckCircle, ChevronLeft, ChevronRight,
-  Plus, Save, Lock, Edit2
-} from 'lucide-react';
+import { useState, useRef, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { ticketApi } from '../../services/api'
+import { supabase } from '../../services/supabase'
+import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
+import { usePermissions } from '../../hooks/usePermissions'
+import toast from 'react-hot-toast'
 
-// ─── Status pipeline ───────────────────────────────────────────────────────
-const STATUS_FLOW = ['not_started', 'service_desk', 'quality_meeting', 'completed'];
-const TERMINAL = ['completed', 'cancelled'];
+const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
+const STATUS_LBL  = {
+  not_started:     'Not started',
+  service_desk:    'Service Desk',
+  quality_meeting: 'Quality Meeting',
+  completed:       'Completed',
+  cancelled:       'Cancelled',
+}
+const STATUS_CLR_LIGHT = {
+  not_started:     { bg:'#f3f4f6', color:'#6b7280' },
+  service_desk:    { bg:'#E6F1FB', color:'#0C447C' },
+  quality_meeting: { bg:'#FAEEDA', color:'#633806' },
+  completed:       { bg:'#eaf3de', color:'#27500a' },
+  cancelled:       { bg:'#fcebeb', color:'#791f1f' },
+}
+const STATUS_CLR_DARK = {
+  not_started:     { bg:'#1f2937', color:'#9ca3af' },
+  service_desk:    { bg:'#1e3a5f', color:'#93c5fd' },
+  quality_meeting: { bg:'#3b2a00', color:'#fcd34d' },
+  completed:       { bg:'#14532d', color:'#86efac' },
+  cancelled:       { bg:'#4a1b0c', color:'#fca5a5' },
+}
+const DEPARTMENTS = [
+  'Client','Shipping','Supplier','Production','Logistics','Install',
+  'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
+  'Project Mgnt','EOI','Vietnam','Planning',
+]
+const CATEGORIES = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
+const COLORS  = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
+const TOOLS   = [
+  { id:'select',  icon:'ti-cursor-text',    label:'Sélection' },
+  { id:'pen',     icon:'ti-pencil',         label:'Stylo' },
+  { id:'arrow',   icon:'ti-arrow-up-right', label:'Flèche' },
+  { id:'rect',    icon:'ti-square',         label:'Rectangle' },
+  { id:'circle',  icon:'ti-circle',         label:'Cercle' },
+  { id:'text',    icon:'ti-letter-t',       label:'Texte' },
+  { id:'measure', icon:'ti-ruler',          label:'Mesure' },
+]
 
-function statusIndex(s) { return STATUS_FLOW.indexOf(s); }
+// Status pipeline para avançar/recuar
+const STATUS_FLOW = ['not_started','service_desk','quality_meeting','completed']
 function nextStatus(s) {
-  if (TERMINAL.includes(s)) return null;
-  const i = statusIndex(s);
-  return i < STATUS_FLOW.length - 1 ? STATUS_FLOW[i + 1] : null;
+  const i = STATUS_FLOW.indexOf(s)
+  return i < STATUS_FLOW.length - 1 ? STATUS_FLOW[i + 1] : null
 }
 function prevStatus(s) {
-  if (s === 'not_started' || s === 'cancelled') return null;
-  if (s === 'completed') return 'quality_meeting';
-  const i = statusIndex(s);
-  return i > 0 ? STATUS_FLOW[i - 1] : null;
+  if (s === 'cancelled') return null
+  if (s === 'completed') return 'quality_meeting'
+  const i = STATUS_FLOW.indexOf(s)
+  return i > 0 ? STATUS_FLOW[i - 1] : null
 }
 
-const STATUS_LABELS = {
-  not_started:     { fr: 'Non commencé',   en: 'Not started' },
-  service_desk:    { fr: 'Service Desk',   en: 'Service Desk' },
-  quality_meeting: { fr: 'Quality Meeting',en: 'Quality Meeting' },
-  completed:       { fr: 'Complété',       en: 'Completed' },
-  cancelled:       { fr: 'Annulé',         en: 'Cancelled' },
-};
-
-const STATUS_BADGE = {
-  not_started:     'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  service_desk:    'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200',
-  quality_meeting: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200',
-  completed:       'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200',
-  cancelled:       'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200',
-};
-
-const ADVANCE_BTN = {
-  not_started:     { fr: 'Envoyer au Service Desk',    en: 'Send to Service Desk' },
-  service_desk:    { fr: 'Envoyer au Quality Meeting', en: 'Send to Quality Meeting' },
-  quality_meeting: { fr: 'Marquer comme complété',     en: 'Mark as completed' },
-};
-
-const BRANDS = ['HIEX','HI','CI','CIS','EVEN','STAYBRIDGE','CANDLEWOOD'];
-const CATEGORIES = ['Finish defect','Structural','Missing part','Wrong item','Packaging','Other'];
-const DEPARTMENTS = ['Product Dev.','Production','QC','Logistics','Sales'];
-const PLANTS = ['Canada','USA','Mexico','China','Vietnam'];
-
-// ─── Fetch ──────────────────────────────────────────────────────────────────
-async function fetchTicket(id) {
-  const { data, error } = await supabase
-    .from('tickets')
-    .select('*, occurrence_lines(*, ticket_photos(*))')
-    .eq('id', id)
-    .single();
-  if (error) throw error;
-  return data;
+function formatDate(d) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric' })
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
-export default function TicketDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const { i18n } = useTranslation();
-  const qc = useQueryClient();
-  const { canEdit } = usePermissions();
-  const lang = i18n.language?.startsWith('fr') ? 'fr' : 'en';
+function SectionHeader({ icon, title, right }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
+      <div className="flex items-center gap-2 text-xs font-medium text-gray-900 dark:text-gray-100">
+        <i className={`ti ${icon} text-blue-500 text-sm`} aria-hidden="true" />
+        {title}
+      </div>
+      {right}
+    </div>
+  )
+}
 
-  const [editingHeader, setEditingHeader] = useState(false);
-  const [headerDraft, setHeaderDraft] = useState(null);
-  const [addingLine, setAddingLine] = useState(false);
-  const [sdNotes, setSdNotes] = useState('');
-  const [causeRacine, setCauseRacine] = useState('');
-  const [actionCorrective, setActionCorrective] = useState('');
-  const [resolution, setResolution] = useState('');
-  const [saved, setSaved] = useState(false);
-
-  const { data: ticket, isLoading } = useQuery({
-    queryKey: ['ticket', id],
-    queryFn: () => fetchTicket(id),
-  });
+// ── Photo Annotator ────────────────────────────────────────────────────────
+function PhotoAnnotator({ photo, onSave, onClose }) {
+  const canvasRef  = useRef(null)
+  const fabricRef  = useRef(null)
+  const [tool,     setTool]     = useState('select')
+  const [color,    setColor]    = useState('#E24B4A')
+  const [thick,    setThick]    = useState(3)
+  const [measuring, setMeasuring] = useState(false)
+  const [measureVal, setMeasureVal] = useState('')
+  const [measureGrp, setMeasureGrp] = useState(null)
+  const [fabricReady, setFabricReady] = useState(!!window.fabric)
 
   useEffect(() => {
-    if (!ticket) return;
-    setSdNotes(ticket.service_desk_notes || '');
-    setCauseRacine(ticket.cause_racine || '');
-    setActionCorrective(ticket.action_corrective || '');
-    setResolution(ticket.resolution || '');
-  }, [ticket?.id]);
-
-  const advanceMutation = useMutation({
-    mutationFn: async (newStatus) => {
-      const updates = { status: newStatus };
-      if (newStatus === 'service_desk') updates.submitted_at = new Date().toISOString();
-      if (newStatus === 'completed') updates.sd_completed_at = new Date().toISOString();
-      const { error } = await supabase.from('tickets').update(updates).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries(['ticket', id]),
-  });
-
-  const revertMutation = useMutation({
-    mutationFn: async (newStatus) => {
-      const { error } = await supabase.from('tickets').update({ status: newStatus }).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries(['ticket', id]),
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.from('tickets').update({ status: 'cancelled' }).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries(['ticket', id]),
-  });
-
-  const saveHeaderMutation = useMutation({
-    mutationFn: async (draft) => {
-      const { error } = await supabase.from('tickets').update(draft).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries(['ticket', id]);
-      setEditingHeader(false);
-    },
-  });
-
-  const saveNotesMutation = useMutation({
-    mutationFn: async (fields) => {
-      const { error } = await supabase.from('tickets').update(fields).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries(['ticket', id]);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    },
-  });
-
-  function startEditHeader() {
-    setHeaderDraft({
-      customer_name: ticket.customer_name || '',
-      ship_to: ticket.ship_to || '',
-      brand: ticket.brand || '',
-      ref_so: ticket.ref_so || '',
-      sc_number: ticket.sc_number || '',
-      received_at: ticket.received_at || '',
-    });
-    setEditingHeader(true);
-  }
-
-  function saveNotes() {
-    const fields = { service_desk_notes: sdNotes };
-    if (['quality_meeting', 'completed'].includes(ticket.status)) {
-      fields.cause_racine = causeRacine;
-      fields.action_corrective = actionCorrective;
-      fields.resolution = resolution;
+    if (window.fabric) { setFabricReady(true); return }
+    const s = document.createElement('script')
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
+    s.onload = () => setFabricReady(true)
+    s.onerror = () => {
+      const s2 = document.createElement('script')
+      s2.src = 'https://cdn.jsdelivr.net/npm/fabric@5.3.1/dist/fabric.min.js'
+      s2.onload = () => setFabricReady(true)
+      document.head.appendChild(s2)
     }
-    saveNotesMutation.mutate(fields);
+    document.head.appendChild(s)
+  }, [])
+
+  useEffect(() => {
+    if (!fabricReady || !canvasRef.current) return
+    const canvas = new window.fabric.Canvas(canvasRef.current, { width: 560, height: 340 })
+    fabricRef.current = canvas
+    const src = photo.url || photo.preview
+    const addImageToCanvas = (dataUrl) => {
+      const imgEl = new Image()
+      imgEl.onload = () => {
+        const fabricImg = new window.fabric.Image(imgEl)
+        const scale = Math.min(560 / imgEl.width, 380 / imgEl.height, 1)
+        fabricImg.scale(scale)
+        canvas.setWidth(Math.round(imgEl.width * scale))
+        canvas.setHeight(Math.round(imgEl.height * scale))
+        canvas.add(fabricImg)
+        fabricImg.selectable = false
+        fabricImg.evented = false
+        canvas.sendToBack(fabricImg)
+        canvas.renderAll()
+      }
+      imgEl.src = dataUrl
+    }
+    fetch(src)
+      .then(r => r.blob())
+      .then(blob => {
+        const reader = new FileReader()
+        reader.onload = e => addImageToCanvas(e.target.result)
+        reader.readAsDataURL(blob)
+      })
+      .catch(() => addImageToCanvas(src))
+    return () => canvas.dispose()
+  }, [fabricReady])
+
+  useEffect(() => {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    canvas.isDrawingMode = false
+    canvas.off('mouse:down'); canvas.off('mouse:move'); canvas.off('mouse:up')
+    if (tool === 'pen') {
+      canvas.isDrawingMode = true
+      canvas.freeDrawingBrush.color = color
+      canvas.freeDrawingBrush.width = thick
+      return
+    }
+    canvas.selection = tool === 'select'
+    if (tool === 'measure') {
+      let pts = []; let tempLine = null
+      canvas.on('mouse:down', o => {
+        const p = canvas.getPointer(o.e)
+        if (pts.length === 0) { pts = [p] }
+        else {
+          pts.push(p)
+          if (tempLine) canvas.remove(tempLine)
+          const line = new window.fabric.Line([pts[0].x,pts[0].y,pts[1].x,pts[1].y],{stroke:color,strokeWidth:2,selectable:false,evented:false})
+          const d1 = new window.fabric.Circle({left:pts[0].x-4,top:pts[0].y-4,radius:4,fill:color,selectable:false,evented:false})
+          const d2 = new window.fabric.Circle({left:pts[1].x-4,top:pts[1].y-4,radius:4,fill:color,selectable:false,evented:false})
+          const grp = new window.fabric.Group([line,d1,d2],{selectable:true})
+          canvas.add(grp); setMeasureGrp(grp); canvas.renderAll()
+          pts = []; setMeasuring(true)
+        }
+      })
+      canvas.on('mouse:move', o => {
+        if (pts.length === 1) {
+          if (tempLine) canvas.remove(tempLine)
+          const p = canvas.getPointer(o.e)
+          tempLine = new window.fabric.Line([pts[0].x,pts[0].y,p.x,p.y],{stroke:color,strokeWidth:2,selectable:false,strokeDashArray:[4,4]})
+          canvas.add(tempLine); canvas.renderAll()
+        }
+      })
+      return
+    }
+    if (['arrow','rect','circle','text'].includes(tool)) {
+      let origin = null; let shape = null
+      canvas.on('mouse:down', o => {
+        origin = canvas.getPointer(o.e)
+        if (tool === 'text') {
+          const txt = new window.fabric.IText('Text',{left:origin.x,top:origin.y,fontSize:16,fill:color,fontFamily:'sans-serif',editable:true})
+          canvas.add(txt); canvas.setActiveObject(txt); txt.enterEditing(); canvas.renderAll(); origin = null
+        }
+      })
+      canvas.on('mouse:move', o => {
+        if (!origin) return
+        const p = canvas.getPointer(o.e)
+        if (shape) canvas.remove(shape)
+        if (tool === 'rect') shape = new window.fabric.Rect({left:Math.min(origin.x,p.x),top:Math.min(origin.y,p.y),width:Math.abs(p.x-origin.x),height:Math.abs(p.y-origin.y),stroke:color,strokeWidth:thick,fill:'transparent'})
+        else if (tool === 'circle') { const r=Math.sqrt(Math.pow(p.x-origin.x,2)+Math.pow(p.y-origin.y,2))/2; shape=new window.fabric.Circle({left:Math.min(origin.x,p.x),top:Math.min(origin.y,p.y),radius:r,stroke:color,strokeWidth:thick,fill:'transparent'}) }
+        else if (tool === 'arrow') { const angle=Math.atan2(p.y-origin.y,p.x-origin.x)*180/Math.PI; const len=Math.sqrt(Math.pow(p.x-origin.x,2)+Math.pow(p.y-origin.y,2)); shape=new window.fabric.Group([new window.fabric.Line([0,0,len,0],{stroke:color,strokeWidth:thick}),new window.fabric.Triangle({width:12,height:14,fill:color,left:len-6,top:-7})],{left:origin.x,top:origin.y,angle,originX:'left',originY:'center'}) }
+        if (shape) { canvas.add(shape); canvas.renderAll() }
+      })
+      canvas.on('mouse:up', () => { shape=null; origin=null })
+    }
+  }, [tool, color, thick, fabricReady])
+
+  const handleSaveMeasure = () => {
+    if (!measureVal || !measureGrp || !fabricRef.current) return
+    const b = measureGrp.getBoundingRect()
+    const bg = new window.fabric.Rect({left:b.left+b.width/2-30,top:b.top-22,width:60,height:20,fill:color,rx:4,ry:4,selectable:false})
+    const tx = new window.fabric.Text(`${measureVal} cm`,{left:b.left+b.width/2,top:b.top-20,fontSize:11,fill:'white',fontFamily:'sans-serif',originX:'center',selectable:false})
+    fabricRef.current.add(bg,tx); fabricRef.current.renderAll()
+    setMeasuring(false); setMeasureVal(''); setMeasureGrp(null); setTool('select')
   }
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-64 text-gray-400">Chargement...</div>;
-  }
-  if (!ticket) {
-    return <div className="p-8 text-center text-gray-500">Occurrence introuvable</div>;
+  const handleUndo = () => {
+    const c = fabricRef.current; if (!c) return
+    const objs = c.getObjects(); if (objs.length > 1) { c.remove(objs[objs.length-1]); c.renderAll() }
   }
 
-  const currentStatus = ticket.status;
-  const next = nextStatus(currentStatus);
-  const prev = prevStatus(currentStatus);
-  const isTerminal = TERMINAL.includes(currentStatus);
-  const lines = ticket.occurrence_lines || [];
-  const totalApprox = lines.reduce((s, l) => s + (parseFloat(l.cost_approx) || 0), 0);
-  const totalFinal = lines.reduce((s, l) => s + (parseFloat(l.cost_final) || 0), 0);
-  const currentIdx = statusIndex(currentStatus);
+  const handleSave = () => {
+    const c = fabricRef.current; if (!c) return
+    onSave(c.toDataURL({ format:'jpeg', quality:0.85 }))
+  }
 
   return (
-    <div className="flex flex-col h-full">
-
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            {ticket.customer_name || '—'}
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            SC# {ticket.sc_number} · {ticket.received_at}
-          </p>
+    <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" style={{ maxWidth:620 }}>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Annotation</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer text-lg">✕</button>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            {lang === 'fr' ? 'Retour' : 'Back'}
-          </button>
-          {canEdit && (
-            <button
-              onClick={saveNotes}
-              disabled={saveNotesMutation.isLoading}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-            >
-              <Save className="w-4 h-4" />
-              {saved ? '✓ Sauvegardé' : (lang === 'fr' ? 'Sauvegarder' : 'Save')}
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-1 flex-wrap bg-gray-50 dark:bg-[#0D1117]">
+          {TOOLS.map(tk => (
+            <button key={tk.id} onClick={() => setTool(tk.id)} title={tk.label} aria-label={tk.label}
+              className="w-7 h-7 rounded flex items-center justify-center border cursor-pointer transition-all"
+              style={{ border: tool===tk.id ? `1.5px solid ${color}` : '0.5px solid var(--color-border-tertiary)', background: tool===tk.id ? color+'22' : 'var(--color-background-primary)', color: tool===tk.id ? color : 'var(--color-text-secondary)' }}>
+              <i className={`ti ${tk.icon}`} style={{ fontSize:13 }} aria-hidden="true" />
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Read-only banner */}
-      {!canEdit && (
-        <div className="mx-6 mt-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-sm">
-          <Lock className="w-4 h-4 flex-shrink-0" />
-          {lang === 'fr'
-            ? 'Vous pouvez consulter cette occurrence, mais pas la modifier.'
-            : 'You can view this occurrence, but cannot edit it.'}
-        </div>
-      )}
-
-      {/* Main layout */}
-      <div className="flex flex-1 overflow-hidden gap-6 p-6">
-
-        {/* LEFT COLUMN */}
-        <div className="flex flex-col gap-4 w-[460px] flex-shrink-0 overflow-y-auto pr-2">
-
-          {/* Status card */}
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                {lang === 'fr' ? 'Statut' : 'Status'}
-              </span>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_BADGE[currentStatus]}`}>
-                {STATUS_LABELS[currentStatus]?.[lang]}
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            {currentStatus !== 'cancelled' && (
-              <div className="flex gap-1 mb-5">
-                {STATUS_FLOW.map((s, i) => (
-                  <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors ${
-                    i <= currentIdx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-700'
-                  }`} />
-                ))}
-              </div>
-            )}
-
-            {/* Workflow buttons */}
-            {canEdit && !isTerminal && (
-              <div className="flex flex-col gap-2">
-                {next && (
-                  <button
-                    onClick={() => advanceMutation.mutate(next)}
-                    disabled={advanceMutation.isLoading}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium text-sm text-white transition disabled:opacity-60 ${
-                      next === 'completed' ? 'bg-green-600 hover:bg-green-700' :
-                      next === 'quality_meeting' ? 'bg-purple-600 hover:bg-purple-700' :
-                      'bg-blue-600 hover:bg-blue-700'
-                    }`}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                    {ADVANCE_BTN[currentStatus]?.[lang]}
-                  </button>
-                )}
-
-                {prev && (
-                  <button
-                    onClick={() => revertMutation.mutate(prev)}
-                    disabled={revertMutation.isLoading}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition disabled:opacity-60"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    {lang === 'fr'
-                      ? `← Retour à « ${STATUS_LABELS[prev]?.[lang]} »`
-                      : `← Revert to "${STATUS_LABELS[prev]?.[lang]}"`}
-                  </button>
-                )}
-
-                <button
-                  onClick={() => {
-                    if (window.confirm(
-                      lang === 'fr' ? 'Annuler cette occurrence ?' : 'Cancel this occurrence?'
-                    )) cancelMutation.mutate();
-                  }}
-                  disabled={cancelMutation.isLoading}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition disabled:opacity-60"
-                >
-                  {lang === 'fr' ? "Annuler l'occurrence" : 'Cancel occurrence'}
-                </button>
-              </div>
-            )}
-
-            {isTerminal && (
-              <div className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium ${
-                currentStatus === 'completed'
-                  ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300'
-                  : 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
-              }`}>
-                <CheckCircle className="w-4 h-4" />
-                {currentStatus === 'completed'
-                  ? (lang === 'fr' ? 'Occurrence complétée' : 'Occurrence completed')
-                  : (lang === 'fr' ? 'Occurrence annulée' : 'Occurrence cancelled')}
-              </div>
-            )}
-
-            {canEdit && currentStatus === 'completed' && (
-              <button
-                onClick={() => revertMutation.mutate('quality_meeting')}
-                disabled={revertMutation.isLoading}
-                className="mt-2 w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                {lang === 'fr' ? 'Retour à Quality Meeting' : 'Revert to Quality Meeting'}
-              </button>
-            )}
-          </div>
-
-          {/* Informations card */}
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                {lang === 'fr' ? 'Informations' : 'Information'}
-              </h3>
-              {canEdit && !editingHeader && (
-                <button
-                  onClick={startEditHeader}
-                  className="text-xs flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  <Edit2 className="w-3 h-3" />
-                  {lang === 'fr' ? 'Modifier' : 'Edit'}
-                </button>
-              )}
-            </div>
-
-            {editingHeader && headerDraft ? (
-              <div className="space-y-3">
-                <FieldEdit label={lang === 'fr' ? 'Vendu à' : 'Sold to'} value={headerDraft.customer_name} onChange={v => setHeaderDraft(d => ({ ...d, customer_name: v }))} />
-                <FieldEdit label={lang === 'fr' ? 'Destination' : 'Ship to'} value={headerDraft.ship_to} onChange={v => setHeaderDraft(d => ({ ...d, ship_to: v }))} />
-                <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">{lang === 'fr' ? 'Marque' : 'Brand'}</label>
-                  <select value={headerDraft.brand} onChange={e => setHeaderDraft(d => ({ ...d, brand: e.target.value }))}
-                    className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                    {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-                <FieldEdit label="REF SO" value={headerDraft.ref_so} onChange={v => setHeaderDraft(d => ({ ...d, ref_so: v }))} />
-                <FieldEdit label="SC#" value={headerDraft.sc_number} onChange={v => setHeaderDraft(d => ({ ...d, sc_number: v }))} />
-                <FieldEdit label={lang === 'fr' ? 'Date de réception' : 'Received date'} value={headerDraft.received_at} onChange={v => setHeaderDraft(d => ({ ...d, received_at: v }))} type="date" />
-                <div className="flex gap-2 pt-1">
-                  <button onClick={() => saveHeaderMutation.mutate(headerDraft)} disabled={saveHeaderMutation.isLoading}
-                    className="flex-1 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition">
-                    {saveHeaderMutation.isLoading ? '...' : (lang === 'fr' ? 'Sauvegarder' : 'Save')}
-                  </button>
-                  <button onClick={() => setEditingHeader(false)}
-                    className="flex-1 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                    {lang === 'fr' ? 'Annuler' : 'Cancel'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <InfoRow label={lang === 'fr' ? 'Destination' : 'Ship to'} value={ticket.ship_to} />
-                <InfoRow label={lang === 'fr' ? 'Vendu à' : 'Sold to'} value={ticket.customer_name} />
-                <InfoRow label={lang === 'fr' ? 'Marque' : 'Brand'} value={ticket.brand} />
-                <InfoRow label="REF SO" value={ticket.ref_so} />
-                <InfoRow label="SC#" value={ticket.sc_number} />
-                <InfoRow label={lang === 'fr' ? 'Date de réception' : 'Received date'} value={ticket.received_at} />
-              </div>
-            )}
-          </div>
-
-          {/* SD Notes */}
-          {['service_desk', 'quality_meeting', 'completed'].includes(currentStatus) && (
-            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
-                📋 {lang === 'fr' ? 'Notes Service Desk' : 'Service Desk Notes'}
-              </h3>
-              <textarea
-                value={sdNotes}
-                onChange={e => setSdNotes(e.target.value)}
-                disabled={!canEdit}
-                placeholder={lang === 'fr' ? 'Observations, détails supplémentaires...' : 'Observations, additional details...'}
-                rows={4}
-                className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-3 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-            </div>
-          )}
-
-          {/* Résolution */}
-          {['quality_meeting', 'completed'].includes(currentStatus) && (
-            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 space-y-4">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                🔧 {lang === 'fr' ? 'Résolution' : 'Resolution'}
-              </h3>
-              <NotesField label={lang === 'fr' ? 'CAUSE RACINE' : 'ROOT CAUSE'} value={causeRacine} onChange={setCauseRacine} disabled={!canEdit} placeholder={lang === 'fr' ? 'Décrire la cause racine...' : 'Describe the root cause...'} />
-              <NotesField label={lang === 'fr' ? 'ACTION CORRECTIVE' : 'CORRECTIVE ACTION'} value={actionCorrective} onChange={setActionCorrective} disabled={!canEdit} placeholder={lang === 'fr' ? "Décrire l'action corrective..." : 'Describe the corrective action...'} />
-              <NotesField label={lang === 'fr' ? 'RÉSOLUTION' : 'RESOLUTION'} value={resolution} onChange={setResolution} disabled={!canEdit} placeholder={lang === 'fr' ? 'Résumé de la résolution...' : 'Resolution summary...'} />
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-              🔲 {lang === 'fr' ? `Lignes (${lines.length})` : `Lines (${lines.length})`}
-            </h2>
-            <div className="flex items-center gap-4">
-              {lines.length > 0 && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 flex gap-4">
-                  <span>{lang === 'fr' ? 'Coût est.' : 'Est. cost'}: <strong className="text-gray-900 dark:text-white">${totalApprox.toFixed(2)}</strong></span>
-                  {totalFinal > 0 && <span>{lang === 'fr' ? 'Coût final' : 'Final cost'}: <strong className="text-gray-900 dark:text-white">${totalFinal.toFixed(2)}</strong></span>}
-                </div>
-              )}
-              {canEdit && (
-                <button onClick={() => setAddingLine(true)} className="flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">
-                  <Plus className="w-4 h-4" />
-                  {lang === 'fr' ? 'Ajouter une ligne' : 'Add a line'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {lines.map((line, idx) => (
-            <LineCard key={line.id} line={line} index={idx} ticketId={id} canEdit={canEdit} lang={lang} onUpdated={() => qc.invalidateQueries(['ticket', id])} />
           ))}
-
-          {lines.length === 0 && (
-            <div className="rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
-              {lang === 'fr' ? 'Aucune ligne pour cette occurrence.' : 'No lines for this occurrence.'}
-            </div>
-          )}
-
-          {addingLine && canEdit && (
-            <NewLineForm ticketId={id} lang={lang} onSaved={() => { setAddingLine(false); qc.invalidateQueries(['ticket', id]); }} onCancel={() => setAddingLine(false)} />
-          )}
+          <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
+          {COLORS.map(c => (
+            <div key={c} onClick={() => setColor(c)} style={{ width:14,height:14,borderRadius:'50%',background:c,cursor:'pointer',border:color===c?'2px solid #185FA5':'1px solid var(--color-border-tertiary)',flexShrink:0 }} />
+          ))}
+          <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
+          <input type="range" min="1" max="8" value={thick} onChange={e => setThick(Number(e.target.value))} style={{ width:60 }} />
+          <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
+          <button onClick={handleUndo} title="Undo" aria-label="Undo" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+            <i className="ti ti-arrow-back-up" style={{ fontSize:13,color:'var(--color-text-secondary)' }} aria-hidden="true" />
+          </button>
+        </div>
+        {measuring && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center gap-3">
+            <i className="ti ti-ruler text-amber-600 text-sm" aria-hidden="true" />
+            <span className="text-xs text-amber-700 dark:text-amber-300">Mesure tracée — entrez la valeur:</span>
+            <input type="text" value={measureVal} onChange={e => setMeasureVal(e.target.value)}
+              className="border border-amber-300 rounded px-2 py-1 text-xs w-20 outline-none dark:bg-[#161B22] dark:text-gray-100"
+              placeholder="ex: 35" autoFocus onKeyDown={e => e.key==='Enter' && handleSaveMeasure()} />
+            <span className="text-xs text-amber-600">cm</span>
+            <button onClick={handleSaveMeasure} className="btn-primary text-xs py-1 px-3">OK</button>
+          </div>
+        )}
+        <div style={{ overflow:'auto', maxHeight:400 }}>
+          <canvas ref={canvasRef} />
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+          <button onClick={onClose} className="btn-ghost text-xs">Annuler</button>
+          <button onClick={handleSave} className="btn-primary text-xs">Sauvegarder</button>
         </div>
       </div>
     </div>
-  );
+  )
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+// ── Line Card (display + edit) ─────────────────────────────────────────────
+function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp }) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ ...line })
+  const [annotating, setAnnotating] = useState(null)
+  const fileRef = useRef(null)
 
-function InfoRow({ label, value }) {
-  return (
-    <div className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-800 last:border-0">
-      <span className="text-gray-500 dark:text-gray-400">{label}</span>
-      <span className="text-gray-900 dark:text-white font-medium">{value || '—'}</span>
-    </div>
-  );
-}
+  const { data: photos, refetch: refetchPhotos } = useQuery({
+    queryKey: ['line-photos', line.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('ticket_photos').select('*').eq('line_id', line.id).order('created_at')
+      return data || []
+    },
+    enabled: !!line.id,
+  })
 
-function FieldEdit({ label, value, onChange, type = 'text' }) {
-  return (
-    <div>
-      <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)}
-        className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-    </div>
-  );
-}
+  const uploadMut = useMutation({
+    mutationFn: async (file) => {
+      const ext = file.name.split('.').pop()
+      const path = `tickets/${occurrenceId}/${Date.now()}_line${line.id}.${ext}`
+      const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
+      if (error) throw error
+      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+      await supabase.from('ticket_photos').insert({ ticket_id: occurrenceId, url: urlData.publicUrl, name: file.name, path, line_id: line.id })
+    },
+    onSuccess: () => refetchPhotos(),
+    onError: () => toast.error(t('common.error')),
+  })
 
-function NotesField({ label, value, onChange, disabled, placeholder }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{label}</p>
-      <textarea value={value} onChange={e => onChange(e.target.value)} disabled={disabled} placeholder={placeholder} rows={3}
-        className="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-3 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed" />
-    </div>
-  );
-}
+  const deletePhotoMut = useMutation({
+    mutationFn: async ({ photoId, path }) => {
+      if (path) await supabase.storage.from('ticket-photos').remove([path])
+      await supabase.from('ticket_photos').delete().eq('id', photoId)
+    },
+    onSuccess: () => refetchPhotos(),
+  })
 
-function LineCard({ line, index, canEdit, lang, ticketId, onUpdated }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const saveAnnotationMut = useMutation({
+    mutationFn: async ({ photoId, path, dataUrl }) => {
+      const arr  = dataUrl.split(',')
+      const mime = arr[0].match(/:(.*?);/)[1]
+      const bstr = atob(arr[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) u8arr[n] = bstr.charCodeAt(n)
+      const blob = new Blob([u8arr], { type: mime })
+      const newPath = path.replace(/\.[^.]+$/, '_annotated.jpg')
+      await supabase.storage.from('ticket-photos').upload(newPath, blob, { upsert: true })
+      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(newPath)
+      await supabase.from('ticket_photos').update({ url: urlData.publicUrl, path: newPath }).eq('id', photoId)
+    },
+    onSuccess: () => { refetchPhotos(); setAnnotating(null) },
+    onError: () => toast.error(t('common.error')),
+  })
 
-  function startEdit() {
-    setDraft({ ...line });
-    setEditing(true);
-  }
-
-  async function save() {
-    setSaving(true);
+  const saveLine = async () => {
     const { error } = await supabase.from('occurrence_lines').update({
-      quality_issue: draft.quality_issue,
-      categories: draft.categories,
-      department: draft.department,
-      line_item: draft.line_item,
-      foliot_id: draft.foliot_id,
-      plant: draft.plant,
-      affected_qty: parseInt(draft.affected_qty) || null,
-      cost_approx: parseFloat(draft.cost_approx) || null,
-      cost_final: parseFloat(draft.cost_final) || null,
-    }).eq('id', line.id);
-    setSaving(false);
-    if (!error) { setEditing(false); onUpdated(); }
+      quality_issue: form.quality_issue,
+      categories:    form.categories,
+      department:    form.department,
+      line_item:     form.line_item,
+      foliot_id:     form.foliot_id,
+      plant:         form.plant,
+      affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
+      cost_approx:   form.cost_approx  ? Number(form.cost_approx)  : null,
+      cost_final:    form.cost_final   ? Number(form.cost_final)   : null,
+      updated_at:    new Date().toISOString(),
+    }).eq('id', line.id)
+    if (error) { toast.error(t('common.error')); return }
+    toast.success(t('common.save'))
+    onUpdate()
+    setEditing(false)
   }
 
-  async function deleteLine() {
-    if (!window.confirm(lang === 'fr' ? 'Supprimer cette ligne ?' : 'Delete this line?')) return;
-    await supabase.from('occurrence_lines').delete().eq('id', line.id);
-    onUpdated();
-  }
+  // canEdit: role-based (from parent) AND status allows it
+  const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
 
-  const photos = line.ticket_photos || [];
+  const imgPhotos  = (photos || []).filter(p =>  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
+  const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
 
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-      <div className="flex items-center justify-between mb-3">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-3 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-[#161B22] border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-900 dark:text-white">Ligne {index + 1}</span>
-          {line.categories?.[0] && <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 text-xs">{line.categories[0]}</span>}
-          {line.department && <span className="text-xs text-gray-500 dark:text-gray-400">{line.department}</span>}
+          <span className="text-xs font-medium text-gray-900 dark:text-gray-100">{t('ticket.line_n')} {line.sort_order + 1}</span>
+          {line.categories && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{line.categories}</span>}
+          {line.department && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">{line.department}</span>}
         </div>
-        {canEdit && !editing && (
-          <div className="flex gap-2">
-            <button onClick={startEdit} className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3" />{lang === 'fr' ? 'Modifier' : 'Edit'}</button>
-            <button onClick={deleteLine} className="text-xs text-red-500 hover:underline">✕</button>
+        {canEditLine && (
+          <div className="flex gap-1">
+            <button onClick={() => setEditing(!editing)} className="btn-ghost text-xs py-0.5 px-2">
+              <i className={`ti ${editing ? 'ti-x' : 'ti-edit'} text-xs`} aria-hidden="true" />
+            </button>
+            <button onClick={() => { if (window.confirm(t('ticket.delete_line'))) onDelete(line.id) }}
+              className="text-xs py-0.5 px-2 rounded border border-red-200 dark:border-red-900 text-red-500 bg-transparent cursor-pointer">
+              <i className="ti ti-trash text-xs" aria-hidden="true" />
+            </button>
           </div>
         )}
       </div>
 
-      {editing && draft ? (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <FieldEdit label={lang === 'fr' ? 'Problème qualité' : 'Quality issue'} value={draft.quality_issue || ''} onChange={v => setDraft(d => ({ ...d, quality_issue: v }))} />
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Catégorie</label>
-              <select value={draft.categories?.[0] || ''} onChange={e => setDraft(d => ({ ...d, categories: [e.target.value] }))}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                <option value="">—</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+      <div className="px-3 py-3">
+        {editing ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <label className="label">{t('ticket.issue')} *</label>
+                <input className="input text-xs" value={form.quality_issue || ''} onChange={e => setForm(f => ({...f, quality_issue: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">{t('ticket.categories')}</label>
+                <select className="input text-xs" value={form.categories || ''} onChange={e => setForm(f => ({...f, categories: e.target.value}))}>
+                  <option value="">—</option>
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">{t('ticket.department')}</label>
+                <select className="input text-xs" value={form.department || ''} onChange={e => setForm(f => ({...f, department: e.target.value}))}>
+                  <option value="">—</option>
+                  {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">{t('ticket.line_item')}</label>
+                <input className="input text-xs" value={form.line_item || ''} onChange={e => setForm(f => ({...f, line_item: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">{t('ticket.foliot_id')}</label>
+                <input className="input text-xs" value={form.foliot_id || ''} onChange={e => setForm(f => ({...f, foliot_id: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">{t('ticket.plant')}</label>
+                <select className="input text-xs" value={form.plant || ''} onChange={e => setForm(f => ({...f, plant: e.target.value}))}>
+                  <option value="">—</option>
+                  {(plants || []).map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">{t('ticket.affected_qty')}</label>
+                <input className="input text-xs" type="number" value={form.affected_qty || ''} onChange={e => setForm(f => ({...f, affected_qty: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">{t('ticket.cost')}</label>
+                <input className="input text-xs" value={form.cost_approx || ''} onChange={e => setForm(f => ({...f, cost_approx: e.target.value}))} placeholder="$0.00" />
+              </div>
+              <div>
+                <label className="label">{t('ticket.cost_final')}</label>
+                <input className="input text-xs" value={form.cost_final || ''} onChange={e => setForm(f => ({...f, cost_final: e.target.value}))} placeholder="$0.00" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Département</label>
-              <select value={draft.department || ''} onChange={e => setDraft(d => ({ ...d, department: e.target.value }))}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                <option value="">—</option>
-                {DEPARTMENTS.map(dep => <option key={dep} value={dep}>{dep}</option>)}
-              </select>
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setEditing(false)} className="btn-ghost text-xs">{t('common.cancel')}</button>
+              <button onClick={saveLine} className="btn-primary text-xs">{t('common.save')}</button>
             </div>
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Usine</label>
-              <select value={draft.plant || ''} onChange={e => setDraft(d => ({ ...d, plant: e.target.value }))}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-                <option value="">—</option>
-                {PLANTS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <FieldEdit label="Line item" value={draft.line_item || ''} onChange={v => setDraft(d => ({ ...d, line_item: v }))} />
-            <FieldEdit label="Foliot ID" value={draft.foliot_id || ''} onChange={v => setDraft(d => ({ ...d, foliot_id: v }))} />
-            <FieldEdit label={lang === 'fr' ? 'Qté affectée' : 'Affected qty'} value={draft.affected_qty || ''} onChange={v => setDraft(d => ({ ...d, affected_qty: v }))} type="number" />
-            <FieldEdit label={lang === 'fr' ? 'Coût estimé ($)' : 'Est. cost ($)'} value={draft.cost_approx || ''} onChange={v => setDraft(d => ({ ...d, cost_approx: v }))} type="number" />
-            <FieldEdit label={lang === 'fr' ? 'Coût final ($)' : 'Final cost ($)'} value={draft.cost_final || ''} onChange={v => setDraft(d => ({ ...d, cost_final: v }))} type="number" />
           </div>
-          <div className="flex gap-2 pt-1">
-            <button onClick={save} disabled={saving} className="flex-1 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition disabled:opacity-60">
-              {saving ? '...' : (lang === 'fr' ? 'Sauvegarder' : 'Save')}
-            </button>
-            <button onClick={() => setEditing(false)} className="flex-1 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-              {lang === 'fr' ? 'Annuler' : 'Cancel'}
-            </button>
+        ) : (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+            {line.quality_issue && (
+              <div className="col-span-2 text-gray-900 dark:text-gray-100 font-medium mb-1">{line.quality_issue}</div>
+            )}
+            {[
+              [t('ticket.line_item'), line.line_item],
+              [t('ticket.foliot_id'), line.foliot_id],
+              [t('ticket.plant'), line.plant],
+              [t('ticket.affected_qty'), line.affected_qty],
+              [t('ticket.cost'), line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
+              [t('ticket.cost_final'), line.cost_final ? `$${Number(line.cost_final).toLocaleString()}` : null],
+            ].filter(([,v]) => v).map(([label, val]) => (
+              <div key={label} className="flex justify-between border-b border-gray-50 dark:border-gray-800 py-0.5">
+                <span className="text-gray-400">{label}</span>
+                <span className={`text-gray-900 dark:text-gray-100 ${label === t('ticket.cost_final') ? 'text-red-500 font-medium' : ''}`}>{val}</span>
+              </div>
+            ))}
           </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-sm text-gray-900 dark:text-white font-medium">{line.quality_issue || '—'}</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <InfoRow label="Line item" value={line.line_item} />
-            <InfoRow label="Foliot ID" value={line.foliot_id} />
-            <InfoRow label={lang === 'fr' ? 'Usine' : 'Plant'} value={line.plant} />
-            <InfoRow label={lang === 'fr' ? 'Qté affectée' : 'Affected qty'} value={line.affected_qty} />
-            <InfoRow label={lang === 'fr' ? 'Coût estimé' : 'Est. cost'} value={line.cost_approx ? `$${parseFloat(line.cost_approx).toFixed(2)}` : null} />
-            {line.cost_final && <InfoRow label={lang === 'fr' ? 'Coût final' : 'Final cost'} value={`$${parseFloat(line.cost_final).toFixed(2)}`} />}
-          </div>
-          {photos.length > 0 && (
-            <div className="flex gap-2 mt-3 flex-wrap">
-              {photos.map(p => (
-                <img key={p.id} src={p.url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80 transition" onClick={() => window.open(p.url, '_blank')} />
+        )}
+
+        {/* Photos */}
+        <div className="border-t border-gray-100 dark:border-gray-800 pt-2 mt-2">
+          {canEditLine && (photos || []).length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap mb-2">
+              {TOOLS.map(tk => (
+                <button key={tk.id} title={tk.label} aria-label={tk.label}
+                  className="w-6 h-6 rounded flex items-center justify-center border cursor-pointer"
+                  style={{ border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)' }}>
+                  <i className={`ti ${tk.icon}`} style={{ fontSize:11 }} aria-hidden="true" />
+                </button>
+              ))}
+              <div style={{ width:1,height:16,background:'var(--color-border-tertiary)',margin:'0 2px' }} />
+              {COLORS.map(c => (
+                <div key={c} style={{ width:11,height:11,borderRadius:'50%',background:c,cursor:'pointer',border:'0.5px solid var(--color-border-tertiary)' }} />
               ))}
             </div>
           )}
+
+          {imgPhotos.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {imgPhotos.map(p => (
+                <div key={p.id} className="relative group cursor-pointer" onClick={() => setAnnotating(p)}>
+                  <img src={p.url} alt="" className="w-14 h-14 object-cover rounded border border-gray-200 dark:border-gray-700" />
+                  {canEditLine && (
+                    <button onClick={e => { e.stopPropagation(); deletePhotoMut.mutate({ photoId: p.id, path: p.path }) }}
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-xs items-center justify-center hidden group-hover:flex border-0 cursor-pointer">
+                      <i className="ti ti-x" style={{ fontSize:8 }} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {filePhotos.map(p => (
+            <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 dark:bg-[#161B22] rounded text-xs mb-1">
+              <i className="ti ti-file text-red-400 text-sm" aria-hidden="true" />
+              <a href={p.url} target="_blank" rel="noreferrer" className="flex-1 text-blue-500 hover:underline">{p.name}</a>
+              {canEditLine && (
+                <button onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })} className="text-red-400 bg-transparent border-0 cursor-pointer p-0">
+                  <i className="ti ti-trash text-xs" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          ))}
+
+          {canEditLine && (
+            <label className="btn-ghost text-xs py-1 px-2 cursor-pointer">
+              <i className="ti ti-upload text-xs" aria-hidden="true" /> {(photos || []).length === 0 ? 'Ajouter photos' : 'Ajouter'}
+              <input ref={fileRef} type="file" accept="image/*,.pdf" multiple className="hidden"
+                onChange={e => Array.from(e.target.files).forEach(f => uploadMut.mutate(f))} />
+            </label>
+          )}
         </div>
+      </div>
+
+      {annotating && (
+        <PhotoAnnotator
+          photo={annotating}
+          onSave={(dataUrl) => saveAnnotationMut.mutate({ photoId: annotating.id, path: annotating.path, dataUrl })}
+          onClose={() => setAnnotating(null)}
+        />
       )}
     </div>
-  );
+  )
 }
 
-function NewLineForm({ ticketId, lang, onSaved, onCancel }) {
-  const [form, setForm] = useState({ quality_issue: '', categories: [], department: '', line_item: '', foliot_id: '', plant: '', affected_qty: '', cost_approx: '' });
-  const [saving, setSaving] = useState(false);
+// ── Main Component ─────────────────────────────────────────────────────────
+export default function TicketDetail() {
+  const { id }      = useParams()
+  const { t }       = useTranslation()
+  const navigate    = useNavigate()
+  const queryClient = useQueryClient()
+  const { canEdit } = usePermissions()
 
-  function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search))
+  const fromMeeting    = searchParams.get('from') === 'meeting'
+  const meetingId      = searchParams.get('meetingId')
 
-  async function save() {
-    setSaving(true);
-    const { error } = await supabase.from('occurrence_lines').insert({
-      occurrence_id: ticketId,
-      ...form,
-      affected_qty: parseInt(form.affected_qty) || null,
-      cost_approx: parseFloat(form.cost_approx) || null,
-    });
-    setSaving(false);
-    if (!error) onSaved();
+  const [rootCause,   setRootCause]   = useState('')
+  const [corrective,  setCorrective]  = useState('')
+  const [sdNotes,     setSdNotes]     = useState('')
+  const [initialized, setInitialized] = useState(false)
+  const [lightbox,    setLightbox]    = useState(null)
+  const [addingLine,  setAddingLine]  = useState(false)
+  const [newLine,     setNewLine]     = useState({ quality_issue:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', cost_approx:'' })
+
+  // Edição dos campos de informação
+  const [editingInfo, setEditingInfo] = useState(false)
+  const [infoDraft,   setInfoDraft]   = useState(null)
+
+  const isDark = document.documentElement.classList.contains('dark')
+  const SC = isDark ? STATUS_CLR_DARK : STATUS_CLR_LIGHT
+
+  useEffect(() => {
+    if (window.fabric) return
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.6.0/fabric.min.js'
+    document.head.appendChild(script)
+  }, [])
+
+  const { data: ticket, isLoading } = useQuery({
+    queryKey: ['ticket', id],
+    queryFn: () => ticketApi.get(id).then(r => r.data),
+    onSuccess: (data) => {
+      if (!initialized) {
+        setRootCause(data.root_cause || '')
+        setCorrective(data.corrective_action || '')
+        setSdNotes(data.service_desk_notes || '')
+        setInitialized(true)
+      }
+    }
+  })
+
+  const { data: lines, refetch: refetchLines } = useQuery({
+    queryKey: ['occurrence-lines', id],
+    queryFn: async () => {
+      const { data } = await supabase.from('occurrence_lines').select('*').eq('occurrence_id', id).order('sort_order')
+      return data || []
+    },
+    enabled: !!id,
+  })
+
+  const { data: globalPhotos, refetch: refetchGlobalPhotos } = useQuery({
+    queryKey: ['ticket-photos-global', id],
+    queryFn: async () => {
+      const { data } = await supabase.from('ticket_photos').select('*').eq('ticket_id', id).is('line_id', null).order('created_at')
+      return data || []
+    },
+    enabled: !!id,
+  })
+
+  const { data: plants } = useQuery({
+    queryKey: ['plants'],
+    queryFn: async () => {
+      const { data } = await supabase.from('plants').select('id, name').eq('active', true).order('name')
+      return data || []
+    },
+  })
+
+  const updateMut = useMutation({
+    mutationFn: (payload) => ticketApi.update(id, payload),
+    onSuccess: () => { queryClient.invalidateQueries(['ticket', id]); toast.success(t('common.save')) },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const addLineMut = useMutation({
+    mutationFn: async () => {
+      const maxOrder = (lines || []).reduce((m, l) => Math.max(m, l.sort_order), -1)
+      const { error } = await supabase.from('occurrence_lines').insert({
+        occurrence_id: id,
+        quality_issue: newLine.quality_issue || null,
+        categories:    newLine.categories    || null,
+        department:    newLine.department    || null,
+        line_item:     newLine.line_item     || null,
+        foliot_id:     newLine.foliot_id     || null,
+        plant:         newLine.plant         || null,
+        affected_qty:  newLine.affected_qty  ? Number(newLine.affected_qty) : null,
+        cost_approx:   newLine.cost_approx   ? Number(newLine.cost_approx)  : null,
+        sort_order:    maxOrder + 1,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchLines()
+      setAddingLine(false)
+      setNewLine({ quality_issue:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', cost_approx:'' })
+      toast.success(t('ticket.add_line'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const deleteLineMut = useMutation({
+    mutationFn: async (lineId) => {
+      const { error } = await supabase.from('occurrence_lines').delete().eq('id', lineId)
+      if (error) throw error
+    },
+    onSuccess: () => refetchLines(),
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const handleSave = () => updateMut.mutate({
+    root_cause: rootCause, corrective_action: corrective, service_desk_notes: sdNotes,
+  })
+
+  // Salvar edição dos campos de informação
+  const handleSaveInfo = () => {
+    updateMut.mutate(infoDraft, {
+      onSuccess: () => setEditingInfo(false)
+    })
   }
 
+  if (isLoading) return <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
+  if (!ticket) return null
+
+  const sc = SC[ticket.status] || SC.not_started
+  const totalCost = (lines || []).reduce((s, l) => s + Number(l.cost_approx || 0), 0)
+  const finalCost = (lines || []).reduce((s, l) => s + Number(l.cost_final  || 0), 0)
+
+  const prev = prevStatus(ticket.status)
+  const next = nextStatus(ticket.status)
+
   return (
-    <div className="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-5 space-y-4">
-      <h4 className="font-semibold text-sm text-blue-700 dark:text-blue-300">{lang === 'fr' ? 'Nouvelle ligne' : 'New line'}</h4>
-      <div className="grid grid-cols-2 gap-3">
-        <FieldEdit label={lang === 'fr' ? 'Problème qualité' : 'Quality issue'} value={form.quality_issue} onChange={v => update('quality_issue', v)} />
-        <div>
-          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Catégorie</label>
-          <select value={form.categories?.[0] || ''} onChange={e => update('categories', [e.target.value])}
-            className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-            <option value="">—</option>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+    <>
+      <PageHeader
+        title={ticket.quality_issue || `SC# ${ticket.sc_number}`}
+        subtitle={`SC# ${ticket.sc_number || '—'} · ${formatDate(ticket.issue_reception_date)}`}
+        actions={
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
+              <i className="ti ti-arrow-left" aria-hidden="true" /> {t('ticket.back')}
+            </button>
+            {canEdit && (
+              <button className="btn-primary" onClick={handleSave} disabled={updateMut.isPending}>
+                <i className="ti ti-device-floppy" aria-hidden="true" /> {updateMut.isPending ? t('common.loading') : t('ticket.save')}
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      {/* Banner read-only para Utilisateur */}
+      {!canEdit && (
+        <div className="mx-5 mt-3 flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs">
+          <i className="ti ti-lock text-sm" aria-hidden="true" />
+          {t('ticket.readonly_notice') || 'Vous pouvez consulter cette occurrence, mais pas la modifier.'}
         </div>
-        <div>
-          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Département</label>
-          <select value={form.department} onChange={e => update('department', e.target.value)}
-            className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-            <option value="">—</option>
-            {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-5 bg-gray-50 dark:bg-[#0D1117]">
+        <div className="grid gap-4 max-w-6xl" style={{ gridTemplateColumns:'1fr 1fr' }}>
+
+          {/* ── COL 1 ── */}
+          <div className="flex flex-col gap-4">
+
+            {/* Status + workflow */}
+            <div className="card">
+              <SectionHeader icon="ti-circle-check" title={t('ticket.status')}
+                right={<span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background:sc.bg, color:sc.color }}>{STATUS_LBL[ticket.status]}</span>}
+              />
+              <div className="px-4 py-3 flex gap-2 flex-wrap">
+                {STATUS_OPTS.map(s => (
+                  <button key={s}
+                    onClick={() => canEdit && updateMut.mutate({ status: s })}
+                    disabled={!canEdit}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-0"
+                    style={{
+                      cursor:     canEdit ? 'pointer' : 'default',
+                      border:     ticket.status === s ? '1px solid #2563eb' : '1px solid ' + (isDark ? '#374151' : '#e5e7eb'),
+                      background: ticket.status === s ? '#2563eb' : (isDark ? '#161B22' : '#fff'),
+                      color:      ticket.status === s ? '#fff' : (isDark ? '#9ca3af' : '#6b7280'),
+                      fontSize:   10,
+                      opacity:    !canEdit && ticket.status !== s ? 0.5 : 1,
+                    }}>
+                    {STATUS_LBL[s]}
+                  </button>
+                ))}
+              </div>
+
+              {/* Botões avançar / recuar — só para editors */}
+              {canEdit && (
+                <div className="px-4 pb-3 flex flex-col gap-2">
+                  {/* Avançar */}
+                  {ticket.status === 'not_started' && (
+                    <button onClick={() => updateMut.mutate({ status: 'service_desk' })} className="btn-primary text-xs w-full justify-center">
+                      <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_sd')}
+                    </button>
+                  )}
+                  {ticket.status === 'service_desk' && (
+                    <button onClick={() => updateMut.mutate({ status: 'quality_meeting', sd_completed_at: new Date().toISOString() })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
+                      <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_qm')}
+                    </button>
+                  )}
+                  {ticket.status === 'quality_meeting' && (
+                    <button onClick={() => updateMut.mutate({ status: 'completed' })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
+                      <i className="ti ti-circle-check text-xs" aria-hidden="true" /> {t('ticket.mark_completed')}
+                    </button>
+                  )}
+                  {/* Recuar status */}
+                  {prev && ticket.status !== 'cancelled' && (
+                    <button
+                      onClick={() => updateMut.mutate({ status: prev })}
+                      disabled={updateMut.isPending}
+                      className="btn-ghost text-xs w-full justify-center"
+                      style={{ border: '1px solid ' + (isDark ? '#374151' : '#e5e7eb') }}
+                    >
+                      <i className="ti ti-chevron-left text-xs" aria-hidden="true" />
+                      {t('ticket.revert_to') || 'Retour à'} «{STATUS_LBL[prev]}»
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Global info */}
+            <div className="card">
+              <SectionHeader icon="ti-info-circle" title={t('ticket.informations')}
+                right={
+                  canEdit && !editingInfo ? (
+                    <button className="btn-ghost text-xs py-0.5 px-2" onClick={() => {
+                      setInfoDraft({
+                        ship_to: ticket.ship_to || '',
+                        sold_to: ticket.sold_to || '',
+                        brand:   ticket.brand   || '',
+                        ref_so:  ticket.ref_so  || '',
+                        sc_number: ticket.sc_number || '',
+                        issue_reception_date: ticket.issue_reception_date || '',
+                      })
+                      setEditingInfo(true)
+                    }}>
+                      <i className="ti ti-edit text-xs" aria-hidden="true" /> {t('common.edit') || 'Modifier'}
+                    </button>
+                  ) : null
+                }
+              />
+              <div className="px-4 py-2">
+                {editingInfo && infoDraft ? (
+                  <div className="space-y-2">
+                    {[
+                      ['ship_to',  t('ticket.ship_to')],
+                      ['sold_to',  t('ticket.sold_to')],
+                      ['brand',    t('ticket.brand')],
+                      ['ref_so',   t('ticket.ref_so')],
+                      ['sc_number',t('ticket.sc_number')],
+                    ].map(([key, label]) => (
+                      <div key={key}>
+                        <label className="label">{label}</label>
+                        <input className="input text-xs" value={infoDraft[key] || ''} onChange={e => setInfoDraft(d => ({ ...d, [key]: e.target.value }))} />
+                      </div>
+                    ))}
+                    <div>
+                      <label className="label">{t('ticket.reception_date')}</label>
+                      <input className="input text-xs" type="date" value={infoDraft.issue_reception_date?.slice(0,10) || ''} onChange={e => setInfoDraft(d => ({ ...d, issue_reception_date: e.target.value }))} />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button onClick={() => setEditingInfo(false)} className="btn-ghost text-xs">{t('common.cancel')}</button>
+                      <button onClick={handleSaveInfo} disabled={updateMut.isPending} className="btn-primary text-xs">{t('common.save')}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {[
+                      [t('ticket.ship_to'),        ticket.ship_to],
+                      [t('ticket.sold_to'),         ticket.sold_to],
+                      [t('ticket.brand'),           ticket.brand],
+                      [t('ticket.ref_so'),          ticket.ref_so],
+                      [t('ticket.sc_number'),       ticket.sc_number],
+                      [t('ticket.reception_date'),  formatDate(ticket.issue_reception_date)],
+                      ['SC Cost total',             totalCost > 0 ? `$${Math.round(totalCost).toLocaleString()}` : null],
+                      ['Coût final total',          finalCost > 0 ? `$${Math.round(finalCost).toLocaleString()}` : null],
+                    ].filter(([,v]) => v).map(([label, value]) => (
+                      <div key={label} className="flex justify-between items-center py-1.5 border-b border-gray-50 dark:border-gray-800 text-xs">
+                        <span className="text-gray-400">{label}</span>
+                        <span className="text-gray-900 dark:text-gray-100">{value}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* SD Notes */}
+            {['service_desk','quality_meeting','completed'].includes(ticket.status) && (
+              <div className="card">
+                <SectionHeader icon="ti-notes" title={t('ticket.sd_notes')} />
+                <div className="px-4 py-3">
+                  <textarea rows={3} value={sdNotes} onChange={e => setSdNotes(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder={t('ticket.sd_notes_placeholder')}
+                    className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                </div>
+              </div>
+            )}
+
+            {/* Resolution */}
+            {['quality_meeting','completed'].includes(ticket.status) && (
+              <div className="card">
+                <SectionHeader icon="ti-tool" title={t('ticket.resolution')} />
+                <div className="px-4 py-3 flex flex-col gap-3">
+                  <div>
+                    <label className="label">{t('ticket.root_cause')}</label>
+                    <textarea rows={3} value={rootCause} onChange={e => setRootCause(e.target.value)}
+                      disabled={!canEdit}
+                      placeholder={t('ticket.root_cause_placeholder')} className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.corrective_action')}</label>
+                    <textarea rows={3} value={corrective} onChange={e => setCorrective(e.target.value)}
+                      disabled={!canEdit}
+                      placeholder={t('ticket.corrective_placeholder')} className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* History */}
+            <div className="card">
+              <SectionHeader icon="ti-history" title={t('ticket.history')} />
+              <div className="px-4 py-2">
+                {[
+                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text: t('ticket.last_modified') },
+                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text: `${t('ticket.created')} · SC# ${ticket.sc_number || '—'}` },
+                ].map((h, i) => (
+                  <div key={i} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800 text-xs">
+                    <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: h.dot }} />
+                    <div className="text-gray-400 min-w-20">{h.time}</div>
+                    <div className="text-gray-600 dark:text-gray-300">{h.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── COL 2 ── */}
+          <div className="flex flex-col gap-4">
+            <div className="card">
+              <SectionHeader icon="ti-list-details" title={`${t('ticket.lines')} (${(lines || []).length})`}
+                right={
+                  canEdit ? (
+                    <button onClick={() => setAddingLine(!addingLine)} className="btn-ghost text-xs py-1 px-2">
+                      <i className={`ti ${addingLine ? 'ti-x' : 'ti-plus'} text-xs`} aria-hidden="true" /> {t('ticket.add_line')}
+                    </button>
+                  ) : null
+                }
+              />
+              <div className="px-4 py-3">
+                {addingLine && canEdit && (
+                  <div className="border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-3 bg-blue-50/30 dark:bg-blue-900/10">
+                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">{t('ticket.line_n')} {(lines || []).length + 1} — Nouvelle</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <label className="label">{t('ticket.issue')} *</label>
+                        <input className="input text-xs" value={newLine.quality_issue} onChange={e => setNewLine(f => ({...f, quality_issue: e.target.value}))} placeholder="Description..." />
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.categories')}</label>
+                        <select className="input text-xs" value={newLine.categories} onChange={e => setNewLine(f => ({...f, categories: e.target.value}))}>
+                          <option value="">—</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.department')}</label>
+                        <select className="input text-xs" value={newLine.department} onChange={e => setNewLine(f => ({...f, department: e.target.value}))}>
+                          <option value="">—</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.line_item')}</label>
+                        <input className="input text-xs" value={newLine.line_item} onChange={e => setNewLine(f => ({...f, line_item: e.target.value}))} />
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.foliot_id')}</label>
+                        <input className="input text-xs" value={newLine.foliot_id} onChange={e => setNewLine(f => ({...f, foliot_id: e.target.value}))} />
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.plant')}</label>
+                        <select className="input text-xs" value={newLine.plant} onChange={e => setNewLine(f => ({...f, plant: e.target.value}))}>
+                          <option value="">—</option>{(plants || []).map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.affected_qty')}</label>
+                        <input className="input text-xs" type="number" value={newLine.affected_qty} onChange={e => setNewLine(f => ({...f, affected_qty: e.target.value}))} />
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.cost')}</label>
+                        <input className="input text-xs" value={newLine.cost_approx} onChange={e => setNewLine(f => ({...f, cost_approx: e.target.value}))} placeholder="$0.00" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-2">
+                      <button onClick={() => setAddingLine(false)} className="btn-ghost text-xs">{t('common.cancel')}</button>
+                      <button onClick={() => addLineMut.mutate()} disabled={!newLine.quality_issue} className="btn-primary text-xs disabled:opacity-40">
+                        {addLineMut.isPending ? <Spinner size="sm" /> : t('common.add')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {(lines || []).map(line => (
+                  <LineCard key={line.id} line={line} occurrenceId={id}
+                    onUpdate={refetchLines} onDelete={(lineId) => deleteLineMut.mutate(lineId)}
+                    plants={plants} status={ticket.status} t={t} canEdit={canEdit} />
+                ))}
+                {(lines || []).length === 0 && !addingLine && (
+                  <div className="text-center py-6 text-xs text-gray-400">{t('common.no_results')}</div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">Usine</label>
-          <select value={form.plant} onChange={e => update('plant', e.target.value)}
-            className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-            <option value="">—</option>
-            {PLANTS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <FieldEdit label="Line item" value={form.line_item} onChange={v => update('line_item', v)} />
-        <FieldEdit label="Foliot ID" value={form.foliot_id} onChange={v => update('foliot_id', v)} />
-        <FieldEdit label={lang === 'fr' ? 'Qté affectée' : 'Affected qty'} value={form.affected_qty} onChange={v => update('affected_qty', v)} type="number" />
-        <FieldEdit label={lang === 'fr' ? 'Coût estimé ($)' : 'Est. cost ($)'} value={form.cost_approx} onChange={v => update('cost_approx', v)} type="number" />
       </div>
-      <div className="flex gap-2">
-        <button onClick={save} disabled={saving || !form.quality_issue} className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition disabled:opacity-60">
-          {saving ? '...' : (lang === 'fr' ? 'Ajouter' : 'Add')}
-        </button>
-        <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-          {lang === 'fr' ? 'Annuler' : 'Cancel'}
-        </button>
-      </div>
-    </div>
-  );
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} className="fixed inset-0 flex items-center justify-center z-[2000] cursor-zoom-out p-5" style={{ background:'rgba(0,0,0,0.92)' }}>
+          <img src={lightbox} className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-white text-lg border-none cursor-pointer" style={{ background:'rgba(255,255,255,0.15)' }}>✕</button>
+        </div>
+      )}
+    </>
+  )
 }
