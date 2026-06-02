@@ -17,6 +17,7 @@ import MeetingsPage from './pages/Meetings'
 import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
+import MobileTicketForm from './pages/Tickets/MobileTicketForm'
 
 // Preload Fabric.js for photo annotation
 if (!window.fabric) {
@@ -61,6 +62,14 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+
+          {/* Rota mobile — sem Layout, sem sidebar */}
+          <Route path="/mobile" element={
+            <ProtectedRoute>
+              <MobileTicketForm onSubmitted={() => {}} />
+            </ProtectedRoute>
+          } />
+
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="tickets" element={<TicketsPage />} />
