@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
@@ -18,6 +19,14 @@ export default function Layout() {
   const { user, logout, setLanguage } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const handleLogout = async () => { await logout(); window.location.href = '/login' }
   const toggleLang = () => {
@@ -43,11 +52,9 @@ export default function Layout() {
 
   const navBg = dark ? '#0D1117' : '#1A3A5C'
 
-  const isMobile = window.innerWidth < 768
-
-return (
-  <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
-    <nav className={`${isMobile ? 'hidden' : 'w-52'} flex-shrink-0 flex flex-col transition-colors`} style={{ background: navBg }}>
+  return (
+    <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
+      <nav className={`${isMobile ? 'hidden' : 'w-52'} flex-shrink-0 flex flex-col transition-colors`} style={{ background: navBg }}>
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-center">
           <img
             src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
@@ -131,7 +138,6 @@ return (
         <Outlet />
       </main>
 
-      {/* Modal de mudança de senha obrigatória — aparece automaticamente */}
       <ChangePasswordModal />
     </div>
   )
