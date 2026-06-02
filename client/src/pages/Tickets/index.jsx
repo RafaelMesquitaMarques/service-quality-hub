@@ -299,18 +299,20 @@ export default function TicketsPage() {
                     </td>
                     {/* Botão apagar — só admin/manager */}
                     {isManager && (
-                      <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                      <td className="px-2 py-2.5">
                         <button
-                          onClick={(e) => handleDelete(e, ticket)}
-                          disabled={isDeleting}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            const msg = `Supprimer l'occurrence SC# ${ticket.sc_number || ticket.id} ?\n\nCette action est irréversible.`
+                            if (window.confirm(msg)) deleteMutation.mutate(ticket.id)
+                          }}
+                          disabled={deleteMutation.isLoading}
                           title="Supprimer l'occurrence"
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-xs py-1 px-2 rounded border cursor-pointer inline-flex items-center"
                           style={{ border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
                         >
-                          {isDeleting
-                            ? <i className="ti ti-loader-2 text-sm animate-spin" />
-                            : <i className="ti ti-trash text-sm" />
-                          }
+                          <i className="ti ti-trash text-sm" />
                         </button>
                       </td>
                     )}
