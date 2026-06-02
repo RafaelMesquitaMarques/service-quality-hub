@@ -40,17 +40,15 @@ export default function Dashboard() {
   const tickets     = currentYearTickets || []
   const prevTickets = prevYearTickets    || []
 
-  // Fetch all occurrence_lines costs for current year tickets
   const { data: lineCosts } = useQuery({
     queryKey: ['line-costs-dashboard', tickets.map(t => t.id).join(',')],
     queryFn: async () => {
       if (!tickets.length) return {}
       const { data: lines } = await supabase
         .from('occurrence_lines')
-        .select('occurrence_id, cost_approx, plant, department')
+        .select('occurrence_id, cost_approx, plant, department, categories')
         .in('occurrence_id', tickets.map(t => t.id))
       if (!lines) return {}
-      // Sum per occurrence
       const costs = {}
       lines.forEach(l => {
         if (!costs[l.occurrence_id]) costs[l.occurrence_id] = { total: 0, lines: [] }
@@ -75,7 +73,7 @@ export default function Dashboard() {
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
 
-  // ── KPIs using real costs ──────────────────────────────────
+  // ── KPIs ──────────────────────────────────────────────────
   const totalCost = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
   const scCost    = tickets
     .filter(tk => tk.department !== 'Client')
@@ -110,7 +108,7 @@ export default function Dashboard() {
   const ytdPct         = ytdRevenue > 0 ? scCost / ytdRevenue * 100 : 0
   const aboveTolerance = ytdPct > 0.3
 
-  // ── Chart data using real costs ────────────────────────────
+  // ── SC Cost % chart ────────────────────────────────────────
   const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, name, nameShort }) => {
     const monthTickets = tickets.filter(t => t.fiscal_month === fiscal)
     const scCostMonth  = monthTickets
@@ -121,13 +119,14 @@ export default function Dashboard() {
     return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null, tolerance: TOLERANCE_PCT * 100 }
   }).filter(d => d.pct !== null)
 
+  // ── Events by month ────────────────────────────────────────
   const eventsByMonthData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => ({
     name:   nameShort,
     fy2026: tickets.filter(t => t.fiscal_month === fiscal).length || null,
     fy2025: prevTickets.filter(t => t.fiscal_month === fiscal).length || null,
   }))
 
-  // Cost by department — from occurrence_lines
+  // ── Cost by department — sem limite, todos os departamentos ─
   const deptCostMap = {}
   if (lineCosts) {
     Object.values(lineCosts).forEach(({ lines }) => {
@@ -138,15 +137,15 @@ export default function Dashboard() {
       })
     })
   }
-  // Fallback to ticket.department if no lines
+  // Fallback para tickets sem linhas
   tickets.filter(tk => !lineCosts?.[tk.id] && tk.department && tk.cost_approx > 0).forEach(tk => {
     deptCostMap[tk.department] = (deptCostMap[tk.department] || 0) + Number(tk.cost_approx)
   })
   const deptCostData = Object.entries(deptCostMap)
-    .sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .sort((a, b) => b[1] - a[1])
     .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
 
-  // Cost by plant — from occurrence_lines
+  // ── Cost by plant — altura dinâmica ────────────────────────
   const plantCostMap = {}
   if (lineCosts) {
     Object.values(lineCosts).forEach(({ lines }) => {
@@ -164,12 +163,16 @@ export default function Dashboard() {
     .sort((a, b) => b[1] - a[1])
     .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
 
-  // Category count (unchanged)
+  // ── Categories — do ticket (sem limite) ────────────────────
   const catMap = {}
-  tickets.forEach(tk => { if (tk.categories) catMap[tk.categories] = (catMap[tk.categories] || 0) + 1 })
-  const catData = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }))
+  tickets.forEach(tk => {
+    if (tk.categories) catMap[tk.categories] = (catMap[tk.categories] || 0) + 1
+  })
+  const catData = Object.entries(catMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ name, count }))
 
-  // Brand trend (unchanged)
+  // ── Brand trend ────────────────────────────────────────────
   const brands = [...new Set(tickets.map(t => t.brand).filter(Boolean))].sort()
   const brandTrendData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
     const row = { name: nameShort }
@@ -177,19 +180,27 @@ export default function Dashboard() {
     return row
   }).filter(row => brands.some(b => row[b]))
 
-  // Top 10 clients (unchanged)
+  // ── Top 10 clients ─────────────────────────────────────────
   const clientMap = {}
   tickets.filter(t => t.ship_to).forEach(t => {
     const key = t.ship_to.length > 28 ? t.ship_to.slice(0, 28) + '…' : t.ship_to
     clientMap[key] = (clientMap[key] || 0) + 1
   })
-  const topClientsData = Object.entries(clientMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }))
+  const topClientsData = Object.entries(clientMap)
+    .sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([name, count]) => ({ name, count }))
+
+  // Alturas dinâmicas
+  const deptHeight   = Math.max(240, deptCostData.length * 36)
+  const plantHeight  = Math.max(200, plantCostData.length * 36)
+  const catHeight    = Math.max(200, catData.length * 36)
 
   return (
     <>
       <PageHeader title={t('nav.dashboard')} subtitle={`FY${CURRENT_FISCAL_YEAR} — Vue d'ensemble qualité & coûts`} />
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
+        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <KpiCard label={`Occurrences FY${CURRENT_FISCAL_YEAR}`} value={tickets.length}
             icon="ti-clipboard-list" iconBg="#EFF6FF" iconColor="#2563EB"
@@ -208,6 +219,7 @@ export default function Dashboard() {
             trend={completionTrend()} sub={`${completed} complétées`} subColor="text-green-500" />
         </div>
 
+        {/* SC Cost % */}
         <div className="card p-4">
           <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">SC Cost % of Revenue — FY{CURRENT_FISCAL_YEAR}</div>
           <div className="text-xs text-gray-400 mb-4">SC cost (excl. Client) / monthly revenue · red line = 0.30% tolerance</div>
@@ -224,6 +236,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
+        {/* Events by month */}
         <div className="card p-4">
           <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
             Events by fiscal month — FY{CURRENT_FISCAL_YEAR} vs FY{CURRENT_FISCAL_YEAR - 1}
@@ -239,6 +252,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
+        {/* Brand trend */}
         <div className="card p-4">
           <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Occurrences by brand — FY{CURRENT_FISCAL_YEAR}</div>
           <div className="text-xs text-gray-400 mb-4">Number of occurrences per brand per fiscal month</div>
@@ -255,24 +269,31 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
+        {/* Dept + Plant */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-4">
-            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('dashboard.by_department')} — Cost FY{CURRENT_FISCAL_YEAR}</div>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={deptCostData} layout="vertical" margin={{ left: 70 }}>
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              {t('dashboard.by_department')} — Cost FY{CURRENT_FISCAL_YEAR}
+              <span className="ml-2 text-xs font-normal text-gray-400">({deptCostData.length} départements)</span>
+            </div>
+            <ResponsiveContainer width="100%" height={deptHeight}>
+              <BarChart data={deptCostData} layout="vertical" margin={{ left: 80 }}>
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={70} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={80} />
                 <Tooltip formatter={v => `$${v.toLocaleString()}`} />
                 <Bar dataKey="cost" fill="#F59E0B" radius={[0,4,4,0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="card p-4">
-            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Cost by plant — FY{CURRENT_FISCAL_YEAR}</div>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={plantCostData} layout="vertical" margin={{ left: 50 }}>
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Cost by plant — FY{CURRENT_FISCAL_YEAR}
+              <span className="ml-2 text-xs font-normal text-gray-400">({plantCostData.length} usines)</span>
+            </div>
+            <ResponsiveContainer width="100%" height={plantHeight}>
+              <BarChart data={plantCostData} layout="vertical" margin={{ left: 60 }}>
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={50} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={60} />
                 <Tooltip formatter={v => `$${v.toLocaleString()}`} />
                 <Bar dataKey="cost" fill="#7C3AED" radius={[0,4,4,0]} />
               </BarChart>
@@ -280,13 +301,17 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Category + Top clients */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-4">
-            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('dashboard.by_category')} — FY{CURRENT_FISCAL_YEAR}</div>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={catData} layout="vertical" margin={{ left: 100 }}>
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              {t('dashboard.by_category')} — FY{CURRENT_FISCAL_YEAR}
+              <span className="ml-2 text-xs font-normal text-gray-400">({catData.length} catégories)</span>
+            </div>
+            <ResponsiveContainer width="100%" height={catHeight}>
+              <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
                 <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={110} />
                 <Tooltip />
                 <Bar dataKey="count" fill="#2563EB" radius={[0,4,4,0]} />
               </BarChart>
@@ -294,7 +319,7 @@ export default function Dashboard() {
           </div>
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Top 10 clients — FY{CURRENT_FISCAL_YEAR}</div>
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={Math.max(240, topClientsData.length * 36)}>
               <BarChart data={topClientsData} layout="vertical" margin={{ left: 140 }}>
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={140} />
@@ -306,7 +331,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Recent occurrences ── */}
+        {/* Recent occurrences */}
         <div className="card">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{t('dashboard.recent')}</div>
