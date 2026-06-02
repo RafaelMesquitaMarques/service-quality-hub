@@ -281,15 +281,18 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   const uploadMut = useMutation({
     mutationFn: async (file) => {
-      const ext = file.name.split('.').pop()
+      const ext = file.name.split('.').pop().replace(/[^a-z0-9]/gi, '') || 'jpg'
       const path = `tickets/${occurrenceId}/${Date.now()}_line${line.id}.${ext}`
-      const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
-      if (error) throw error
+      const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
+      if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-      await supabase.from('ticket_photos').insert({ ticket_id: occurrenceId, url: urlData.publicUrl, name: file.name, path, line_id: line.id })
+      const { error: dbErr } = await supabase.from('ticket_photos').insert({
+        ticket_id: occurrenceId, url: urlData.publicUrl, name: file.name, path, line_id: line.id
+      })
+      if (dbErr) throw dbErr
     },
-    onSuccess: () => refetchPhotos(),
-    onError: () => toast.error(t('common.error')),
+    onSuccess: () => { refetchPhotos(); toast.success('Photo ajoutée') },
+    onError: (e) => { console.error('Upload error:', e); toast.error(e?.message || t('common.error')) },
   })
 
   const deletePhotoMut = useMutation({
@@ -302,6 +305,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   const saveAnnotationMut = useMutation({
     mutationFn: async ({ photoId, path, dataUrl }) => {
+      // Convert dataUrl to blob
       const arr  = dataUrl.split(',')
       const mime = arr[0].match(/:(.*?);/)[1]
       const bstr = atob(arr[1])
@@ -309,13 +313,25 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
       const u8arr = new Uint8Array(n)
       while (n--) u8arr[n] = bstr.charCodeAt(n)
       const blob = new Blob([u8arr], { type: mime })
-      const newPath = path.replace(/\.[^.]+$/, '_annotated.jpg')
-      await supabase.storage.from('ticket-photos').upload(newPath, blob, { upsert: true })
+
+      // Usar sempre o mesmo path base (remove _annotated se já existir)
+      const basePath = path.replace(/_annotated(\.jpg)?$/, '').replace(/\.[^.]+$/, '')
+      const newPath  = basePath + '_annotated.jpg'
+
+      const { error: upErr } = await supabase.storage
+        .from('ticket-photos')
+        .upload(newPath, blob, { upsert: true, contentType: 'image/jpeg' })
+      if (upErr) throw upErr
+
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(newPath)
-      await supabase.from('ticket_photos').update({ url: urlData.publicUrl, path: newPath }).eq('id', photoId)
+      const { error: dbErr } = await supabase
+        .from('ticket_photos')
+        .update({ url: urlData.publicUrl, path: newPath })
+        .eq('id', photoId)
+      if (dbErr) throw dbErr
     },
-    onSuccess: () => { refetchPhotos(); setAnnotating(null) },
-    onError: () => toast.error(t('common.error')),
+    onSuccess: () => { refetchPhotos(); setAnnotating(null); toast.success(t('common.save')) },
+    onError: (e) => { console.error('Annotation save error:', e); toast.error(e?.message || t('common.error')) },
   })
 
   const saveLine = async () => {
