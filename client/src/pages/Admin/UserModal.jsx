@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { adminApi } from '../../services/api'
+import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
 
 const DEPARTMENTS = [
@@ -23,6 +24,7 @@ export default function UserModal({ user, plants, onClose }) {
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || null)
   const [avatarFile, setAvatarFile] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState(null)
 
   const [form, setForm] = useState({
     first_name: user?.full_name?.split(' ')[0] || '',
@@ -52,37 +54,33 @@ export default function UserModal({ user, plants, onClose }) {
   }
 
   const handleSubmit = async () => {
+    setError(null)
+
     if (!form.first_name || !form.email || !form.role) {
-      toast.error('Prenom, email et role sont obligatoires')
+      setError('Prenom, email et role sont obligatoires')
       return
     }
     if (mode === 'password' && !isEdit && form.password.length < 6) {
-      toast.error('Mot de passe minimum 6 caracteres')
+      setError('Mot de passe minimum 6 caracteres')
       return
     }
+
     setSaving(true)
     try {
       const full_name = (form.first_name + ' ' + form.last_name).trim()
       let avatar_url = user?.avatar_url || null
 
       if (avatarFile) {
-        const { data: uploaded } = await adminApi.uploadAvatar(user?.id || 'new', avatarFile)
-        avatar_url = uploaded?.url || null
-      }
-
-      const payload = {
-        full_name,
-        email:      form.email,
-        password:   form.password,
-        role:       form.role,
-        department: form.department || null,
-        plant_id:   form.plant_id   || null,
-        language:   form.language,
-        avatar_url,
-        mode,
+        try {
+          const { data: uploaded } = await adminApi.uploadAvatar(user?.id || 'new', avatarFile)
+          avatar_url = uploaded?.url || null
+        } catch (avatarErr) {
+          console.warn('Avatar upload failed, continuing without avatar:', avatarErr)
+        }
       }
 
       if (isEdit) {
+        // ── Edit existing user ──────────────────────────────────────────
         await adminApi.updateUser(user.id, {
           full_name,
           role:       form.role,
@@ -92,18 +90,73 @@ export default function UserModal({ user, plants, onClose }) {
           avatar_url,
         })
         toast.success('Utilisateur mis a jour')
-      } else {
-        await adminApi.inviteUser(payload)
-        if (mode === 'invite') {
-          toast.success('Invitation envoyee avec succes')
-        } else {
-          toast.success('Utilisateur cree avec succes')
+        onClose()
+
+      } else if (mode === 'password') {
+        // ── Create with password via Edge Function ──────────────────────
+        const payload = {
+          full_name,
+          email:      form.email,
+          password:   form.password,
+          role:       form.role,
+          department: form.department || null,
+          plant_id:   form.plant_id   || null,
+          language:   form.language,
+          avatar_url,
+          mode:       'password',
         }
+
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+        const res = await fetch(supabaseUrl + '/functions/v1/invite-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+            'apikey': anonKey,
+          },
+          body: JSON.stringify(payload),
+        })
+
+        let result
+        try {
+          result = await res.json()
+        } catch {
+          result = {}
+        }
+
+        if (!res.ok) {
+          throw new Error(result?.error || `Erreur serveur (${res.status})`)
+        }
+
+        toast.success('Utilisateur cree avec succes')
+        onClose()
+
+      } else {
+        // ── Invite by email ─────────────────────────────────────────────
+        const payload = {
+          full_name,
+          email:      form.email,
+          role:       form.role,
+          department: form.department || null,
+          plant_id:   form.plant_id   || null,
+          language:   form.language,
+          avatar_url,
+          mode:       'invite',
+        }
+        await adminApi.inviteUser(payload)
+        toast.success('Invitation envoyee avec succes')
+        onClose()
       }
-      onClose()
+
     } catch (err) {
-      toast.error(err.message || 'Erreur')
-      console.error(err)
+      console.error('UserModal error:', err)
+      const msg = err?.message || 'Erreur inconnue'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
@@ -128,15 +181,15 @@ export default function UserModal({ user, plants, onClose }) {
           <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>
             {isEdit ? 'Modifier les informations du compte' : 'Choisir le mode de creation'}
           </div>
-          <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>X</button>
+          <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>✕</button>
         </div>
 
         {/* Mode toggle — only for new users */}
         {!isEdit && (
           <div style={{ display:'flex', margin:'12px 20px 0', background:'#f3f4f6', borderRadius:8, padding:3, gap:3 }}>
             {[
-              { id:'invite', label:'Convite por email', icon:'✉' },
-              { id:'password', label:'Criar com senha', icon:'🔒' },
+              { id:'invite',   label:'Convite por email', icon:'✉' },
+              { id:'password', label:'Criar com senha',   icon:'🔒' },
             ].map(m => (
               <button key={m.id} onClick={() => setMode(m.id)} style={{
                 flex:1, padding:'7px 8px', borderRadius:6, border:'none', cursor:'pointer',
@@ -154,6 +207,14 @@ export default function UserModal({ user, plants, onClose }) {
 
         {/* Body */}
         <div style={{ padding:'16px 20px' }}>
+
+          {/* Error banner */}
+          {error && (
+            <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px', marginBottom:12, fontSize:12, color:'#991b1b', display:'flex', alignItems:'flex-start', gap:8 }}>
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Avatar */}
           <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:16, paddingBottom:16, borderBottom:'1px solid #f3f4f6' }}>
@@ -189,12 +250,13 @@ export default function UserModal({ user, plants, onClose }) {
           {/* Email */}
           <div style={{ marginBottom:10 }}>
             <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Email *</label>
-            <input style={inp} type="email" placeholder="marie.leblanc@foliot.com"
+            <input style={{ ...inp, background: isEdit ? '#f9fafb' : '#fff' }} type="email"
+              placeholder="marie.leblanc@foliot.com"
               value={form.email} onChange={e => sf('email', e.target.value)}
               disabled={isEdit} />
           </div>
 
-          {/* Password — only for mode=password and new users */}
+          {/* Password */}
           {!isEdit && mode === 'password' && (
             <div style={{ marginBottom:10 }}>
               <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Mot de passe *</label>
@@ -207,7 +269,7 @@ export default function UserModal({ user, plants, onClose }) {
                   onChange={e => sf('password', e.target.value)}
                 />
                 <button onClick={() => setShowPassword(s => !s)} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:14 }}>
-                  {showPassword ? 'O' : 'O'}
+                  {showPassword ? '🙈' : '👁'}
                 </button>
               </div>
             </div>
@@ -257,7 +319,7 @@ export default function UserModal({ user, plants, onClose }) {
               <span style={{ fontSize:15, flexShrink:0 }}>{mode === 'invite' ? '✉' : '🔒'}</span>
               <div style={{ fontSize:12, color: mode === 'invite' ? '#166534' : '#1e40af', lineHeight:1.6 }}>
                 {mode === 'invite'
-                  ? 'Um email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.'
+                  ? 'Um email sera envoye avec un lien para definir o mot de passe. O link expira apres 24h.'
                   : 'O utilizador sera criado imediatamente e pode fazer login com a senha definida.'
                 }
               </div>
@@ -270,7 +332,8 @@ export default function UserModal({ user, plants, onClose }) {
           <button onClick={onClose} style={{ padding:'8px 14px', borderRadius:7, fontSize:13, cursor:'pointer', background:'none', border:'none', color:'#6b7280' }}>
             Annuler
           </button>
-          <button onClick={handleSubmit} disabled={saving} style={{ padding:'8px 18px', borderRadius:7, fontSize:13, cursor:'pointer', background: mode === 'invite' ? '#2563eb' : '#059669', color:'#fff', border:'none', display:'inline-flex', alignItems:'center', gap:6, fontWeight:500, opacity: saving ? 0.7 : 1 }}>
+          <button onClick={handleSubmit} disabled={saving} style={{ padding:'8px 18px', borderRadius:7, fontSize:13, cursor: saving ? 'not-allowed' : 'pointer', background: saving ? '#9ca3af' : (mode === 'invite' ? '#2563eb' : '#059669'), color:'#fff', border:'none', display:'inline-flex', alignItems:'center', gap:6, fontWeight:500 }}>
+            {saving && <span style={{ display:'inline-block', width:12, height:12, border:'2px solid #fff', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />}
             {BTN}
           </button>
         </div>
