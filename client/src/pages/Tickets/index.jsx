@@ -7,6 +7,7 @@ import { ticketApi, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { usePermissions } from '../../hooks/usePermissions'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
 import TicketModal from './TicketModal'
+import MobileTicketForm from './MobileTicketForm'
 import toast from 'react-hot-toast'
 
 const FISCAL_YEARS = ['all', 2026, 2025, 2024]
@@ -70,11 +71,23 @@ function ColumnFilter({ label, values, selected, onChange, onClear }) {
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────
+// Detect mobile
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return isMobile
+}
+
 export default function TicketsPage() {
   const { t }    = useTranslation()
   const navigate = useNavigate()
   const qc       = useQueryClient()
   const { isManager } = usePermissions()
+  const isMobile = useIsMobile()
 
   const [showModal, setShowModal] = useState(false)
   const [fiscalYear, setFiscalYear] = useState(CURRENT_FISCAL_YEAR)
@@ -184,6 +197,11 @@ export default function TicketsPage() {
       const url     = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
       const a = document.createElement('a'); a.href = url; a.download = `sqh-fy${fiscalYear}.csv`; a.click()
     } catch { toast.error('Export failed') }
+  }
+
+  // Mobile view
+  if (isMobile) {
+    return <MobileTicketForm onSubmitted={() => qc.invalidateQueries(['tickets'])} />
   }
 
   return (
