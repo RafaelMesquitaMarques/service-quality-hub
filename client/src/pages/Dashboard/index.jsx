@@ -5,8 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend, ReferenceLine, Cell
 } from 'recharts'
-import { ticketApi, calcKpis, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
-import { supabase } from '../../services/supabase'
+import { ticketApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { KpiCard, StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 
 const MONTHLY_REVENUE = {
@@ -40,40 +39,16 @@ export default function Dashboard() {
   const tickets     = currentYearTickets || []
   const prevTickets = prevYearTickets    || []
 
-  const { data: lineCosts } = useQuery({
-    queryKey: ['line-costs-dashboard', tickets.map(t => t.id).join(',')],
-    queryFn: async () => {
-      if (!tickets.length) return {}
-      const { data: lines } = await supabase
-        .from('occurrence_lines')
-        .select('occurrence_id, cost_approx, plant, department, categories')
-        .in('occurrence_id', tickets.map(t => t.id))
-      if (!lines) return {}
-      const costs = {}
-      lines.forEach(l => {
-        if (!costs[l.occurrence_id]) costs[l.occurrence_id] = { total: 0, lines: [] }
-        costs[l.occurrence_id].total += Number(l.cost_approx || 0)
-        costs[l.occurrence_id].lines.push(l)
-      })
-      return costs
-    },
-    enabled: tickets.length > 0,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const getTicketCost = (tk) => {
-    const lc = lineCosts?.[tk.id]
-    if (lc && lc.total > 0) return lc.total
-    return Number(tk.cost_approx || 0)
-  }
-
   const isLoading = loadingCurrent || loadingPrev
 
   if (isLoading) return (
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
 
-  // ── KPIs ──────────────────────────────────────────────────
+  // ── Custo real vem directamente da view (real_cost) ────────
+  const getTicketCost = (tk) => Number(tk.real_cost || tk.cost_approx || 0)
+
+  // ── KPIs ───────────────────────────────────────────────────
   const totalCost = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
   const scCost    = tickets
     .filter(tk => tk.department !== 'Client')
@@ -82,7 +57,7 @@ export default function Dashboard() {
   const completed = tickets.filter(tk => tk.status === 'completed').length
   const completionPct = tickets.length > 0 ? Math.round(completed / tickets.length * 100) : 0
 
-  const prevTotalCost = prevTickets.reduce((s, tk) => s + Number(tk.cost_approx || 0), 0)
+  const prevTotalCost = prevTickets.reduce((s, tk) => s + getTicketCost(tk), 0)
   const prevCompletionPct = prevTickets.length > 0
     ? Math.round(prevTickets.filter(tk => tk.status === 'completed').length / prevTickets.length * 100) : 0
 
@@ -116,7 +91,7 @@ export default function Dashboard() {
       .reduce((sum, t) => sum + getTicketCost(t), 0)
     const revenue = MONTHLY_REVENUE[name] || 0
     const pct     = revenue > 0 ? scCostMonth / revenue * 100 : null
-    return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null, tolerance: TOLERANCE_PCT * 100 }
+    return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null }
   }).filter(d => d.pct !== null)
 
   // ── Events by month ────────────────────────────────────────
@@ -126,44 +101,31 @@ export default function Dashboard() {
     fy2025: prevTickets.filter(t => t.fiscal_month === fiscal).length || null,
   }))
 
-  // ── Cost by department — sem limite, todos os departamentos ─
+  // ── Cost by department ─────────────────────────────────────
   const deptCostMap = {}
-  if (lineCosts) {
-    Object.values(lineCosts).forEach(({ lines }) => {
-      lines.forEach(l => {
-        if (l.department && l.cost_approx > 0) {
-          deptCostMap[l.department] = (deptCostMap[l.department] || 0) + Number(l.cost_approx)
-        }
-      })
-    })
-  }
-  // Fallback para tickets sem linhas
-  tickets.filter(tk => !lineCosts?.[tk.id] && tk.department && tk.cost_approx > 0).forEach(tk => {
-    deptCostMap[tk.department] = (deptCostMap[tk.department] || 0) + Number(tk.cost_approx)
+  tickets.forEach(tk => {
+    const cost = getTicketCost(tk)
+    if (tk.department && cost > 0) {
+      deptCostMap[tk.department] = (deptCostMap[tk.department] || 0) + cost
+    }
   })
   const deptCostData = Object.entries(deptCostMap)
     .sort((a, b) => b[1] - a[1])
     .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
 
-  // ── Cost by plant — altura dinâmica ────────────────────────
+  // ── Cost by plant ──────────────────────────────────────────
   const plantCostMap = {}
-  if (lineCosts) {
-    Object.values(lineCosts).forEach(({ lines }) => {
-      lines.forEach(l => {
-        if (l.plant && l.cost_approx > 0) {
-          plantCostMap[l.plant] = (plantCostMap[l.plant] || 0) + Number(l.cost_approx)
-        }
-      })
-    })
-  }
-  tickets.filter(tk => !lineCosts?.[tk.id] && tk.plant && tk.cost_approx > 0).forEach(tk => {
-    plantCostMap[tk.plant] = (plantCostMap[tk.plant] || 0) + Number(tk.cost_approx)
+  tickets.forEach(tk => {
+    const cost = getTicketCost(tk)
+    if (tk.plant && cost > 0) {
+      plantCostMap[tk.plant] = (plantCostMap[tk.plant] || 0) + cost
+    }
   })
   const plantCostData = Object.entries(plantCostMap)
     .sort((a, b) => b[1] - a[1])
     .map(([name, cost]) => ({ name, cost: Math.round(cost) }))
 
-  // ── Categories — do ticket (sem limite) ────────────────────
+  // ── Categories ─────────────────────────────────────────────
   const catMap = {}
   tickets.forEach(tk => {
     if (tk.categories) catMap[tk.categories] = (catMap[tk.categories] || 0) + 1
@@ -191,9 +153,9 @@ export default function Dashboard() {
     .map(([name, count]) => ({ name, count }))
 
   // Alturas dinâmicas
-  const deptHeight   = Math.max(240, deptCostData.length * 36)
-  const plantHeight  = Math.max(200, plantCostData.length * 36)
-  const catHeight    = Math.max(200, catData.length * 36)
+  const deptHeight  = Math.max(240, deptCostData.length * 36)
+  const plantHeight = Math.max(200, plantCostData.length * 36)
+  const catHeight   = Math.max(200, catData.length * 36)
 
   return (
     <>
@@ -227,9 +189,9 @@ export default function Dashboard() {
             <BarChart data={scPctData} margin={{ top: 10 }}>
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11 }} domain={[0, 'auto']} />
-              <Tooltip formatter={(v, name) => name === 'pct' ? [`${v.toFixed(3)}%`, 'SC Cost %'] : [`${v}%`, 'Tolerance']} />
+              <Tooltip formatter={(v) => [`${v.toFixed(3)}%`, 'SC Cost %']} />
               <ReferenceLine y={TOLERANCE_PCT * 100} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '0.3%', position: 'right', fontSize: 10, fill: '#EF4444' }} />
-              <Bar dataKey="pct" name="pct" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="pct" radius={[4,4,0,0]}>
                 {scPctData.map((entry, i) => <Cell key={i} fill={entry.pct > 0.3 ? '#DC2626' : '#2563EB'} />)}
               </Bar>
             </BarChart>
