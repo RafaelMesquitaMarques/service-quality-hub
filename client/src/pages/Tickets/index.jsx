@@ -121,6 +121,8 @@ export default function TicketsPage() {
   // ── Delete mutation ──────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: async (ticketId) => {
+      await supabase.from('ticket_photos').delete().eq('ticket_id', ticketId)
+      await supabase.from('occurrence_lines').delete().eq('occurrence_id', ticketId)
       const { error } = await supabase.from('tickets').delete().eq('id', ticketId)
       if (error) throw error
     },
