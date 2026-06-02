@@ -34,7 +34,6 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
   const [measureGrp, setMeasureGrp] = useState(null)
   const [ready,      setReady]      = useState(false)
 
-  // Load fabric + init canvas
   useEffect(() => {
     const init = () => {
       if (!canvasRef.current || !window.fabric) return
@@ -57,7 +56,6 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
         setReady(true)
       }
       imgEl.onerror = () => {
-        // If crossOrigin fails, try without it
         const imgEl2 = new Image()
         imgEl2.onload = () => {
           const fabricImg = new window.fabric.Image(imgEl2)
@@ -79,7 +77,6 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
     if (window.fabric) {
       init()
     } else {
-      // Try cdnjs first, fallback to jsdelivr
       const urls = [
         'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
         'https://cdn.jsdelivr.net/npm/fabric@5.3.1/dist/fabric.min.js',
@@ -98,7 +95,6 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
     return () => { if (fabricRef.current) fabricRef.current.dispose() }
   }, [photoUrl])
 
-  // Tool handlers
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas || !ready) return
@@ -152,7 +148,7 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
       let shape  = null
       let drawing = false
       canvas.on('mouse:down', o => {
-        if (o.target && o.target !== canvas.getObjects()[0]) return // don't start draw on existing object
+        if (o.target && o.target !== canvas.getObjects()[0]) return
         origin = canvas.getPointer(o.e)
         drawing = true
         if (tool === 'text') {
@@ -290,7 +286,7 @@ function StepIndicator({ current, t }) {
 // ── Line Row ───────────────────────────────────────────────────────────────
 function LineRow({ line, idx, onChange, onDelete, plants, t }) {
   const fileInputRef = useRef(null)
-  const [annotating, setAnnotating] = useState(null) // photo index being annotated
+  const [annotating, setAnnotating] = useState(null)
 
   const handleFiles = async (files) => {
     const newPhotos = await Promise.all(Array.from(files).map(async f => ({
@@ -363,7 +359,6 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
         </div>
       </div>
 
-      {/* Photos */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
         <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Photos</div>
         {(line.photos||[]).length > 0 && (
@@ -406,6 +401,7 @@ export default function TicketModal({ onClose }) {
   const { t }       = useTranslation()
   const queryClient = useQueryClient()
   const [step, setStep] = useState(1)
+  const [submitting, setSubmitting] = useState(false)
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
@@ -445,8 +441,10 @@ export default function TicketModal({ onClose }) {
     },
   })
 
-  const createMut = useMutation({
-    mutationFn: async () => {
+  const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
       const dateYYYYMM = form.issue_reception_date?.slice(0,7)
 
       // 1. Create ticket
@@ -488,17 +486,15 @@ export default function TicketModal({ onClose }) {
         .select()
       if (linesErr) throw linesErr
 
-      // 3. Upload photos for each line
+      // 3. Upload photos
       for (let li = 0; li < lines.length; li++) {
         const linePhotos = lines[li].photos || []
         if (linePhotos.length === 0) continue
         const lineId = createdLines?.[li]?.id || null
         for (const photo of linePhotos) {
           try {
-            // Get blob: annotated uses dataUrl, otherwise use stored buffer
             let blob
             if (photo.annotated && photo.dataUrl) {
-              // Convert dataUrl to blob without fetch
               const arr = photo.dataUrl.split(',')
               const mime = arr[0].match(/:(.*?);/)[1]
               const bstr = atob(arr[1])
@@ -526,21 +522,18 @@ export default function TicketModal({ onClose }) {
         }
       }
 
-      return occ
-    },
-    onSuccess: () => {
       queryClient.invalidateQueries(['tickets'])
       toast.success('Occurrence créée et soumise au Service Desk')
       onClose()
-    },
-    onError: (e) => {
+    } catch (e) {
       console.error('CREATE ERROR:', e)
       toast.error(e.message || t('common.error'))
-    },
-  })
+      setSubmitting(false)
+    }
+  }
 
-  const canSubmit    = form.issue_reception_date && lines.some(l => l.quality_issue)
-  const totalPhotos  = lines.reduce((s,l) => s + (l.photos?.length||0), 0)
+  const canSubmit   = form.issue_reception_date && lines.some(l => l.quality_issue)
+  const totalPhotos = lines.reduce((s,l) => s + (l.photos?.length||0), 0)
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
@@ -611,7 +604,7 @@ export default function TicketModal({ onClose }) {
         </div>
 
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 dark:border-gray-800">
-          <button onClick={step===1 ? onClose : () => setStep(1)} className="btn-ghost text-xs">
+          <button onClick={step===1 ? onClose : () => setStep(1)} className="btn-ghost text-xs" disabled={submitting}>
             {step===1 ? t('common.cancel') : <><i className="ti ti-arrow-left text-xs" aria-hidden="true" /> {t('common.previous')}</>}
           </button>
           <div className="flex items-center gap-2">
@@ -621,8 +614,8 @@ export default function TicketModal({ onClose }) {
                 {t('common.next')} <i className="ti ti-arrow-right text-xs" aria-hidden="true" />
               </button>
             ) : (
-              <button onClick={() => createMut.mutate()} disabled={createMut.isPending} className="btn-primary text-xs">
-                {createMut.isPending ? <Spinner size="sm" /> : <><i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_sd')}</>}
+              <button onClick={handleSubmit} disabled={submitting} className="btn-primary text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                {submitting ? <Spinner size="sm" /> : <><i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_sd')}</>}
               </button>
             )}
           </div>
