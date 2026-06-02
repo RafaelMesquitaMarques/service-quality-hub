@@ -1,10 +1,8 @@
 // src/pages/Tickets/MobileTicketForm.jsx
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
-import { useAuthStore } from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
@@ -16,14 +14,7 @@ export default function MobileTicketForm({ onSubmitted }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language?.startsWith('fr') ? 'fr' : 'en'
   const fileRef = useRef(null)
-  const navigate = useNavigate()
-  const { user } = useAuthStore()
 
-  // Redirecionar para login se não estiver autenticado
-  if (!user) {
-    navigate('/login')
-    return null
-  }
 
   const [submitting, setSubmitting] = useState(false)
   const [photos, setPhotos] = useState([])
