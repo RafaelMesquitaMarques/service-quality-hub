@@ -55,6 +55,7 @@ export default function MobileTicketForm({ onSubmitted }) {
   }
 
   const handleSubmit = async () => {
+    if (submitting) return
     if (!form.quality_issue) {
       toast.error(lang === 'fr' ? 'Description obligatoire' : 'Description required')
       return
@@ -96,20 +97,40 @@ export default function MobileTicketForm({ onSubmitted }) {
       // 3. Upload photos
       for (const photo of photos) {
         try {
-          const ext  = photo.name.split('.').pop().replace(/[^a-z0-9]/gi, '') || 'jpg'
+          // Determinar extensão — câmera iOS pode gerar 'image.jpg' ou sem extensão
+          let ext = 'jpg'
+          if (photo.file.type === 'image/png') ext = 'png'
+          else if (photo.file.type === 'image/heic') ext = 'jpg' // converter HEIC para jpg
+          else if (photo.file.type === 'image/jpeg') ext = 'jpg'
+          else {
+            const nameParts = photo.name.split('.')
+            if (nameParts.length > 1) ext = nameParts.pop().replace(/[^a-z0-9]/gi, '') || 'jpg'
+          }
+
           const path = `tickets/${occ.id}/${Date.now()}_${Math.random().toString(36).slice(2,5)}.${ext}`
-          const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, photo.file)
-          if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
+
+          // Upload com contentType explícito
+          const { error: upErr } = await supabase.storage
+            .from('ticket-photos')
+            .upload(path, photo.file, {
+              contentType: photo.file.type || 'image/jpeg',
+              upsert: false,
+            })
+          if (upErr) {
+            console.warn('Photo upload failed:', upErr.message)
+            continue // não bloqueia o submit
+          }
           const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
           await supabase.from('ticket_photos').insert({
             ticket_id: occ.id,
             url: urlData.publicUrl,
-            name: photo.name,
+            name: photo.name || `photo.${ext}`,
             path,
             line_id: line.id,
           })
         } catch (e) {
-          console.warn('Photo error:', e)
+          console.warn('Photo error (non-fatal):', e)
+          // Não bloqueia — occurrence criada mesmo sem foto
         }
       }
 
@@ -173,8 +194,8 @@ export default function MobileTicketForm({ onSubmitted }) {
             <label className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium cursor-pointer">
               <i className="ti ti-camera text-base" />
               {lang === 'fr' ? 'Prendre photo' : 'Take photo'}
-              <input type="file" accept="image/*" capture className="hidden"
-  onChange={handlePhotos} />
+              <input type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={handlePhotos} />
             </label>
             {/* Galerie */}
             <label className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-medium cursor-pointer">
