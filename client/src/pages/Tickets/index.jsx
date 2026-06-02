@@ -121,17 +121,14 @@ export default function TicketsPage() {
   // ── Delete mutation ──────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: async (ticketId) => {
-      // Apagar em cascade: fotos → linhas → ticket
-      await supabase.from('ticket_photos').delete().eq('ticket_id', ticketId)
-      await supabase.from('occurrence_lines').delete().eq('occurrence_id', ticketId)
       const { error } = await supabase.from('tickets').delete().eq('id', ticketId)
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success(t('ticket.deleted') || 'Occurrence supprimée')
+      toast.success('Occurrence supprimée')
       qc.invalidateQueries(['tickets'])
     },
-    onError: () => toast.error(t('common.error') || 'Erreur'),
+    onError: (err) => toast.error(err?.message || 'Erreur'),
   })
 
   const handleDelete = (e, ticket) => {
