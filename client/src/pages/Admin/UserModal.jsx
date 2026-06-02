@@ -55,7 +55,6 @@ export default function UserModal({ user, plants, onClose }) {
 
   const handleSubmit = async () => {
     setError(null)
-
     if (!form.first_name || !form.email || !form.role) {
       setError('Prenom, email et role sont obligatoires')
       return
@@ -64,26 +63,22 @@ export default function UserModal({ user, plants, onClose }) {
       setError('Mot de passe minimum 6 caracteres')
       return
     }
-
     setSaving(true)
     try {
       const full_name = (form.first_name + ' ' + form.last_name).trim()
       let avatar_url = user?.avatar_url || null
-
       if (avatarFile) {
         try {
           const { data: uploaded } = await adminApi.uploadAvatar(user?.id || 'new', avatarFile)
           avatar_url = uploaded?.url || null
         } catch (avatarErr) {
-          console.warn('Avatar upload failed, continuing without avatar:', avatarErr)
+          console.warn('Avatar upload failed:', avatarErr)
         }
       }
 
       if (isEdit) {
-        // ── Edit existing user ──────────────────────────────────────────
         await adminApi.updateUser(user.id, {
-          full_name,
-          role:       form.role,
+          full_name, role: form.role,
           department: form.department || null,
           plant_id:   form.plant_id   || null,
           language:   form.language,
@@ -91,26 +86,17 @@ export default function UserModal({ user, plants, onClose }) {
         })
         toast.success('Utilisateur mis a jour')
         onClose()
-
-      } else if (mode === 'password') {
-        // ── Create with password via Edge Function ──────────────────────
+      } else {
         const payload = {
-          full_name,
-          email:      form.email,
-          password:   form.password,
-          role:       form.role,
-          department: form.department || null,
-          plant_id:   form.plant_id   || null,
-          language:   form.language,
-          avatar_url,
-          mode:       'password',
+          full_name, email: form.email, password: form.password,
+          role: form.role, department: form.department || null,
+          plant_id: form.plant_id || null, language: form.language,
+          avatar_url, mode,
         }
-
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
         const res = await fetch(supabaseUrl + '/functions/v1/invite-user', {
           method: 'POST',
           headers: {
@@ -120,43 +106,16 @@ export default function UserModal({ user, plants, onClose }) {
           },
           body: JSON.stringify(payload),
         })
-
         let result
-        try {
-          result = await res.json()
-        } catch {
-          result = {}
-        }
-
-        if (!res.ok) {
-          throw new Error(result?.error || `Erreur serveur (${res.status})`)
-        }
-
-        toast.success('Utilisateur cree avec succes')
-        onClose()
-
-      } else {
-        // ── Invite by email ─────────────────────────────────────────────
-        const payload = {
-          full_name,
-          email:      form.email,
-          role:       form.role,
-          department: form.department || null,
-          plant_id:   form.plant_id   || null,
-          language:   form.language,
-          avatar_url,
-          mode:       'invite',
-        }
-        await adminApi.inviteUser(payload)
-        toast.success('Invitation envoyee avec succes')
+        try { result = await res.json() } catch { result = {} }
+        if (!res.ok) throw new Error(result?.error || `Erreur serveur (${res.status})`)
+        toast.success(mode === 'invite' ? 'Invitation envoyee avec succes' : 'Utilisateur cree avec succes')
         onClose()
       }
-
     } catch (err) {
       console.error('UserModal error:', err)
-      const msg = err?.message || 'Erreur inconnue'
-      setError(msg)
-      toast.error(msg)
+      setError(err?.message || 'Erreur inconnue')
+      toast.error(err?.message || 'Erreur')
     } finally {
       setSaving(false)
     }
@@ -171,6 +130,19 @@ export default function UserModal({ user, plants, onClose }) {
   const TITLE = isEdit ? 'Modifier utilisateur' : 'Ajouter un utilisateur'
   const BTN   = saving ? 'Envoi...' : isEdit ? 'Enregistrer' : mode === 'invite' ? 'Envoyer invitation' : 'Creer utilisateur'
 
+  // Textes mode selon langue sélectionnée
+  const modeInfo = {
+    invite: {
+      fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.',
+      en: 'An email will be sent with a link to set the password. The link expires after 24h.',
+    },
+    password: {
+      fr: "L'utilisateur sera cree immediatement et pourra se connecter avec le mot de passe defini.",
+      en: 'The user will be created immediately and can log in with the defined password.',
+    },
+  }
+  const uiLang = form.language === 'en' ? 'en' : 'fr'
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', zIndex:1000, overflowY:'auto' }}>
       <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:480, boxShadow:'0 24px 48px rgba(0,0,0,0.18)', position:'relative' }}>
@@ -184,12 +156,12 @@ export default function UserModal({ user, plants, onClose }) {
           <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>✕</button>
         </div>
 
-        {/* Mode toggle — only for new users */}
+        {/* Mode toggle */}
         {!isEdit && (
           <div style={{ display:'flex', margin:'12px 20px 0', background:'#f3f4f6', borderRadius:8, padding:3, gap:3 }}>
             {[
-              { id:'invite',   label:'Convite por email', icon:'✉' },
-              { id:'password', label:'Criar com senha',   icon:'🔒' },
+              { id:'invite',   label: uiLang === 'fr' ? 'Inviter par email' : 'Invite by email', icon:'✉' },
+              { id:'password', label: uiLang === 'fr' ? 'Creer avec mot de passe' : 'Create with password', icon:'🔒' },
             ].map(m => (
               <button key={m.id} onClick={() => setMode(m.id)} style={{
                 flex:1, padding:'7px 8px', borderRadius:6, border:'none', cursor:'pointer',
@@ -211,26 +183,21 @@ export default function UserModal({ user, plants, onClose }) {
           {/* Error banner */}
           {error && (
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px', marginBottom:12, fontSize:12, color:'#991b1b', display:'flex', alignItems:'flex-start', gap:8 }}>
-              <span>⚠️</span>
-              <span>{error}</span>
+              <span>⚠️</span><span>{error}</span>
             </div>
           )}
 
           {/* Avatar */}
           <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:16, paddingBottom:16, borderBottom:'1px solid #f3f4f6' }}>
             <div onClick={() => fileRef.current?.click()} style={{ width:60, height:60, borderRadius:'50%', cursor:'pointer', overflow:'hidden', flexShrink:0, border:'1.5px dashed #93c5fd', display:'flex', alignItems:'center', justifyContent:'center', background: avatarPreview ? 'transparent' : '#eff6ff' }}>
-              {avatarPreview ? (
-                <img src={avatarPreview} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-              ) : (
-                <div style={{ textAlign:'center' }}>
-                  <div style={{ fontSize:20, color:'#3b82f6' }}>+</div>
-                  <div style={{ fontSize:10, color:'#3b82f6', marginTop:2 }}>{getInitials()}</div>
-                </div>
-              )}
+              {avatarPreview
+                ? <img src={avatarPreview} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                : <div style={{ textAlign:'center' }}><div style={{ fontSize:20, color:'#3b82f6' }}>+</div><div style={{ fontSize:10, color:'#3b82f6', marginTop:2 }}>{getInitials()}</div></div>
+              }
             </div>
             <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarChange} style={{ display:'none' }} />
             <div>
-              <div style={{ fontSize:13, fontWeight:500, color:'#111827', marginBottom:3 }}>Photo de profil</div>
+              <div style={{ fontSize:13, fontWeight:500, color:'#111827', marginBottom:3 }}>{uiLang === 'fr' ? 'Photo de profil' : 'Profile photo'}</div>
               <div style={{ fontSize:12, color:'#9ca3af' }}>JPG ou PNG · max 2 MB</div>
             </div>
           </div>
@@ -238,11 +205,11 @@ export default function UserModal({ user, plants, onClose }) {
           {/* Prenom / Nom */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
             <div>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Prenom *</label>
+              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Prenom *' : 'First name *'}</label>
               <input style={inp} placeholder="Marie" value={form.first_name} onChange={e => sf('first_name', e.target.value)} />
             </div>
             <div>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Nom *</label>
+              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Nom *' : 'Last name *'}</label>
               <input style={inp} placeholder="Leblanc" value={form.last_name} onChange={e => sf('last_name', e.target.value)} />
             </div>
           </div>
@@ -259,15 +226,12 @@ export default function UserModal({ user, plants, onClose }) {
           {/* Password */}
           {!isEdit && mode === 'password' && (
             <div style={{ marginBottom:10 }}>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Mot de passe *</label>
+              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Mot de passe *' : 'Password *'}</label>
               <div style={{ position:'relative' }}>
-                <input
-                  style={{ ...inp, paddingRight:36 }}
+                <input style={{ ...inp, paddingRight:36 }}
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Minimum 6 caracteres"
-                  value={form.password}
-                  onChange={e => sf('password', e.target.value)}
-                />
+                  placeholder={uiLang === 'fr' ? 'Minimum 6 caracteres' : 'Minimum 6 characters'}
+                  value={form.password} onChange={e => sf('password', e.target.value)} />
                 <button onClick={() => setShowPassword(s => !s)} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:14 }}>
                   {showPassword ? '🙈' : '👁'}
                 </button>
@@ -286,16 +250,16 @@ export default function UserModal({ user, plants, onClose }) {
           {/* Dept / Plant */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
             <div>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Departement</label>
+              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Departement' : 'Department'}</label>
               <select style={inp} value={form.department} onChange={e => sf('department', e.target.value)}>
-                <option value="">Selectionner...</option>
+                <option value="">{uiLang === 'fr' ? 'Selectionner...' : 'Select...'}</option>
                 {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Usine (Plant)</label>
+              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Usine (Plant)' : 'Plant'}</label>
               <select style={inp} value={form.plant_id} onChange={e => sf('plant_id', e.target.value)}>
-                <option value="">Selectionner...</option>
+                <option value="">{uiLang === 'fr' ? 'Selectionner...' : 'Select...'}</option>
                 {plants.length > 0
                   ? plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)
                   : ['Vietnam','China','Canada','USA'].map(p => <option key={p} value={p}>{p}</option>)
@@ -306,9 +270,9 @@ export default function UserModal({ user, plants, onClose }) {
 
           {/* Langue */}
           <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Langue</label>
+            <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Langue' : 'Language'}</label>
             <select style={inp} value={form.language} onChange={e => sf('language', e.target.value)}>
-              <option value="fr">Francais</option>
+              <option value="fr">Français</option>
               <option value="en">English</option>
             </select>
           </div>
@@ -318,10 +282,7 @@ export default function UserModal({ user, plants, onClose }) {
             <div style={{ background: mode === 'invite' ? '#f0fdf4' : '#eff6ff', border: '1px solid ' + (mode === 'invite' ? '#bbf7d0' : '#bfdbfe'), borderRadius:8, padding:'10px 12px', display:'flex', alignItems:'flex-start', gap:8 }}>
               <span style={{ fontSize:15, flexShrink:0 }}>{mode === 'invite' ? '✉' : '🔒'}</span>
               <div style={{ fontSize:12, color: mode === 'invite' ? '#166534' : '#1e40af', lineHeight:1.6 }}>
-                {mode === 'invite'
-                  ? 'Um email sera envoye avec un lien para definir o mot de passe. O link expira apres 24h.'
-                  : 'O utilizador sera criado imediatamente e pode fazer login com a senha definida.'
-                }
+                {modeInfo[mode][uiLang]}
               </div>
             </div>
           )}
@@ -330,10 +291,9 @@ export default function UserModal({ user, plants, onClose }) {
         {/* Footer */}
         <div style={{ padding:'12px 20px', borderTop:'1px solid #e5e7eb', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <button onClick={onClose} style={{ padding:'8px 14px', borderRadius:7, fontSize:13, cursor:'pointer', background:'none', border:'none', color:'#6b7280' }}>
-            Annuler
+            {uiLang === 'fr' ? 'Annuler' : 'Cancel'}
           </button>
           <button onClick={handleSubmit} disabled={saving} style={{ padding:'8px 18px', borderRadius:7, fontSize:13, cursor: saving ? 'not-allowed' : 'pointer', background: saving ? '#9ca3af' : (mode === 'invite' ? '#2563eb' : '#059669'), color:'#fff', border:'none', display:'inline-flex', alignItems:'center', gap:6, fontWeight:500 }}>
-            {saving && <span style={{ display:'inline-block', width:12, height:12, border:'2px solid #fff', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />}
             {BTN}
           </button>
         </div>
