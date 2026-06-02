@@ -173,8 +173,8 @@ export default function MobileTicketForm({ onSubmitted }) {
             <label className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium cursor-pointer">
               <i className="ti ti-camera text-base" />
               {lang === 'fr' ? 'Prendre photo' : 'Take photo'}
-              <input type="file" accept="image/*" capture="environment" className="hidden"
-                onChange={handlePhotos} />
+              <input type="file" accept="image/*" capture className="hidden"
+  onChange={handlePhotos} />
             </label>
             {/* Galerie */}
             <label className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl text-sm font-medium cursor-pointer">
