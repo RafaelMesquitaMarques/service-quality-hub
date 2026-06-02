@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import MobileTicketForm from '../../pages/Tickets/MobileTicketForm'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -20,15 +18,6 @@ export default function Layout() {
   const { user, logout, setLanguage } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
-  const location = useLocation()
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   const handleLogout = async () => { await logout(); window.location.href = '/login' }
   const toggleLang = () => {
@@ -55,8 +44,8 @@ export default function Layout() {
   const navBg = dark ? '#0D1117' : '#1A3A5C'
 
   return (
-    <div className={`flex ${isMobile ? 'min-h-screen' : 'h-screen overflow-hidden'}`}>
-      <nav className={`${isMobile ? 'hidden' : 'w-52'} flex-shrink-0 flex flex-col transition-colors`} style={{ background: navBg }}>
+    <div className="flex h-screen overflow-hidden">
+      <nav className="w-52 flex-shrink-0 flex flex-col transition-colors" style={{ background: navBg }}>
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-center">
           <img
             src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
@@ -136,11 +125,8 @@ export default function Layout() {
         </div>
       </nav>
 
-      <main className={`flex-1 flex flex-col ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'} bg-gray-50 dark:bg-[#0D1117] transition-colors`}>
-        {isMobile && location.pathname === '/tickets'
-          ? <MobileTicketForm onSubmitted={() => {}} />
-          : <Outlet />
-        }
+      <main className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0D1117] transition-colors">
+        <Outlet />
       </main>
 
       <ChangePasswordModal />
