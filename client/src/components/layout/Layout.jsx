@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
+import ChangePasswordModal from '../ChangePasswordModal'
 import i18n from '../../i18n'
 
 const ROLE_COLORS = {
@@ -127,6 +128,9 @@ export default function Layout() {
       <main className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-[#0D1117] transition-colors">
         <Outlet />
       </main>
+
+      {/* Modal de mudança de senha obrigatória — aparece automaticamente */}
+      <ChangePasswordModal />
     </div>
   )
 }
