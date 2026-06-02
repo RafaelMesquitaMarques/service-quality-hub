@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import MobileTicketForm from '../../pages/Tickets/MobileTicketForm'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -19,6 +20,7 @@ export default function Layout() {
   const { user, logout, setLanguage } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -135,7 +137,10 @@ export default function Layout() {
       </nav>
 
       <main className={`flex-1 flex flex-col ${isMobile ? 'overflow-y-auto' : 'overflow-hidden'} bg-gray-50 dark:bg-[#0D1117] transition-colors`}>
-        <Outlet />
+        {isMobile && location.pathname === '/tickets'
+          ? <MobileTicketForm onSubmitted={() => {}} />
+          : <Outlet />
+        }
       </main>
 
       <ChangePasswordModal />
