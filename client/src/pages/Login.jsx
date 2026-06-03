@@ -17,8 +17,8 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     const result = await login(email, password)
-   if (result.success) {
-  const isMobile = window.innerWidth < 768
+if (result.success) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   navigate(isMobile ? '/mobile' : '/')
 }
     else setError(result.error)
