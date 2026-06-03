@@ -65,7 +65,11 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
 
           {/* Rota mobile — sem Layout, sem sidebar */}
-          <Route path="/mobile" element={<MobileTicketForm onSubmitted={() => {}} />} />
+<Route path="/mobile" element={
+  <ProtectedRoute>
+    <MobileTicketForm onSubmitted={() => {}} />
+  </ProtectedRoute>
+} />
 
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
