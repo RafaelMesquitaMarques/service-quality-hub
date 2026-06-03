@@ -42,16 +42,11 @@ function App() {
   const { init: initTheme } = useThemeStore()
   const [ready, setReady] = React.useState(false)
 
-  React.useEffect(() => {
-    initTheme()
-    // Timeout de segurança — máximo 3 segundos de loading
-    const timeout = setTimeout(() => setReady(true), 3000)
-    init().finally(() => {
-      clearTimeout(timeout)
-      setReady(true)
-    })
-    return () => clearTimeout(timeout)
-  }, [])
+ React.useEffect(() => {
+  initTheme()
+  setReady(true)
+  init()
+}, [])
 
   if (!ready) return (
     <div style={{
