@@ -38,13 +38,19 @@ function ProtectedRoute({ children, roles }) {
 }
 
 function App() {
-  const { init } = useAuthStore()
+  const { init, user } = useAuthStore()
   const { init: initTheme } = useThemeStore()
   const [ready, setReady] = React.useState(false)
 
   React.useEffect(() => {
     initTheme()
-    init().finally(() => setReady(true))
+    // Timeout de segurança — máximo 3 segundos de loading
+    const timeout = setTimeout(() => setReady(true), 3000)
+    init().finally(() => {
+      clearTimeout(timeout)
+      setReady(true)
+    })
+    return () => clearTimeout(timeout)
   }, [])
 
   if (!ready) return (
