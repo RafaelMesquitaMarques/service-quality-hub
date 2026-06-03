@@ -10,7 +10,7 @@ const DEPARTMENTS = ['Client','Shipping','Supplier','Production','Logistics','In
 const CATEGORIES  = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
 
-export default function MobileTicketForm({ onSubmitted }) {
+export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language?.startsWith('fr') ? 'fr' : 'en'
   const fileRef = useRef(null)
@@ -154,17 +154,24 @@ export default function MobileTicketForm({ onSubmitted }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
+    <div className={asModal ? "fixed inset-0 z-[100] bg-gray-50 dark:bg-gray-900 overflow-y-auto pb-24" : "min-h-screen bg-gray-50 dark:bg-gray-900 pb-24"}>
       {/* Header */}
-      <div className="bg-[#1A3A5C] px-4 py-4 flex items-center gap-3">
-        <img
-          src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
-          alt="Quality Hub"
-          style={{ height: 28, mixBlendMode: 'lighten' }}
-        />
-        <span className="text-white text-sm font-semibold">
-          {lang === 'fr' ? 'Nouvelle occurrence' : 'New occurrence'}
-        </span>
+      <div className="bg-[#1A3A5C] px-4 py-4 flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <img
+            src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
+            alt="Quality Hub"
+            style={{ height: 28, mixBlendMode: 'lighten' }}
+          />
+          <span className="text-white text-sm font-semibold">
+            {lang === 'fr' ? 'Nouvelle occurrence' : 'New occurrence'}
+          </span>
+        </div>
+        {asModal && onClose && (
+          <button onClick={onClose} className="text-white/70 hover:text-white bg-transparent border-0 cursor-pointer text-xl">
+            ✕
+          </button>
+        )}
       </div>
 
       <div className="px-4 py-4 space-y-4">
