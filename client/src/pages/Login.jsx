@@ -13,17 +13,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    const result = await login(email, password)
-if (result.success) {
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-navigate(isMobile ? '/mobile' : '/')
-}
-    else setError(result.error)
+const handleSubmit = async (e) => {
+  e.preventDefault()
+  setError('')
+  const result = await login(email, password)
+  if (result.success) {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    if (isMobile) {
+      window.location.href = '/mobile'
+    } else {
+      navigate('/')
+    }
+  } else {
+    setError(result.error)
   }
-
+}
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0D1117] p-4">
       <div className="w-full max-w-sm">
