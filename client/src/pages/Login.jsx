@@ -19,9 +19,9 @@ const handleSubmit = async (e) => {
   const result = await login(email, password)
   if (result.success) {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-    if (isMobile) {
-      window.location.href = '/mobile'
-    } else {
+if (isMobile) {
+  setTimeout(() => { window.location.href = '/mobile' }, 500)
+} else {
       navigate('/')
     }
   } else {
