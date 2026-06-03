@@ -20,7 +20,7 @@ export default function Layout() {
   const { user, logout, setLanguage } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  const [isMobile, setIsMobile] = useState(false)
   const [showMobileForm, setShowMobileForm] = useState(false)
 
   useEffect(() => {
