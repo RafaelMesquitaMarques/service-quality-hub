@@ -119,21 +119,18 @@ export const useAuthStore = create(
               return
             }
 
-            if (event === 'SIGNED_IN' && session?.user) {
-              const cachedUser = get().user
-              // Só fazer fetch do perfil se for um utilizador diferente
-              if (cachedUser?.id !== session.user.id) {
-                const profile = await fetchProfile(session.user.id)
-                if (profile) {
-                  set({
-                    user: { ...profile, email: session.user.email, id: session.user.id },
-                    session,
-                  })
-                }
-              } else {
-                set({ session })
-              }
-            }
+           if (event === 'SIGNED_IN' && session?.user) {
+  const cachedUser = get().user
+  if (!cachedUser || cachedUser?.id !== session.user.id) {
+    const profile = await fetchProfile(session.user.id)
+    if (profile) {
+      set({
+        user: { ...profile, email: session.user.email, id: session.user.id },
+        session,
+      })
+    }
+  }
+}
           }
         )
 
