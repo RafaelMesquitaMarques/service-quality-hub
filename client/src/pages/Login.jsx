@@ -19,7 +19,7 @@ export default function LoginPage() {
     const result = await login(email, password)
 if (result.success) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-  navigate(isMobile ? '/mobile' : '/')
+  setTimeout(() => navigate(isMobile ? '/mobile' : '/'), 100)
 }
     else setError(result.error)
   }
