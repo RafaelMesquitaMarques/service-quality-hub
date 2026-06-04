@@ -19,7 +19,7 @@ import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
 import MobileTicketForm from './pages/Tickets/MobileTicketForm'
 
-// Preload Fabric.js for photo annotation
+// Preload Fabric.js
 if (!window.fabric) {
   const s = document.createElement('script')
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
@@ -27,7 +27,18 @@ if (!window.fabric) {
 }
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30000 } }
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 5 * 60 * 1000,      // 5 minutos — não refetch desnecessário
+      refetchOnWindowFocus: false,     // ← FIX problema 1: não refetch ao mudar de aba/página
+      refetchOnReconnect: false,       // não refetch ao reconectar
+      refetchIntervalInBackground: false,
+    },
+    mutations: {
+      retry: 0,
+    }
+  }
 })
 
 function ProtectedRoute({ children, roles }) {
@@ -38,15 +49,15 @@ function ProtectedRoute({ children, roles }) {
 }
 
 function App() {
-  const { init, user } = useAuthStore()
+  const { init } = useAuthStore()
   const { init: initTheme } = useThemeStore()
   const [ready, setReady] = React.useState(false)
 
- React.useEffect(() => {
-  initTheme()
-  setReady(true)
-  init()
-}, [])
+  React.useEffect(() => {
+    initTheme()
+    setReady(true)
+    init()
+  }, [])
 
   if (!ready) return (
     <div style={{
@@ -63,10 +74,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-
-          {/* Rota mobile — sem Layout, sem sidebar */}
-<Route path="/mobile" element={<MobileTicketForm onSubmitted={() => {}} />} />
-
+          <Route path="/mobile" element={<MobileTicketForm onSubmitted={() => {}} />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="tickets" element={<TicketsPage />} />
@@ -92,7 +100,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
-      <Toaster position="top-right" />
+      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
     </QueryClientProvider>
   )
 }
