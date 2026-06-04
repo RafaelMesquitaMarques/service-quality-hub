@@ -121,14 +121,16 @@ export default function MeetingsPage() {
   const isDark = document.documentElement.classList.contains('dark')
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
 
-  const { data: meetings, isLoading: loadingMeetings } = useQuery({
-    queryKey: ['meetings-v2'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('meetings').select('*').order('meeting_date', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-  })
+const { data: meetings, isLoading: loadingMeetings } = useQuery({
+  queryKey: ['meetings-v2'],
+  queryFn: async () => {
+    const { data, error } = await supabase.from('meetings').select('*').order('meeting_date', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  staleTime: 10 * 60 * 1000, // 10 minutos
+  refetchOnWindowFocus: false,
+})
 
   useEffect(() => {
     if (!meetings || meetings.length === 0) return
