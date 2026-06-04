@@ -27,13 +27,15 @@ export default function Dashboard() {
   const { data: currentYearTickets, isLoading: loadingCurrent } = useQuery({
     queryKey: ['tickets', 'dashboard', CURRENT_FISCAL_YEAR],
     queryFn: () => ticketApi.list({ fiscal_year: CURRENT_FISCAL_YEAR }).then(r => r.data.tickets),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
+    keepPreviousData: true,
   })
 
   const { data: prevYearTickets, isLoading: loadingPrev } = useQuery({
     queryKey: ['tickets', 'dashboard', CURRENT_FISCAL_YEAR - 1],
     queryFn: () => ticketApi.list({ fiscal_year: CURRENT_FISCAL_YEAR - 1 }).then(r => r.data.tickets),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
+    keepPreviousData: true,
   })
 
   const tickets     = currentYearTickets || []
@@ -41,7 +43,7 @@ export default function Dashboard() {
 
   const isLoading = loadingCurrent || loadingPrev
 
-  if (isLoading) return (
+  if (isLoading && !currentYearTickets) return (
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
 
