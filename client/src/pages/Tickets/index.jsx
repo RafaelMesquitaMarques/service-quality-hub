@@ -91,7 +91,8 @@ export default function TicketsPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
     queryFn: () => ticketApi.list({ fiscal_year: fiscalYear }).then(r => r.data),
-    staleTime: 2 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    keepPreviousData: true,
   })
 
   const allTickets = data?.tickets || []
@@ -236,7 +237,7 @@ export default function TicketsPage() {
 
       {/* ── Table ── */}
       <div className="flex-1 overflow-auto bg-white dark:bg-[#0D1117]">
-        {isLoading ? (
+        {isLoading && !data ? (
           <div className="flex items-center justify-center h-40"><Spinner /></div>
         ) : tickets.length === 0 ? (
           <EmptyState icon="ti-clipboard-off" message={t('common.no_results')} />
