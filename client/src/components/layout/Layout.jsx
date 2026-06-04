@@ -85,6 +85,17 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             ))}
+
+            {/* Link externo SupplierQ */}
+            <a
+              href="https://rafaelmesquitamarques.github.io/supplierq/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5">
+              <i className="ti ti-external-link text-base" />
+              SupplierQ
+            </a>
+
             {bottomItems.length > 0 && (
               <>
                 <div className="px-4 pt-4 pb-1 text-white/30 text-xs uppercase tracking-widest">Management</div>
