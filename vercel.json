@@ -1,0 +1,15 @@
+{
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "buildCommand": "cd client && npm run build",
+  "outputDirectory": "client/dist"
+}
