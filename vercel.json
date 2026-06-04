@@ -1,7 +1,9 @@
 {
+  "buildCommand": "cd client && npm run build",
+  "outputDirectory": "client/dist",
   "headers": [
     {
-      "source": "/assets/(.*)",
+      "source": "/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -9,7 +11,5 @@
         }
       ]
     }
-  ],
-  "buildCommand": "cd client && npm run build",
-  "outputDirectory": "client/dist"
+  ]
 }
