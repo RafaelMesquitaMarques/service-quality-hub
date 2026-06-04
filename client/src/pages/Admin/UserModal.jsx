@@ -97,6 +97,9 @@ export default function UserModal({ user, plants, onClose }) {
         const token = sessionData?.session?.access_token
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+        // Timeout de 15 segundos para a Edge Function
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000)
         const res = await fetch(supabaseUrl + '/functions/v1/invite-user', {
           method: 'POST',
           headers: {
@@ -105,7 +108,9 @@ export default function UserModal({ user, plants, onClose }) {
             'apikey': anonKey,
           },
           body: JSON.stringify(payload),
+          signal: controller.signal,
         })
+        clearTimeout(timeoutId)
         let result
         try { result = await res.json() } catch { result = {} }
         if (!res.ok) throw new Error(result?.error || `Erreur serveur (${res.status})`)
