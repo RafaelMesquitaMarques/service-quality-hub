@@ -528,6 +528,7 @@ export default function TicketModal({ onClose }) {
     } catch (e) {
       console.error('CREATE ERROR:', e)
       toast.error(e.message || t('common.error'))
+    } finally {
       setSubmitting(false)
     }
   }
