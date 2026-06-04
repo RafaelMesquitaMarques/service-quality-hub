@@ -15,6 +15,7 @@ const ROLE_COLORS = {
   viewer:       'bg-gray-100 text-gray-600',
 }
 
+
 export default function Layout() {
   const { t } = useTranslation()
   const { user, logout, setLanguage } = useAuthStore()
