@@ -233,7 +233,7 @@ export default function MobileNewOccurrence() {
   const canGoStep2  = !!form.issue_reception_date
   const canGoStep3  = lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
-  const isEditor    = EDITOR_ROLES.includes(user?.role)
+const isEditor = !!user
 
   const handleLogout = async () => {
     await logout()
@@ -359,11 +359,7 @@ export default function MobileNewOccurrence() {
 
       <StepBar step={step} />
 
-      {!isEditor && (
-        <div style={s.viewerBanner}>
-          ⚠️ {t('roles.viewer')} — {t('common.error')}
-        </div>
-      )}
+      
 
       <div style={s.content}>
         {step === 1 && (
