@@ -80,9 +80,10 @@ function App() {
 
           {/* Mobile — rotas independentes */}
           <Route path="/mobile/login" element={<MobileLogin />} />
-          <Route path="/mobile" element={<MobileLayout />}>
-            <Route path="new" element={<MobileNewOccurrence />} />
-          </Route>
+         <Route path="/mobile" element={<MobileLayout />}>
+  <Route index element={<Navigate to="/mobile/new" replace />} />
+  <Route path="new" element={<MobileNewOccurrence />} />
+</Route>
 
           {/* Desktop — protegido */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
