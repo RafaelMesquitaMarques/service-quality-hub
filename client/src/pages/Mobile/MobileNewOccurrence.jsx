@@ -233,7 +233,7 @@ export default function MobileNewOccurrence() {
   const canGoStep2  = !!form.issue_reception_date
   const canGoStep3  = lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
-const isEditor = !!user
+const isEditor = user?.can_create_occurrence !== false
 
   const handleLogout = async () => {
     await logout()
@@ -357,7 +357,13 @@ const isEditor = !!user
         <button onClick={handleLogout} style={s.logoutBtn}>{t('common.logout')}</button>
       </div>
 
-      <StepBar step={step} />
+  <StepBar step={step} />
+
+{!isEditor && (
+  <div style={s.viewerBanner}>
+    ⚠️ {t('common.error')} — {t('ticket.submit_to_sd')}
+  </div>
+)}
 
       
 
