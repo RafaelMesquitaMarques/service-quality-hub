@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import ChangePasswordModal from '../ChangePasswordModal'
-import MobileNewOccurrence from '../../pages/Tickets/MobileTicketForm'
 import i18n from '../../i18n'
 
 const ROLE_COLORS = {
@@ -15,13 +14,99 @@ const ROLE_COLORS = {
   viewer:       'bg-gray-100 text-gray-600',
 }
 
+const MOBILE_URL = 'https://service-quality-hub.vercel.app/mobile/login'
+
+function MobileQRButton() {
+  const [showQR, setShowQR] = useState(false)
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {/* Linha clicável na sidebar */}
+      <div className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5">
+        
+          href={MOBILE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2.5 flex-1 text-white/60 hover:text-white"
+          style={{ textDecoration: 'none' }}
+        >
+          <i className="ti ti-device-mobile text-base" />
+          Version mobile
+        </a>
+        <button
+          onClick={() => setShowQR(v => !v)}
+          title="Afficher le QR code"
+          className="text-white/40 hover:text-white transition-colors"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}
+        >
+          <i className="ti ti-qrcode text-sm" />
+        </button>
+      </div>
+
+      {/* Popup QR code */}
+      {showQR && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setShowQR(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 20, padding: 32,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.25)', maxWidth: 300, width: '90%',
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>
+              📱 Version mobile
+            </div>
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(MOBILE_URL)}&color=185FA5`}
+              alt="QR Code"
+              width={200}
+              height={200}
+              style={{ borderRadius: 8 }}
+            />
+            <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 1.5 }}>
+              Scannez avec votre téléphone pour accéder à l'interface mobile
+            </div>
+            
+              href={MOBILE_URL}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                fontSize: 11, color: '#185FA5', textDecoration: 'none',
+                background: '#E6F1FB', borderRadius: 8, padding: '6px 12px',
+                wordBreak: 'break-all', textAlign: 'center',
+              }}
+            >
+              {MOBILE_URL}
+            </a>
+            <button
+              onClick={() => setShowQR(false)}
+              style={{
+                background: '#F3F4F6', border: 'none', borderRadius: 10,
+                padding: '10px 24px', fontSize: 14, fontWeight: 600,
+                color: '#374151', cursor: 'pointer', width: '100%',
+              }}
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Layout() {
   const { t } = useTranslation()
   const { user, logout, setLanguage } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const navigate = useNavigate()
-  const [showMobileForm, setShowMobileForm] = useState(false)
 
   const handleLogout = async () => { await logout(); window.location.href = '/login' }
   const toggleLang = () => {
@@ -75,6 +160,7 @@ export default function Layout() {
               style={{ height: 36, width: 'auto', mixBlendMode: 'lighten' }}
             />
           </div>
+
           <div className="flex-1 py-2">
             {navItems.map(item => (
               <NavLink key={item.to} to={item.to} end={item.end}
@@ -87,8 +173,8 @@ export default function Layout() {
               </NavLink>
             ))}
 
-            {/* Link externo SupplierQ */}
-            <a
+            {/* SupplierQ */}
+            
               href="https://rafaelmesquitamarques.github.io/supplierq/"
               target="_blank"
               rel="noopener noreferrer"
@@ -96,6 +182,9 @@ export default function Layout() {
               <i className="ti ti-external-link text-base" />
               SupplierQ
             </a>
+
+            {/* Mobile */}
+            <MobileQRButton />
 
             {bottomItems.length > 0 && (
               <>
@@ -113,6 +202,7 @@ export default function Layout() {
               </>
             )}
           </div>
+
           <div className="px-4 py-3 border-t border-white/10">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-7 h-7 rounded-full bg-amber-400 flex items-center justify-center text-white font-semibold text-xs flex-shrink-0">
@@ -172,26 +262,21 @@ export default function Layout() {
           <span className="text-xs">{t('nav.dashboard')}</span>
         </NavLink>
 
-        <button onClick={() => setShowMobileForm(true)}
+        
+          href={MOBILE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
           className="flex flex-col items-center justify-center w-14 h-14 rounded-full text-white shadow-lg -mt-5"
-          style={{ background: '#1A3A5C' }}>
-          <i className="ti ti-plus text-2xl" />
-        </button>
+          style={{ background: '#1A3A5C', textDecoration: 'none' }}
+        >
+          <i className="ti ti-device-mobile text-2xl" />
+        </a>
 
         <NavLink to="/tickets" className={({ isActive }) => `flex flex-col items-center gap-0.5 px-4 py-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
           <i className="ti ti-clipboard-list text-xl" />
           <span className="text-xs">{t('nav.tickets')}</span>
         </NavLink>
       </div>
-
-      {/* Modal formulaire mobile */}
-      {showMobileForm && (
-        <MobileNewOccurrence
-          onSubmitted={() => setShowMobileForm(false)}
-          onClose={() => setShowMobileForm(false)}
-          asModal
-        />
-      )}
 
       <ChangePasswordModal />
     </>
