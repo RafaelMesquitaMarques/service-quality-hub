@@ -16,6 +16,18 @@ const ROLES = [
   { value:'viewer',       label:'Utilisateur' },
 ]
 
+const PERMISSIONS = [
+  { key:'perm_create_occurrence', fr:'Créer des occurrences',       en:'Create occurrences',        default: true  },
+  { key:'perm_edit_occurrence',   fr:'Modifier des occurrences',    en:'Edit occurrences',          default: true  },
+  { key:'perm_delete_occurrence', fr:'Supprimer des occurrences',   en:'Delete occurrences',        default: false },
+  { key:'perm_view_dashboard',    fr:'Voir le dashboard',           en:'View dashboard',            default: true  },
+  { key:'perm_admin',             fr:'Accès Administration',        en:'Admin access',              default: false },
+  { key:'perm_manage_plants',     fr:'Gérer les usines',            en:'Manage plants',             default: false },
+  { key:'perm_import_excel',      fr:'Importer Excel',              en:'Import Excel',              default: false },
+  { key:'perm_create_mobile',     fr:'Créer occurrences (mobile)',  en:'Create occurrences (mobile)', default: true },
+  { key:'perm_meetings',          fr:'Accès aux réunions',          en:'Access meetings',           default: true  },
+]
+
 export default function UserModal({ user, plants, onClose }) {
   const isEdit = !!user
   const fileRef = useRef(null)
@@ -26,16 +38,20 @@ export default function UserModal({ user, plants, onClose }) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
 
+  const permDefaults = Object.fromEntries(
+    PERMISSIONS.map(p => [p.key, user?.[p.key] ?? p.default])
+  )
+
   const [form, setForm] = useState({
-    first_name:             user?.full_name?.split(' ')[0] || '',
-    last_name:              user?.full_name?.split(' ').slice(1).join(' ') || '',
-    email:                  user?.email      || '',
-    password:               '',
-    role:                   user?.role       || 'viewer',
-    department:             user?.department || '',
-    plant_id:               user?.plant_id   || '',
-    language:               user?.language   || 'fr',
-    can_create_occurrence:  user?.can_create_occurrence !== false,
+    first_name: user?.full_name?.split(' ')[0] || '',
+    last_name:  user?.full_name?.split(' ').slice(1).join(' ') || '',
+    email:      user?.email      || '',
+    password:   '',
+    role:       user?.role       || 'viewer',
+    department: user?.department || '',
+    plant_id:   user?.plant_id   || '',
+    language:   user?.language   || 'fr',
+    ...permDefaults,
   })
 
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -77,14 +93,16 @@ export default function UserModal({ user, plants, onClose }) {
         }
       }
 
+      const permPayload = Object.fromEntries(PERMISSIONS.map(p => [p.key, form[p.key]]))
+
       if (isEdit) {
         await adminApi.updateUser(user.id, {
           full_name, role: form.role,
-          department:            form.department || null,
-          plant_id:              form.plant_id   || null,
-          language:              form.language,
+          department: form.department || null,
+          plant_id:   form.plant_id   || null,
+          language:   form.language,
           avatar_url,
-          can_create_occurrence: form.can_create_occurrence,
+          ...permPayload,
         })
         toast.success('Utilisateur mis a jour')
         onClose()
@@ -94,7 +112,7 @@ export default function UserModal({ user, plants, onClose }) {
           role: form.role, department: form.department || null,
           plant_id: form.plant_id || null, language: form.language,
           avatar_url, mode,
-          can_create_occurrence: form.can_create_occurrence,
+          ...permPayload,
         }
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token
@@ -138,14 +156,8 @@ export default function UserModal({ user, plants, onClose }) {
   const BTN   = saving ? 'Envoi...' : isEdit ? 'Enregistrer' : mode === 'invite' ? 'Envoyer invitation' : 'Creer utilisateur'
 
   const modeInfo = {
-    invite: {
-      fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.',
-      en: 'An email will be sent with a link to set the password. The link expires after 24h.',
-    },
-    password: {
-      fr: "L'utilisateur sera cree immediatement et pourra se connecter avec le mot de passe defini.",
-      en: 'The user will be created immediately and can log in with the defined password.',
-    },
+    invite:   { fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.', en: 'An email will be sent with a link to set the password. The link expires after 24h.' },
+    password: { fr: "L'utilisateur sera cree immediatement et pourra se connecter avec le mot de passe defini.", en: 'The user will be created immediately and can log in with the defined password.' },
   }
   const uiLang = form.language === 'en' ? 'en' : 'fr'
 
@@ -287,42 +299,31 @@ export default function UserModal({ user, plants, onClose }) {
             <div style={{ fontSize:12, fontWeight:600, color:'#374151', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.4px' }}>
               {uiLang === 'fr' ? 'Permissions' : 'Permissions'}
             </div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', background:'#f9fafb', borderRadius:8, border:'1px solid #e5e7eb' }}>
-              <div>
+            {PERMISSIONS.map(p => (
+              <div key={p.key} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 12px', background:'#f9fafb', borderRadius:8, border:'1px solid #e5e7eb', marginBottom:6 }}>
                 <div style={{ fontSize:13, fontWeight:500, color:'#111827' }}>
-                  {uiLang === 'fr' ? 'Créer des occurrences (mobile)' : 'Create occurrences (mobile)'}
+                  {uiLang === 'fr' ? p.fr : p.en}
                 </div>
-                <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
-                  {uiLang === 'fr' ? "Permet d'utiliser l'interface mobile pour soumettre des occurrences" : 'Allows using the mobile interface to submit occurrences'}
-                </div>
+                <button
+                  onClick={() => sf(p.key, !form[p.key])}
+                  style={{
+                    width:44, height:24, borderRadius:12,
+                    border:'none', cursor:'pointer',
+                    background: form[p.key] ? '#185FA5' : '#D1D5DB',
+                    position:'relative', flexShrink:0,
+                    transition:'background 0.2s',
+                  }}
+                >
+                  <div style={{
+                    width:18, height:18, borderRadius:'50%',
+                    background:'#fff', position:'absolute',
+                    top:3, left: form[p.key] ? 23 : 3,
+                    transition:'left 0.2s',
+                    boxShadow:'0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
               </div>
-              <button
-                onClick={() => sf('can_create_occurrence', !form.can_create_occurrence)}
-                style={{
-                  width: 44,
-                  height: 24,
-                  borderRadius: 12,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: form.can_create_occurrence ? '#185FA5' : '#D1D5DB',
-                  position: 'relative',
-                  flexShrink: 0,
-                  transition: 'background 0.2s',
-                }}
-              >
-                <div style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  position: 'absolute',
-                  top: 3,
-                  left: form.can_create_occurrence ? 23 : 3,
-                  transition: 'left 0.2s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                }} />
-              </button>
-            </div>
+            ))}
           </div>
 
           {/* Info box */}
