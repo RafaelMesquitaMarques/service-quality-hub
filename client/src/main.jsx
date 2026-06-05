@@ -7,6 +7,7 @@ import './i18n'
 import './index.css'
 import { useAuthStore } from './store/authStore'
 import { useThemeStore } from './store/themeStore'
+import { usePermissions } from './hooks/usePermissions'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -21,7 +22,6 @@ import MobileLayout from './pages/Mobile/MobileLayout'
 import MobileLogin from './pages/Mobile/MobileLogin'
 import MobileNewOccurrence from './pages/Mobile/MobileNewOccurrence'
 
-// Preload Fabric.js
 if (!window.fabric) {
   const s = document.createElement('script')
   s.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'
@@ -37,16 +37,16 @@ const queryClient = new QueryClient({
       refetchOnReconnect: false,
       refetchIntervalInBackground: false,
     },
-    mutations: {
-      retry: 0,
-    }
+    mutations: { retry: 0 }
   }
 })
 
-function ProtectedRoute({ children, roles }) {
+function ProtectedRoute({ children, perm }) {
   const { user } = useAuthStore()
+  const permissions = usePermissions()
+
   if (!user) return <Navigate to="/login" replace />
-  if (roles && user && !roles.includes(user?.role)) return <Navigate to="/" replace />
+  if (perm && !permissions[perm]) return <Navigate to="/" replace />
   return children
 }
 
@@ -75,37 +75,30 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Auth */}
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Mobile — rotas independentes */}
           <Route path="/mobile/login" element={<MobileLogin />} />
-         <Route path="/mobile" element={<MobileLayout />}>
-  <Route index element={<Navigate to="/mobile/new" replace />} />
-  <Route path="new" element={<MobileNewOccurrence />} />
-</Route>
+          <Route path="/mobile" element={<MobileLayout />}>
+            <Route index element={<Navigate to="/mobile/new" replace />} />
+            <Route path="new" element={<MobileNewOccurrence />} />
+          </Route>
 
-          {/* Desktop — protegido */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="tickets/new" element={<NewTicket />} />
             <Route path="tickets/:id" element={<TicketDetail />} />
-            <Route path="meetings" element={<MeetingsPage />} />
+            <Route path="meetings" element={
+              <ProtectedRoute perm="canMeetings"><MeetingsPage /></ProtectedRoute>
+            } />
             <Route path="import" element={
-              <ProtectedRoute roles={['admin', 'manager']}>
-                <ImportPage />
-              </ProtectedRoute>
+              <ProtectedRoute perm="canImportExcel"><ImportPage /></ProtectedRoute>
             } />
             <Route path="admin" element={
-              <ProtectedRoute roles={['admin']}>
-                <AdminPage />
-              </ProtectedRoute>
+              <ProtectedRoute perm="canAdmin"><AdminPage /></ProtectedRoute>
             } />
             <Route path="plants" element={
-              <ProtectedRoute roles={['admin']}>
-                <PlantsPage />
-              </ProtectedRoute>
+              <ProtectedRoute perm="canManagePlants"><PlantsPage /></ProtectedRoute>
             } />
           </Route>
 
