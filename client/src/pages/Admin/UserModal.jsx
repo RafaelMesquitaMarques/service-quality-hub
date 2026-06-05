@@ -27,14 +27,15 @@ export default function UserModal({ user, plants, onClose }) {
   const [error, setError] = useState(null)
 
   const [form, setForm] = useState({
-    first_name: user?.full_name?.split(' ')[0] || '',
-    last_name:  user?.full_name?.split(' ').slice(1).join(' ') || '',
-    email:      user?.email      || '',
-    password:   '',
-    role:       user?.role       || 'viewer',
-    department: user?.department || '',
-    plant_id:   user?.plant_id   || '',
-    language:   user?.language   || 'fr',
+    first_name:             user?.full_name?.split(' ')[0] || '',
+    last_name:              user?.full_name?.split(' ').slice(1).join(' ') || '',
+    email:                  user?.email      || '',
+    password:               '',
+    role:                   user?.role       || 'viewer',
+    department:             user?.department || '',
+    plant_id:               user?.plant_id   || '',
+    language:               user?.language   || 'fr',
+    can_create_occurrence:  user?.can_create_occurrence !== false,
   })
 
   const sf = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -79,10 +80,11 @@ export default function UserModal({ user, plants, onClose }) {
       if (isEdit) {
         await adminApi.updateUser(user.id, {
           full_name, role: form.role,
-          department: form.department || null,
-          plant_id:   form.plant_id   || null,
-          language:   form.language,
+          department:            form.department || null,
+          plant_id:              form.plant_id   || null,
+          language:              form.language,
           avatar_url,
+          can_create_occurrence: form.can_create_occurrence,
         })
         toast.success('Utilisateur mis a jour')
         onClose()
@@ -92,12 +94,12 @@ export default function UserModal({ user, plants, onClose }) {
           role: form.role, department: form.department || null,
           plant_id: form.plant_id || null, language: form.language,
           avatar_url, mode,
+          can_create_occurrence: form.can_create_occurrence,
         }
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-        // Timeout de 15 segundos para a Edge Function
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 15000)
         const res = await fetch(supabaseUrl + '/functions/v1/invite-user', {
@@ -135,7 +137,6 @@ export default function UserModal({ user, plants, onClose }) {
   const TITLE = isEdit ? 'Modifier utilisateur' : 'Ajouter un utilisateur'
   const BTN   = saving ? 'Envoi...' : isEdit ? 'Enregistrer' : mode === 'invite' ? 'Envoyer invitation' : 'Creer utilisateur'
 
-  // Textes mode selon langue sélectionnée
   const modeInfo = {
     invite: {
       fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.',
@@ -185,7 +186,6 @@ export default function UserModal({ user, plants, onClose }) {
         {/* Body */}
         <div style={{ padding:'16px 20px' }}>
 
-          {/* Error banner */}
           {error && (
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px', marginBottom:12, fontSize:12, color:'#991b1b', display:'flex', alignItems:'flex-start', gap:8 }}>
               <span>⚠️</span><span>{error}</span>
@@ -282,9 +282,52 @@ export default function UserModal({ user, plants, onClose }) {
             </select>
           </div>
 
+          {/* Permissions */}
+          <div style={{ borderTop:'1px solid #f3f4f6', paddingTop:12, marginBottom:4 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:'#374151', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.4px' }}>
+              {uiLang === 'fr' ? 'Permissions' : 'Permissions'}
+            </div>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', background:'#f9fafb', borderRadius:8, border:'1px solid #e5e7eb' }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:500, color:'#111827' }}>
+                  {uiLang === 'fr' ? 'Créer des occurrences (mobile)' : 'Create occurrences (mobile)'}
+                </div>
+                <div style={{ fontSize:11, color:'#9ca3af', marginTop:2 }}>
+                  {uiLang === 'fr' ? "Permet d'utiliser l'interface mobile pour soumettre des occurrences" : 'Allows using the mobile interface to submit occurrences'}
+                </div>
+              </div>
+              <button
+                onClick={() => sf('can_create_occurrence', !form.can_create_occurrence)}
+                style={{
+                  width: 44,
+                  height: 24,
+                  borderRadius: 12,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: form.can_create_occurrence ? '#185FA5' : '#D1D5DB',
+                  position: 'relative',
+                  flexShrink: 0,
+                  transition: 'background 0.2s',
+                }}
+              >
+                <div style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  position: 'absolute',
+                  top: 3,
+                  left: form.can_create_occurrence ? 23 : 3,
+                  transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                }} />
+              </button>
+            </div>
+          </div>
+
           {/* Info box */}
           {!isEdit && (
-            <div style={{ background: mode === 'invite' ? '#f0fdf4' : '#eff6ff', border: '1px solid ' + (mode === 'invite' ? '#bbf7d0' : '#bfdbfe'), borderRadius:8, padding:'10px 12px', display:'flex', alignItems:'flex-start', gap:8 }}>
+            <div style={{ marginTop:12, background: mode === 'invite' ? '#f0fdf4' : '#eff6ff', border: '1px solid ' + (mode === 'invite' ? '#bbf7d0' : '#bfdbfe'), borderRadius:8, padding:'10px 12px', display:'flex', alignItems:'flex-start', gap:8 }}>
               <span style={{ fontSize:15, flexShrink:0 }}>{mode === 'invite' ? '✉' : '🔒'}</span>
               <div style={{ fontSize:12, color: mode === 'invite' ? '#166534' : '#1e40af', lineHeight:1.6 }}>
                 {modeInfo[mode][uiLang]}
