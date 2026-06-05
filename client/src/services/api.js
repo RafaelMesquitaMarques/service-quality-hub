@@ -277,9 +277,8 @@ export const adminApi = {
       .update({ ...payload, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
-      .single()
     if (error) throw error
-    return { data }
+    return { data: data?.[0] || null }
   },
 
   uploadAvatar: async (userId, file) => {
@@ -299,9 +298,8 @@ export const adminApi = {
       .update({ active: false, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
-      .single()
     if (error) throw error
-    return { data }
+    return { data: data?.[0] || null }
   },
 
   stats: async () => {
