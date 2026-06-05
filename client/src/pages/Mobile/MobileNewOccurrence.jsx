@@ -181,7 +181,7 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
 export default function MobileNewOccurrence() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
-  const { user, profile, setUser, setProfile } = useAuthStore()
+  const { user, logout } = useAuthStore()
 
   const [step, setStep]             = useState(1)
   const [submitting, setSubmitting] = useState(false)
@@ -216,12 +216,10 @@ export default function MobileNewOccurrence() {
 
   const canGoStep2  = form.issue_reception_date && lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
-  const isEditor    = EDITOR_ROLES.includes(profile?.role)
+  const isEditor    = EDITOR_ROLES.includes(user?.role)
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setProfile(null)
+    await logout()
     navigate('/mobile/login', { replace: true })
   }
 
@@ -307,7 +305,6 @@ export default function MobileNewOccurrence() {
     }
   }
 
-  // Ecrã de sucesso
   if (step === 4) {
     return (
       <div style={{ ...s.root, justifyContent:'center', alignItems:'center', flexDirection:'column', gap:24, padding:32, textAlign:'center' }}>
@@ -336,11 +333,10 @@ export default function MobileNewOccurrence() {
 
   return (
     <div style={s.root}>
-      {/* Header */}
       <div style={s.header}>
         <div>
           <div style={s.headerTitle}>Nouvelle occurrence</div>
-          <div style={s.headerSub}>{profile?.full_name || profile?.email || ''}</div>
+          <div style={s.headerSub}>{user?.full_name || user?.email || ''}</div>
         </div>
         <button onClick={handleLogout} style={s.logoutBtn}>Déconnexion</button>
       </div>
@@ -354,8 +350,6 @@ export default function MobileNewOccurrence() {
       )}
 
       <div style={s.content}>
-
-        {/* Passo 1 — Geral */}
         {step === 1 && (
           <div style={s.stepContent}>
             <div style={s.sectionTitle}>Informations générales</div>
@@ -384,7 +378,6 @@ export default function MobileNewOccurrence() {
           </div>
         )}
 
-        {/* Passo 2 — Linhas */}
         {step === 2 && (
           <div style={s.stepContent}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
@@ -397,7 +390,6 @@ export default function MobileNewOccurrence() {
           </div>
         )}
 
-        {/* Passo 3 — Confirmação */}
         {step === 3 && (
           <div style={s.stepContent}>
             <div style={s.sectionTitle}>Vérifier et soumettre</div>
@@ -441,7 +433,6 @@ export default function MobileNewOccurrence() {
         )}
       </div>
 
-      {/* Footer */}
       <div style={s.footer}>
         <button
           onClick={() => setStep(p => p - 1)}
