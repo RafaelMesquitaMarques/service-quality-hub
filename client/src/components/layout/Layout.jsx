@@ -18,21 +18,19 @@ const MOBILE_URL = 'https://service-quality-hub.vercel.app/mobile/login'
 
 function MobileQRButton() {
   const [showQR, setShowQR] = useState(false)
+  const openMobile = () => window.open(MOBILE_URL, '_blank', 'noopener,noreferrer')
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Linha clicável na sidebar */}
       <div className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5">
-        
-          href={MOBILE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={openMobile}
           className="flex items-center gap-2.5 flex-1 text-white/60 hover:text-white"
-          style={{ textDecoration: 'none' }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontFamily: 'inherit' }}
         >
           <i className="ti ti-device-mobile text-base" />
           Version mobile
-        </a>
+        </button>
         <button
           onClick={() => setShowQR(v => !v)}
           title="Afficher le QR code"
@@ -43,7 +41,6 @@ function MobileQRButton() {
         </button>
       </div>
 
-      {/* Popup QR code */}
       {showQR && (
         <div
           style={{
@@ -73,18 +70,17 @@ function MobileQRButton() {
             <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 1.5 }}>
               Scannez avec votre téléphone pour accéder à l'interface mobile
             </div>
-            
-              href={MOBILE_URL}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              onClick={openMobile}
               style={{
                 fontSize: 11, color: '#185FA5', textDecoration: 'none',
                 background: '#E6F1FB', borderRadius: 8, padding: '6px 12px',
-                wordBreak: 'break-all', textAlign: 'center',
+                wordBreak: 'break-all', textAlign: 'center', border: 'none',
+                cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
               {MOBILE_URL}
-            </a>
+            </button>
             <button
               onClick={() => setShowQR(false)}
               style={{
@@ -151,7 +147,6 @@ export default function Layout() {
       `}</style>
 
       <div className="flex desktop-layout">
-        {/* Sidebar desktop */}
         <nav className="desktop-sidebar w-52 flex-shrink-0 flex flex-col transition-colors" style={{ background: navBg }}>
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-center">
             <img
@@ -173,17 +168,15 @@ export default function Layout() {
               </NavLink>
             ))}
 
-            {/* SupplierQ */}
-            
-              href="https://rafaelmesquitamarques.github.io/supplierq/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5">
+            <button
+              onClick={() => window.open('https://rafaelmesquitamarques.github.io/supplierq/', '_blank', 'noopener,noreferrer')}
+              className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5 w-full text-left"
+              style={{ background: 'none', border: 'none', borderLeft: '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
               <i className="ti ti-external-link text-base" />
               SupplierQ
-            </a>
+            </button>
 
-            {/* Mobile */}
             <MobileQRButton />
 
             {bottomItems.length > 0 && (
@@ -229,9 +222,7 @@ export default function Layout() {
           </div>
         </nav>
 
-        {/* Main content */}
         <div className="flex-1 flex flex-col desktop-main bg-gray-50 dark:bg-[#0D1117] transition-colors" style={{ minWidth: 0 }}>
-          {/* Top bar mobile only */}
           <div className="mobile-topbar items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" style={{ background: navBg }}>
             <img
               src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
@@ -255,22 +246,19 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Bottom navbar mobile only */}
       <div className="mobile-bottomnav fixed bottom-0 left-0 right-0 bg-white dark:bg-[#161B22] border-t border-gray-200 dark:border-gray-700 items-center justify-around px-2 py-2 z-50">
         <NavLink to="/" end className={({ isActive }) => `flex flex-col items-center gap-0.5 px-4 py-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
           <i className="ti ti-chart-bar text-xl" />
           <span className="text-xs">{t('nav.dashboard')}</span>
         </NavLink>
 
-        
-          href={MOBILE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={() => window.open(MOBILE_URL, '_blank', 'noopener,noreferrer')}
           className="flex flex-col items-center justify-center w-14 h-14 rounded-full text-white shadow-lg -mt-5"
-          style={{ background: '#1A3A5C', textDecoration: 'none' }}
+          style={{ background: '#1A3A5C', border: 'none', cursor: 'pointer' }}
         >
           <i className="ti ti-device-mobile text-2xl" />
-        </a>
+        </button>
 
         <NavLink to="/tickets" className={({ isActive }) => `flex flex-col items-center gap-0.5 px-4 py-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
           <i className="ti ti-clipboard-list text-xl" />
