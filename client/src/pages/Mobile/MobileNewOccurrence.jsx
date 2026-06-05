@@ -233,7 +233,7 @@ export default function MobileNewOccurrence() {
   const canGoStep2  = !!form.issue_reception_date
   const canGoStep3  = lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
-const isEditor = user?.can_create_occurrence !== false
+const isEditor = user?.perm_create_mobile !== false
 
   const handleLogout = async () => {
     await logout()
