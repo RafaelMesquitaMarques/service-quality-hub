@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
 
 export default function MobileLogin() {
   const navigate = useNavigate()
-  const { user, setUser, setProfile } = useAuthStore()
+  const { user, login } = useAuthStore()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
@@ -20,22 +19,11 @@ export default function MobileLogin() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    try {
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
-      if (authErr) throw authErr
-
-      const { data: profileData } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .single()
-
-      setUser(data.user)
-      setProfile(profileData)
+    const result = await login(email, password)
+    if (result.success) {
       navigate('/mobile/new', { replace: true })
-    } catch (err) {
-      setError(err.message || 'Erreur de connexion')
-    } finally {
+    } else {
+      setError(result.error || 'Erreur de connexion')
       setLoading(false)
     }
   }
