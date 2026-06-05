@@ -88,18 +88,18 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
   const fileRef   = useRef(null)
   const cameraRef = useRef(null)
 
-  const handleFiles = async (files) => {
-    const newPhotos = await Promise.all(Array.from(files).map(async f => ({
-      file: f,
-      buffer: await f.arrayBuffer(),
-      type: f.type || 'image/jpeg',
-      name: f.name,
-      preview: URL.createObjectURL(f),
-      dataUrl: null,
-      annotated: false,
-    })))
-    onChange(idx, '_addPhotos', newPhotos)
-  }
+const handleFiles = (files) => {
+  const newPhotos = Array.from(files).map(f => ({
+    file: f,
+    buffer: null,
+    type: f.type || 'image/jpeg',
+    name: f.name,
+    preview: URL.createObjectURL(f),
+    dataUrl: null,
+    annotated: false,
+  }))
+  onChange(idx, '_addPhotos', newPhotos)
+}
 
   return (
     <div style={s.lineCard}>
