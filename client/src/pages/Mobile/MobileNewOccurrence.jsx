@@ -155,4 +155,652 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
         <div style={s.photoGrid}>
           {(line.photos||[]).map((p, pi) => (
             <div key={pi} style={s.photoThumb}>
-              <img sr
+              <img src={p.dataUrl || p.preview} alt="" style={s.thumbImg} />
+              <button onClick={() => onChange(idx,'_removePhoto',pi)} style={s.removePhoto}>✕</button>
+            </div>
+          ))}
+          <button onClick={() => fileRef.current?.click()} style={s.addPhotoBtn}>
+            <span style={{ fontSize: 24, lineHeight: 1 }}>+</span>
+            <span style={{ fontSize: 11, color: '#6B7280' }}>Photo</span>
+          </button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={e => handleFiles(e.target.files)}
+        />
+      </div>
+    </div>
+  )
+}
+
+export default function MobileNewOccurrence() {
+  const navigate    = useNavigate()
+  const queryClient = useQueryClient()
+  const { user, profile, setUser, setProfile } = useAuthStore()
+
+  const [step, setStep]             = useState(1)
+  const [submitting, setSubmitting] = useState(false)
+
+  const [form, setForm] = useState({
+    issue_reception_date: new Date().toISOString().slice(0,10),
+    brand: '', ship_to: '', sold_to: '', ref_so: '', sc_number: '',
+  })
+  const [lines, setLines] = useState([emptyLine()])
+
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const updateLine = (idx, key, val) => {
+    setLines(ls => ls.map((l, i) => {
+      if (i !== idx) return l
+      if (key === '_addPhotos')   return { ...l, photos: [...(l.photos||[]), ...val] }
+      if (key === '_removePhoto') return { ...l, photos: (l.photos||[]).filter((_,pi) => pi !== val) }
+      return { ...l, [key]: val }
+    }))
+  }
+
+  const addLine    = () => setLines(ls => [...ls, emptyLine()])
+  const deleteLine = idx => { if (lines.length > 1) setLines(ls => ls.filter((_,i) => i !== idx)) }
+
+  const { data: plants } = useQuery({
+    queryKey: ['plants'],
+    queryFn: async () => {
+      const { data } = await supabase.from('plants').select('id,name').eq('active',true).order('name')
+      return data || []
+    },
+  })
+
+  const canGoStep2  = form.issue_reception_date && lines.some(l => l.quality_issue.trim())
+  const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
+  const isEditor    = EDITOR_ROLES.includes(profile?.role)
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setProfile(null)
+    navigate('/mobile/login', { replace: true })
+  }
+
+  const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      const dateYYYYMM = form.issue_reception_date?.slice(0,7)
+
+      const { data: occ, error: occErr } = await supabase.from('tickets').insert({
+        issue_reception_date: form.issue_reception_date,
+        date_yyyy_mm:  dateYYYYMM,
+        fiscal_year:   getFiscalYear(dateYYYYMM),
+        fiscal_month:  getFiscalMonth(dateYYYYMM),
+        brand:        form.brand     || null,
+        ship_to:      form.ship_to   || null,
+        sold_to:      form.sold_to   || null,
+        ref_so:       form.ref_so    || null,
+        sc_number:    form.sc_number || null,
+        status:       'service_desk',
+        quality_issue: lines[0]?.quality_issue || null,
+        plant:         lines[0]?.plant         || null,
+        categories:    lines[0]?.categories    || null,
+        affected_qty:  lines[0]?.affected_qty  ? Number(lines[0].affected_qty) : null,
+        department:    lines[0]?.department    || null,
+        cost_approx:   lines[0]?.cost_approx   ? Number(lines[0].cost_approx)  : null,
+      }).select().single()
+      if (occErr) throw occErr
+
+      const { data: createdLines, error: linesErr } = await supabase
+        .from('occurrence_lines')
+        .insert(lines.map((l, i) => ({
+          occurrence_id: occ.id,
+          quality_issue: l.quality_issue || null,
+          categories:    l.categories    || null,
+          department:    l.department    || null,
+          line_item:     l.line_item     || null,
+          foliot_id:     l.foliot_id     || null,
+          plant:         l.plant         || null,
+          affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
+          cost_approx:   l.cost_approx   ? Number(l.cost_approx)  : null,
+          sort_order:    i,
+        })))
+        .select()
+      if (linesErr) throw linesErr
+
+      for (let li = 0; li < lines.length; li++) {
+        const linePhotos = lines[li].photos || []
+        if (!linePhotos.length) continue
+        const lineId = createdLines?.[li]?.id || null
+        for (const photo of linePhotos) {
+          try {
+            let blob
+            if (photo.buffer) {
+              blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' })
+            } else if (photo.file) {
+              blob = photo.file
+            } else continue
+
+            const ext  = (photo.name||'photo.jpg').split('.').pop().replace(/[^a-z0-9]/gi,'') || 'jpg'
+            const path = `tickets/${occ.id}/${Date.now()}_${li}_${Math.random().toString(36).slice(2,5)}.${ext}`
+            const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob, { contentType: blob.type })
+            if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
+            const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+            await supabase.from('ticket_photos').insert({
+              ticket_id: occ.id, url: urlData.publicUrl,
+              name: photo.name||'photo.jpg', path, line_id: lineId,
+            })
+          } catch (photoErr) {
+            console.warn('Photo error:', photoErr)
+          }
+        }
+      }
+
+      queryClient.invalidateQueries(['tickets'])
+      toast.success('Occurrence créée avec succès !')
+      setStep(4)
+    } catch (err) {
+      console.error(err)
+      toast.error(err.message || 'Une erreur est survenue')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Ecrã de sucesso
+  if (step === 4) {
+    return (
+      <div style={{ ...s.root, justifyContent:'center', alignItems:'center', flexDirection:'column', gap:24, padding:32, textAlign:'center' }}>
+        <div style={{ width:72, height:72, borderRadius:'50%', background:'#D1FAE5', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>
+          ✅
+        </div>
+        <div>
+          <h2 style={{ fontSize:20, fontWeight:700, color:'#111827', margin:'0 0 8px' }}>Occurrence créée !</h2>
+          <p style={{ fontSize:14, color:'#6B7280', margin:0 }}>
+            Elle est maintenant visible dans le système avec le statut Service Desk.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setStep(1)
+            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', sc_number:'' })
+            setLines([emptyLine()])
+          }}
+          style={s.btnPrimary}
+        >
+          Nouvelle occurrence
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={s.root}>
+      {/* Header */}
+      <div style={s.header}>
+        <div>
+          <div style={s.headerTitle}>Nouvelle occurrence</div>
+          <div style={s.headerSub}>{profile?.full_name || profile?.email || ''}</div>
+        </div>
+        <button onClick={handleLogout} style={s.logoutBtn}>Déconnexion</button>
+      </div>
+
+      <StepBar step={step} />
+
+      {!isEditor && (
+        <div style={s.viewerBanner}>
+          ⚠️ Votre rôle (viewer) ne permet pas de créer des occurrences.
+        </div>
+      )}
+
+      <div style={s.content}>
+
+        {/* Passo 1 — Geral */}
+        {step === 1 && (
+          <div style={s.stepContent}>
+            <div style={s.sectionTitle}>Informations générales</div>
+            <Field label="Date de réception" required>
+              <MInput type="date" value={form.issue_reception_date} onChange={v => setField('issue_reception_date', v)} />
+            </Field>
+            <div style={s.row2}>
+              <Field label="Brand">
+                <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
+              </Field>
+              <Field label="SC Number">
+                <MInput value={form.sc_number} onChange={v => setField('sc_number',v)} placeholder="SC#..." />
+              </Field>
+            </div>
+            <div style={s.row2}>
+              <Field label="Ship To">
+                <MInput value={form.ship_to} onChange={v => setField('ship_to',v)} placeholder="Ship To..." />
+              </Field>
+              <Field label="Sold To">
+                <MInput value={form.sold_to} onChange={v => setField('sold_to',v)} placeholder="Sold To..." />
+              </Field>
+            </div>
+            <Field label="Ref SO">
+              <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
+            </Field>
+          </div>
+        )}
+
+        {/* Passo 2 — Linhas */}
+        {step === 2 && (
+          <div style={s.stepContent}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+              <div style={s.sectionTitle}>Lignes d'occurrence</div>
+              <button onClick={addLine} style={s.btnAddLine}>+ Ligne</button>
+            </div>
+            {lines.map((line, idx) => (
+              <LineCard key={idx} line={line} idx={idx} onChange={updateLine} onDelete={deleteLine} plants={plants} />
+            ))}
+          </div>
+        )}
+
+        {/* Passo 3 — Confirmação */}
+        {step === 3 && (
+          <div style={s.stepContent}>
+            <div style={s.sectionTitle}>Vérifier et soumettre</div>
+            <div style={s.summaryCard}>
+              <div style={s.summaryTitle}>Informations générales</div>
+              {[
+                ['Date', form.issue_reception_date],
+                ['Brand', form.brand],
+                ['Ship To', form.ship_to],
+                ['Sold To', form.sold_to],
+                ['Ref SO', form.ref_so],
+                ['SC Number', form.sc_number],
+              ].filter(([,v]) => v).map(([label, val]) => (
+                <div key={label} style={s.summaryRow}>
+                  <span style={s.summaryKey}>{label}</span>
+                  <span style={s.summaryVal}>{val}</span>
+                </div>
+              ))}
+            </div>
+            <div style={s.summaryCard}>
+              <div style={s.summaryTitle}>{lines.length} ligne{lines.length > 1 ? 's' : ''} · {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''}</div>
+              {lines.map((l, i) => (
+                <div key={i} style={s.linePreview}>
+                  <div style={s.linePreviewNum}>{i+1}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:'#111827' }}>{l.quality_issue || '—'}</div>
+                    <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>
+                      {[l.department, l.plant, l.affected_qty ? `Qté: ${l.affected_qty}` : '', l.cost_approx ? `$${l.cost_approx}` : ''].filter(Boolean).join(' · ')}
+                    </div>
+                  </div>
+                  {(l.photos?.length||0) > 0 && (
+                    <span style={s.photoBadge}>{l.photos.length} 📷</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={s.infoBanner}>
+              📤 L'occurrence sera soumise au Service Desk après confirmation.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={s.footer}>
+        <button
+          onClick={() => setStep(p => p - 1)}
+          style={{ ...s.btnSecondary, visibility: step === 1 ? 'hidden' : 'visible' }}
+        >
+          ← Retour
+        </button>
+        {step < 3 && (
+          <button
+            onClick={() => setStep(p => p + 1)}
+            disabled={step === 1 ? !canGoStep2 : false}
+            style={{ ...s.btnPrimary, opacity: (step === 1 && !canGoStep2) ? 0.4 : 1 }}
+          >
+            Suivant →
+          </button>
+        )}
+        {step === 3 && (
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !isEditor}
+            style={{ ...s.btnGreen, opacity: (submitting || !isEditor) ? 0.5 : 1 }}
+          >
+            {submitting ? 'Envoi...' : '✓ Soumettre'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const s = {
+  root: {
+    minHeight: '100dvh',
+    background: '#F0F4F8',
+    display: 'flex',
+    flexDirection: 'column',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    maxWidth: 600,
+    margin: '0 auto',
+  },
+  header: {
+    background: '#FFFFFF',
+    borderBottom: '1px solid #E5E7EB',
+    padding: '14px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+  },
+  headerTitle: { fontSize:16, fontWeight:700, color:'#111827' },
+  headerSub:   { fontSize:12, color:'#6B7280', marginTop:1 },
+  logoutBtn: {
+    background: 'none',
+    border: '1px solid #E5E7EB',
+    borderRadius: 8,
+    padding: '6px 12px',
+    fontSize: 12,
+    color: '#6B7280',
+    cursor: 'pointer',
+  },
+  stepBar: {
+    background: '#FFFFFF',
+    borderBottom: '1px solid #E5E7EB',
+    padding: '12px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  stepItem: {
+    display: 'flex',
+    alignItems: 'center',
+    flex: 1,
+    gap: 6,
+  },
+  stepCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    marginLeft: 'auto',
+    minWidth: 16,
+  },
+  content: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '16px',
+  },
+  stepContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    paddingBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#374151',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: 4,
+  },
+  fieldGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 5,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#374151',
+  },
+  input: {
+    padding: '13px 14px',
+    borderRadius: 10,
+    border: '1.5px solid #E5E7EB',
+    fontSize: 16,
+    color: '#111827',
+    background: '#FFFFFF',
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+    WebkitAppearance: 'none',
+    appearance: 'none',
+  },
+  row2: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 10,
+  },
+  lineCard: {
+    background: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    border: '1px solid #E5E7EB',
+    marginBottom: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  lineCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  lineCardTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#185FA5',
+  },
+  deleteBtn: {
+    background: '#FEF2F2',
+    border: 'none',
+    borderRadius: 6,
+    color: '#EF4444',
+    padding: '4px 8px',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  photosSection: {
+    borderTop: '1px solid #F3F4F6',
+    paddingTop: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  photosLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+  },
+  photoGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  photoThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    border: '1px solid #E5E7EB',
+  },
+  thumbImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  },
+  removePhoto: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 18,
+    height: 18,
+    borderRadius: '50%',
+    background: 'rgba(0,0,0,0.6)',
+    color: '#fff',
+    border: 'none',
+    fontSize: 9,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  },
+  addPhotoBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    border: '1.5px dashed #D1D5DB',
+    background: '#F9FAFB',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    gap: 2,
+  },
+  btnAddLine: {
+    background: '#EFF6FF',
+    color: '#185FA5',
+    border: '1px solid #BFDBFE',
+    borderRadius: 8,
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  summaryCard: {
+    background: '#FFFFFF',
+    borderRadius: 12,
+    border: '1px solid #E5E7EB',
+    padding: '14px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  summaryTitle: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: 4,
+  },
+  summaryRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 13,
+    borderBottom: '1px solid #F3F4F6',
+    paddingBottom: 6,
+  },
+  summaryKey: { color: '#6B7280' },
+  summaryVal: { color: '#111827', fontWeight: 600 },
+  linePreview: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: '8px 0',
+    borderBottom: '1px solid #F3F4F6',
+  },
+  linePreviewNum: {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: '#E6F1FB',
+    color: '#185FA5',
+    fontSize: 10,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  photoBadge: {
+    background: '#EFF6FF',
+    color: '#185FA5',
+    borderRadius: 6,
+    padding: '2px 6px',
+    fontSize: 11,
+    fontWeight: 600,
+  },
+  infoBanner: {
+    background: '#FFFBEB',
+    border: '1px solid #FDE68A',
+    borderRadius: 10,
+    padding: '12px 14px',
+    fontSize: 13,
+    color: '#92400E',
+  },
+  viewerBanner: {
+    background: '#FEF2F2',
+    border: '1px solid #FECACA',
+    padding: '10px 16px',
+    fontSize: 13,
+    color: '#B91C1C',
+  },
+  footer: {
+    background: '#FFFFFF',
+    borderTop: '1px solid #E5E7EB',
+    padding: '12px 16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    position: 'sticky',
+    bottom: 0,
+    gap: 12,
+  },
+  btnPrimary: {
+    background: '#185FA5',
+    color: '#FFFFFF',
+    border: 'none',
+    borderRadius: 12,
+    padding: '14px 24px',
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+    flex: 1,
+    WebkitTapHighlightColor: 'transparent',
+  },
+  btnSecondary: {
+    background: '#F3F4F6',
+    color: '#374151',
+    border: 'none',
+    borderRadius: 12,
+    padding: '14px 20px',
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+    WebkitTapHighlightColor: 'transparent',
+  },
+  btnGreen: {
+    background: '#1D9E75',
+    color: '#FFFFFF',
+    border: 'none',
+    borderRadius: 12,
+    padding: '14px 24px',
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+    flex: 1,
+    WebkitTapHighlightColor: 'transparent',
+  },
+}
