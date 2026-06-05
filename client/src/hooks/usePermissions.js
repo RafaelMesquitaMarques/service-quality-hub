@@ -7,13 +7,10 @@ export function usePermissions() {
   const user = useAuthStore(s => s.user)
   const role = user?.role || 'viewer'
 
-  // Base por role
   const roleCanEdit   = EDITOR_ROLES.includes(role)
   const roleIsAdmin   = role === 'admin'
   const roleIsManager = ['admin', 'manager'].includes(role)
 
-  // Permissões individuais — se definidas sobrepõem o role
-  // Se a coluna for null/undefined, usa o default do role
   const canCreateOccurrence = user?.perm_create_occurrence  ?? roleCanEdit
   const canEditOccurrence   = user?.perm_edit_occurrence    ?? roleCanEdit
   const canDeleteOccurrence = user?.perm_delete_occurrence  ?? roleIsManager
@@ -26,11 +23,9 @@ export function usePermissions() {
 
   return {
     role,
-    // compatibilidade com código existente
     canEdit:   canEditOccurrence,
     isAdmin:   canAdmin,
     isManager: roleIsManager,
-    // novas permissões individuais
     canCreateOccurrence,
     canEditOccurrence,
     canDeleteOccurrence,
