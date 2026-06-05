@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
@@ -17,10 +18,11 @@ const emptyLine = () => ({
 })
 
 function StepBar({ step }) {
-  const steps = ['Général', 'Lignes', 'Confirmer']
+  const { t } = useTranslation()
+  const labels = [t('ticket.step1'), t('ticket.lines'), t('common.confirm')]
   return (
     <div style={s.stepBar}>
-      {steps.map((label, i) => {
+      {labels.map((label, i) => {
         const n = i + 1
         const done   = step > n
         const active = step === n
@@ -36,7 +38,7 @@ function StepBar({ step }) {
             <span style={{ ...s.stepLabel, color: active ? '#185FA5' : done ? '#1D9E75' : '#9CA3AF' }}>
               {label}
             </span>
-            {i < steps.length - 1 && (
+            {i < labels.length - 1 && (
               <div style={{ ...s.stepLine, background: done ? '#1D9E75' : '#E5E7EB' }} />
             )}
           </div>
@@ -82,7 +84,9 @@ function MSelect({ value, onChange, options, placeholder = '—' }) {
 }
 
 function LineCard({ line, idx, onChange, onDelete, plants }) {
-  const fileRef = useRef(null)
+  const { t }     = useTranslation()
+  const fileRef   = useRef(null)
+  const cameraRef = useRef(null)
 
   const handleFiles = async (files) => {
     const newPhotos = await Promise.all(Array.from(files).map(async f => ({
@@ -100,58 +104,58 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
   return (
     <div style={s.lineCard}>
       <div style={s.lineCardHeader}>
-        <span style={s.lineCardTitle}>Ligne {idx + 1}</span>
+        <span style={s.lineCardTitle}>{t('ticket.line_n')} {idx + 1}</span>
         {idx > 0 && (
           <button onClick={() => onDelete(idx)} style={s.deleteBtn}>✕</button>
         )}
       </div>
 
-      <Field label="Description du problème" required>
+      <Field label={t('ticket.issue')} required>
         <textarea
           value={line.quality_issue}
           onChange={e => onChange(idx, 'quality_issue', e.target.value)}
-          placeholder="Décrivez le problème..."
+          placeholder={t('ticket.description')}
           style={{ ...s.input, minHeight: 80, resize: 'vertical' }}
         />
       </Field>
 
       <div style={s.row2}>
-        <Field label="Catégorie">
+        <Field label={t('ticket.categories')}>
           <MSelect value={line.categories} onChange={v => onChange(idx,'categories',v)} options={CATEGORIES} />
         </Field>
-        <Field label="Département">
+        <Field label={t('ticket.department')}>
           <MSelect value={line.department} onChange={v => onChange(idx,'department',v)} options={DEPARTMENTS} />
         </Field>
       </div>
 
       <div style={s.row2}>
-        <Field label="Line Item">
+        <Field label={t('ticket.line_item')}>
           <MInput value={line.line_item} onChange={v => onChange(idx,'line_item',v)} placeholder="Line item..." />
         </Field>
-        <Field label="Foliot ID">
+        <Field label={t('ticket.foliot_id')}>
           <MInput value={line.foliot_id} onChange={v => onChange(idx,'foliot_id',v)} placeholder="Foliot ID..." />
         </Field>
       </div>
 
       <div style={s.row2}>
-        <Field label="Usine">
+        <Field label={t('ticket.plant')}>
           <MSelect
             value={line.plant}
             onChange={v => onChange(idx,'plant',v)}
             options={(plants||[]).map(p => ({ value: p.name, label: p.name }))}
           />
         </Field>
-        <Field label="Qté affectée">
+        <Field label={t('ticket.affected_qty')}>
           <MInput value={line.affected_qty} onChange={v => onChange(idx,'affected_qty',v)} type="number" placeholder="0" />
         </Field>
       </div>
 
-      <Field label="Coût approx. ($)">
+      <Field label={t('ticket.cost')}>
         <MInput value={line.cost_approx} onChange={v => onChange(idx,'cost_approx',v)} placeholder="0.00" />
       </Field>
 
       <div style={s.photosSection}>
-        <span style={s.photosLabel}>Photos</span>
+        <span style={s.photosLabel}>{t('ticket.photos')}</span>
         <div style={s.photoGrid}>
           {(line.photos||[]).map((p, pi) => (
             <div key={pi} style={s.photoThumb}>
@@ -159,11 +163,23 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
               <button onClick={() => onChange(idx,'_removePhoto',pi)} style={s.removePhoto}>✕</button>
             </div>
           ))}
+          <button onClick={() => cameraRef.current?.click()} style={s.addPhotoBtn}>
+            <span style={{ fontSize: 22 }}>📷</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>Caméra</span>
+          </button>
           <button onClick={() => fileRef.current?.click()} style={s.addPhotoBtn}>
-            <span style={{ fontSize: 24, lineHeight: 1 }}>+</span>
-            <span style={{ fontSize: 11, color: '#6B7280' }}>Photo</span>
+            <span style={{ fontSize: 22 }}>🖼️</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>Fichier</span>
           </button>
         </div>
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={e => handleFiles(e.target.files)}
+        />
         <input
           ref={fileRef}
           type="file"
@@ -180,6 +196,7 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
 export default function MobileNewOccurrence() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
+  const { t }       = useTranslation()
   const { user, logout } = useAuthStore()
 
   const [step, setStep]             = useState(1)
@@ -278,7 +295,6 @@ export default function MobileNewOccurrence() {
             } else if (photo.file) {
               blob = photo.file
             } else continue
-
             const ext  = (photo.name||'photo.jpg').split('.').pop().replace(/[^a-z0-9]/gi,'') || 'jpg'
             const path = `tickets/${occ.id}/${Date.now()}_${li}_${Math.random().toString(36).slice(2,5)}.${ext}`
             const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob, { contentType: blob.type })
@@ -295,11 +311,11 @@ export default function MobileNewOccurrence() {
       }
 
       queryClient.invalidateQueries(['tickets'])
-      toast.success('Occurrence créée avec succès !')
+      toast.success(t('ticket.created'))
       setStep(4)
     } catch (err) {
       console.error(err)
-      toast.error(err.message || 'Une erreur est survenue')
+      toast.error(err.message || t('common.error'))
     } finally {
       setSubmitting(false)
     }
@@ -312,9 +328,9 @@ export default function MobileNewOccurrence() {
           ✅
         </div>
         <div>
-          <h2 style={{ fontSize:20, fontWeight:700, color:'#111827', margin:'0 0 8px' }}>Occurrence créée !</h2>
+          <h2 style={{ fontSize:20, fontWeight:700, color:'#111827', margin:'0 0 8px' }}>{t('ticket.created')} !</h2>
           <p style={{ fontSize:14, color:'#6B7280', margin:0 }}>
-            Elle est maintenant visible dans le système avec le statut Service Desk.
+            {t('ticket.submit_to_sd')}
           </p>
         </div>
         <button
@@ -325,7 +341,7 @@ export default function MobileNewOccurrence() {
           }}
           style={s.btnPrimary}
         >
-          Nouvelle occurrence
+          {t('ticket.new')}
         </button>
       </div>
     )
@@ -335,44 +351,44 @@ export default function MobileNewOccurrence() {
     <div style={s.root}>
       <div style={s.header}>
         <div>
-          <div style={s.headerTitle}>Nouvelle occurrence</div>
+          <div style={s.headerTitle}>{t('ticket.new')}</div>
           <div style={s.headerSub}>{user?.full_name || user?.email || ''}</div>
         </div>
-        <button onClick={handleLogout} style={s.logoutBtn}>Déconnexion</button>
+        <button onClick={handleLogout} style={s.logoutBtn}>{t('common.logout')}</button>
       </div>
 
       <StepBar step={step} />
 
       {!isEditor && (
         <div style={s.viewerBanner}>
-          ⚠️ Votre rôle (viewer) ne permet pas de créer des occurrences.
+          ⚠️ {t('roles.viewer')} — {t('common.error')}
         </div>
       )}
 
       <div style={s.content}>
         {step === 1 && (
           <div style={s.stepContent}>
-            <div style={s.sectionTitle}>Informations générales</div>
-            <Field label="Date de réception" required>
+            <div style={s.sectionTitle}>{t('ticket.informations')}</div>
+            <Field label={t('ticket.reception_date')} required>
               <MInput type="date" value={form.issue_reception_date} onChange={v => setField('issue_reception_date', v)} />
             </Field>
             <div style={s.row2}>
-              <Field label="Brand">
+              <Field label={t('ticket.brand')}>
                 <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
               </Field>
-              <Field label="SC Number">
+              <Field label={t('ticket.sc_number')}>
                 <MInput value={form.sc_number} onChange={v => setField('sc_number',v)} placeholder="SC#..." />
               </Field>
             </div>
             <div style={s.row2}>
-              <Field label="Ship To">
+              <Field label={t('ticket.ship_to')}>
                 <MInput value={form.ship_to} onChange={v => setField('ship_to',v)} placeholder="Ship To..." />
               </Field>
-              <Field label="Sold To">
+              <Field label={t('ticket.sold_to')}>
                 <MInput value={form.sold_to} onChange={v => setField('sold_to',v)} placeholder="Sold To..." />
               </Field>
             </div>
-            <Field label="Ref SO">
+            <Field label={t('ticket.ref_so')}>
               <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
             </Field>
           </div>
@@ -381,8 +397,8 @@ export default function MobileNewOccurrence() {
         {step === 2 && (
           <div style={s.stepContent}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <div style={s.sectionTitle}>Lignes d'occurrence</div>
-              <button onClick={addLine} style={s.btnAddLine}>+ Ligne</button>
+              <div style={s.sectionTitle}>{t('ticket.lines')}</div>
+              <button onClick={addLine} style={s.btnAddLine}>+ {t('ticket.add_line')}</button>
             </div>
             {lines.map((line, idx) => (
               <LineCard key={idx} line={line} idx={idx} onChange={updateLine} onDelete={deleteLine} plants={plants} />
@@ -392,16 +408,16 @@ export default function MobileNewOccurrence() {
 
         {step === 3 && (
           <div style={s.stepContent}>
-            <div style={s.sectionTitle}>Vérifier et soumettre</div>
+            <div style={s.sectionTitle}>{t('common.confirm')}</div>
             <div style={s.summaryCard}>
-              <div style={s.summaryTitle}>Informations générales</div>
+              <div style={s.summaryTitle}>{t('ticket.informations')}</div>
               {[
-                ['Date', form.issue_reception_date],
-                ['Brand', form.brand],
-                ['Ship To', form.ship_to],
-                ['Sold To', form.sold_to],
-                ['Ref SO', form.ref_so],
-                ['SC Number', form.sc_number],
+                [t('ticket.reception_date'), form.issue_reception_date],
+                [t('ticket.brand'), form.brand],
+                [t('ticket.ship_to'), form.ship_to],
+                [t('ticket.sold_to'), form.sold_to],
+                [t('ticket.ref_so'), form.ref_so],
+                [t('ticket.sc_number'), form.sc_number],
               ].filter(([,v]) => v).map(([label, val]) => (
                 <div key={label} style={s.summaryRow}>
                   <span style={s.summaryKey}>{label}</span>
@@ -410,14 +426,14 @@ export default function MobileNewOccurrence() {
               ))}
             </div>
             <div style={s.summaryCard}>
-              <div style={s.summaryTitle}>{lines.length} ligne{lines.length > 1 ? 's' : ''} · {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''}</div>
+              <div style={s.summaryTitle}>{lines.length} {t('ticket.lines').toLowerCase()} · {totalPhotos} {t('ticket.photos').toLowerCase()}</div>
               {lines.map((l, i) => (
                 <div key={i} style={s.linePreview}>
                   <div style={s.linePreviewNum}>{i+1}</div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:'#111827' }}>{l.quality_issue || '—'}</div>
                     <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>
-                      {[l.department, l.plant, l.affected_qty ? `Qté: ${l.affected_qty}` : '', l.cost_approx ? `$${l.cost_approx}` : ''].filter(Boolean).join(' · ')}
+                      {[l.department, l.plant, l.affected_qty ? `${t('ticket.affected_qty')}: ${l.affected_qty}` : '', l.cost_approx ? `$${l.cost_approx}` : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
                   {(l.photos?.length||0) > 0 && (
@@ -427,7 +443,7 @@ export default function MobileNewOccurrence() {
               ))}
             </div>
             <div style={s.infoBanner}>
-              📤 L'occurrence sera soumise au Service Desk après confirmation.
+              📤 {t('ticket.submit_to_sd')}
             </div>
           </div>
         )}
@@ -438,7 +454,7 @@ export default function MobileNewOccurrence() {
           onClick={() => setStep(p => p - 1)}
           style={{ ...s.btnSecondary, visibility: step === 1 ? 'hidden' : 'visible' }}
         >
-          ← Retour
+          ← {t('common.previous')}
         </button>
         {step < 3 && (
           <button
@@ -446,7 +462,7 @@ export default function MobileNewOccurrence() {
             disabled={step === 1 ? !canGoStep2 : !canGoStep3}
             style={{ ...s.btnPrimary, opacity: (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) ? 0.4 : 1 }}
           >
-            Suivant →
+            {t('common.next')} →
           </button>
         )}
         {step === 3 && (
@@ -455,7 +471,7 @@ export default function MobileNewOccurrence() {
             disabled={submitting || !isEditor}
             style={{ ...s.btnGreen, opacity: (submitting || !isEditor) ? 0.5 : 1 }}
           >
-            {submitting ? 'Envoi...' : '✓ Soumettre'}
+            {submitting ? t('common.loading') : `✓ ${t('ticket.submit_to_sd')}`}
           </button>
         )}
       </div>
@@ -668,6 +684,7 @@ const s = {
     justifyContent: 'center',
     cursor: 'pointer',
     gap: 2,
+    padding: 0,
   },
   btnAddLine: {
     background: '#EFF6FF',
