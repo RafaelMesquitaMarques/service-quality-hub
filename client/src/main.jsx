@@ -17,7 +17,9 @@ import MeetingsPage from './pages/Meetings'
 import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
-import MobileTicketForm from './pages/Tickets/MobileTicketForm'
+import MobileLayout from './pages/Mobile/MobileLayout'
+import MobileLogin from './pages/Mobile/MobileLogin'
+import MobileNewOccurrence from './pages/Mobile/MobileNewOccurrence'
 
 // Preload Fabric.js
 if (!window.fabric) {
@@ -30,9 +32,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 5 * 60 * 1000,      // 5 minutos — não refetch desnecessário
-      refetchOnWindowFocus: false,     // ← FIX problema 1: não refetch ao mudar de aba/página
-      refetchOnReconnect: false,       // não refetch ao reconectar
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
       refetchIntervalInBackground: false,
     },
     mutations: {
@@ -73,8 +75,16 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          {/* Auth */}
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/mobile" element={<MobileTicketForm onSubmitted={() => {}} />} />
+
+          {/* Mobile — rotas independentes */}
+          <Route path="/mobile/login" element={<MobileLogin />} />
+          <Route path="/mobile" element={<MobileLayout />}>
+            <Route path="new" element={<MobileNewOccurrence />} />
+          </Route>
+
+          {/* Desktop — protegido */}
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="tickets" element={<TicketsPage />} />
@@ -97,6 +107,7 @@ function App() {
               </ProtectedRoute>
             } />
           </Route>
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
