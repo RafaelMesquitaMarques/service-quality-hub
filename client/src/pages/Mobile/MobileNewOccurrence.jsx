@@ -361,7 +361,7 @@ const isEditor = user?.perm_create_mobile !== false
 
 {!isEditor && (
   <div style={s.viewerBanner}>
-    ⚠️ {t('common.error')} — {t('ticket.submit_to_sd')}
+    ⚠️ Accès lecture seule — vous n'avez pas la permission de créer des occurrences.
   </div>
 )}
 

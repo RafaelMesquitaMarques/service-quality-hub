@@ -6,6 +6,7 @@ import { ticketApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useThemeStore } from '../../store/themeStore'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
@@ -305,7 +306,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   const saveAnnotationMut = useMutation({
     mutationFn: async ({ photoId, path, dataUrl }) => {
-  console.log('Saving annotation:', { photoId, path })
       // Convert dataUrl to blob
       const arr  = dataUrl.split(',')
       const mime = arr[0].match(/:(.*?);/)[1]
@@ -547,28 +547,22 @@ export default function TicketDetail() {
   const [editingInfo, setEditingInfo] = useState(false)
   const [infoDraft,   setInfoDraft]   = useState(null)
 
-  const isDark = document.documentElement.classList.contains('dark')
+  const { dark: isDark } = useThemeStore()
   const SC = isDark ? STATUS_CLR_DARK : STATUS_CLR_LIGHT
-
-  useEffect(() => {
-    if (window.fabric) return
-    const script = document.createElement('script')
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.6.0/fabric.min.js'
-    document.head.appendChild(script)
-  }, [])
 
   const { data: ticket, isLoading } = useQuery({
     queryKey: ['ticket', id],
     queryFn: () => ticketApi.get(id).then(r => r.data),
-    onSuccess: (data) => {
-      if (!initialized) {
-        setRootCause(data.root_cause || '')
-        setCorrective(data.corrective_action || '')
-        setSdNotes(data.service_desk_notes || '')
-        setInitialized(true)
-      }
-    }
   })
+
+  useEffect(() => {
+    if (ticket && !initialized) {
+      setRootCause(ticket.root_cause || '')
+      setCorrective(ticket.corrective_action || '')
+      setSdNotes(ticket.service_desk_notes || '')
+      setInitialized(true)
+    }
+  }, [ticket, initialized])
 
   const { data: lines, refetch: refetchLines } = useQuery({
     queryKey: ['occurrence-lines', id],

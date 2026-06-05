@@ -278,7 +278,7 @@ export default function TicketsPage() {
             <tbody>
               {tickets.map(ticket => {
                 const cost = getCost(ticket)
-                const isDeleting = deleteMutation.isLoading && deleteMutation.variables === ticket.id
+                const isDeleting = deleteMutation.isPending && deleteMutation.variables === ticket.id
                 return (
                   <tr key={ticket.id}
                     className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group"
@@ -307,7 +307,7 @@ export default function TicketsPage() {
                             const msg = `Supprimer l'occurrence SC# ${ticket.sc_number || ticket.id} ?\n\nCette action est irréversible.`
                             if (window.confirm(msg)) deleteMutation.mutate(ticket.id)
                           }}
-                          disabled={deleteMutation.isLoading}
+                          disabled={deleteMutation.isPending}
                           title="Supprimer l'occurrence"
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-xs py-1 px-2 rounded border cursor-pointer inline-flex items-center"
                           style={{ border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
