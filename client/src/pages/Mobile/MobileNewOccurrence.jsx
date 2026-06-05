@@ -169,7 +169,6 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
           type="file"
           accept="image/*"
           multiple
-          capture="environment"
           style={{ display: 'none' }}
           onChange={e => handleFiles(e.target.files)}
         />
@@ -214,7 +213,8 @@ export default function MobileNewOccurrence() {
     },
   })
 
-  const canGoStep2  = form.issue_reception_date && lines.some(l => l.quality_issue.trim())
+  const canGoStep2  = !!form.issue_reception_date
+  const canGoStep3  = lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
   const isEditor    = EDITOR_ROLES.includes(user?.role)
 
@@ -443,8 +443,8 @@ export default function MobileNewOccurrence() {
         {step < 3 && (
           <button
             onClick={() => setStep(p => p + 1)}
-            disabled={step === 1 ? !canGoStep2 : false}
-            style={{ ...s.btnPrimary, opacity: (step === 1 && !canGoStep2) ? 0.4 : 1 }}
+            disabled={step === 1 ? !canGoStep2 : !canGoStep3}
+            style={{ ...s.btnPrimary, opacity: (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) ? 0.4 : 1 }}
           >
             Suivant →
           </button>
