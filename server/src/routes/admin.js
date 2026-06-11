@@ -17,7 +17,13 @@ router.get('/users', ...adminOnly, async (req, res) => {
 
 // POST /api/admin/users — create user in Supabase Auth + profile
 router.post('/users', ...adminOnly, async (req, res) => {
-  const { email, password, full_name, role, language = 'fr' } = req.body
+  const {
+    email, password, full_name, role, language = 'fr',
+    department, plant_id, avatar_url,
+    perm_create_occurrence, perm_edit_occurrence, perm_delete_occurrence,
+    perm_view_dashboard, perm_admin, perm_manage_plants,
+    perm_import_excel, perm_create_mobile, perm_meetings
+  } = req.body
   if (!email || !password || !full_name || !role) {
     return res.status(400).json({ error: 'email, password, full_name, role are required' })
   }
@@ -29,9 +35,24 @@ router.post('/users', ...adminOnly, async (req, res) => {
   if (authErr) return res.status(500).json({ error: authErr.message })
 
   // Create profile
+  const profileData = {
+    id: authUser.user.id, full_name, role, language,
+    ...(department !== undefined && { department }),
+    ...(plant_id !== undefined && { plant_id }),
+    ...(avatar_url !== undefined && { avatar_url }),
+    ...(perm_create_occurrence !== undefined && { perm_create_occurrence }),
+    ...(perm_edit_occurrence !== undefined && { perm_edit_occurrence }),
+    ...(perm_delete_occurrence !== undefined && { perm_delete_occurrence }),
+    ...(perm_view_dashboard !== undefined && { perm_view_dashboard }),
+    ...(perm_admin !== undefined && { perm_admin }),
+    ...(perm_manage_plants !== undefined && { perm_manage_plants }),
+    ...(perm_import_excel !== undefined && { perm_import_excel }),
+    ...(perm_create_mobile !== undefined && { perm_create_mobile }),
+    ...(perm_meetings !== undefined && { perm_meetings })
+  }
   const { data: profile, error: profileErr } = await supabase
     .from('user_profiles')
-    .insert({ id: authUser.user.id, full_name, role, language })
+    .insert(profileData)
     .select()
     .single()
 
@@ -41,12 +62,30 @@ router.post('/users', ...adminOnly, async (req, res) => {
 
 // PATCH /api/admin/users/:id
 router.patch('/users/:id', ...adminOnly, async (req, res) => {
-  const { full_name, role, language, active } = req.body
+  const {
+    full_name, role, language, active,
+    department, plant_id, avatar_url,
+    perm_create_occurrence, perm_edit_occurrence, perm_delete_occurrence,
+    perm_view_dashboard, perm_admin, perm_manage_plants,
+    perm_import_excel, perm_create_mobile, perm_meetings
+  } = req.body
   const updates = {}
   if (full_name !== undefined) updates.full_name = full_name
   if (role !== undefined)      updates.role = role
   if (language !== undefined)  updates.language = language
   if (active !== undefined)    updates.active = active
+  if (department !== undefined) updates.department = department
+  if (plant_id !== undefined)   updates.plant_id = plant_id
+  if (avatar_url !== undefined) updates.avatar_url = avatar_url
+  if (perm_create_occurrence !== undefined) updates.perm_create_occurrence = perm_create_occurrence
+  if (perm_edit_occurrence !== undefined)   updates.perm_edit_occurrence = perm_edit_occurrence
+  if (perm_delete_occurrence !== undefined) updates.perm_delete_occurrence = perm_delete_occurrence
+  if (perm_view_dashboard !== undefined)    updates.perm_view_dashboard = perm_view_dashboard
+  if (perm_admin !== undefined)             updates.perm_admin = perm_admin
+  if (perm_manage_plants !== undefined)     updates.perm_manage_plants = perm_manage_plants
+  if (perm_import_excel !== undefined)      updates.perm_import_excel = perm_import_excel
+  if (perm_create_mobile !== undefined)     updates.perm_create_mobile = perm_create_mobile
+  if (perm_meetings !== undefined)          updates.perm_meetings = perm_meetings
 
   const { data, error } = await supabase
     .from('user_profiles')
