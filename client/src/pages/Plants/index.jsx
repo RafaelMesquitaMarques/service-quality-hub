@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../services/supabase'
+import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import PlantModal from './PlantModal'
 import toast from 'react-hot-toast'
@@ -16,7 +17,7 @@ export default function PlantsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editPlant, setEditPlant] = useState(null)
   const { t } = useTranslation()
-  const isDark = document.documentElement.classList.contains('dark')
+  const { dark: isDark } = useThemeStore()
 
   const { data: plants, isLoading } = useQuery({
     queryKey: ['plants-admin'],

@@ -13,7 +13,6 @@ import LoginPage from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import TicketsPage from './pages/Tickets'
 import TicketDetail from './pages/Tickets/TicketDetail'
-import NewTicket from './pages/Tickets/NewTicket'
 import MeetingsPage from './pages/Meetings'
 import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
@@ -86,7 +85,7 @@ function App() {
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="tickets" element={<TicketsPage />} />
-            <Route path="tickets/new" element={<NewTicket />} />
+            <Route path="tickets/new" element={<Navigate to="/tickets" replace />} />
             <Route path="tickets/:id" element={<TicketDetail />} />
             <Route path="meetings" element={
               <ProtectedRoute perm="canMeetings"><MeetingsPage /></ProtectedRoute>

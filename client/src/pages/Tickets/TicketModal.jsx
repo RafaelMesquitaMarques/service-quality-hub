@@ -515,6 +515,7 @@ export default function TicketModal({ onClose }) {
       if (linesErr) throw linesErr
 
       // 3. Upload photos
+      let failedPhotos = 0
       for (let li = 0; li < lines.length; li++) {
         const linePhotos = lines[li].photos || []
         if (linePhotos.length === 0) continue
@@ -539,19 +540,23 @@ export default function TicketModal({ onClose }) {
             const ext  = (photo.name || 'photo.jpg').split('.').pop().replace(/[^a-z0-9]/gi,'') || 'jpg'
             const path = `tickets/${occ.id}/${Date.now()}_${li}_${Math.random().toString(36).slice(2,5)}.${ext}`
             const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg' })
-            if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
+            if (upErr) { console.warn('Photo upload failed:', upErr.message); failedPhotos++; continue }
             const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
             await supabase.from('ticket_photos').insert({
               ticket_id: occ.id, url: urlData.publicUrl, name: photo.name || 'photo.jpg', path, line_id: lineId,
             })
           } catch (photoErr) {
             console.warn('Photo error (non-fatal):', photoErr)
+            failedPhotos++
           }
         }
       }
 
       queryClient.invalidateQueries(['tickets'])
       toast.success('Occurrence créée et soumise au Service Desk')
+      if (failedPhotos > 0) {
+        toast(`${failedPhotos} photo${failedPhotos > 1 ? 's' : ''} n'a pas pu être téléversée — réessayez depuis la page de l'occurrence`, { icon: '⚠️', duration: 6000 })
+      }
       onClose()
     } catch (e) {
       console.error('CREATE ERROR:', e)

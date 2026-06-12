@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
-import { ticketApi, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { usePermissions } from '../../hooks/usePermissions'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
 import TicketModal from './TicketModal'
@@ -117,18 +117,8 @@ export default function TicketsPage() {
   const getCreator = (tk) => profileMap[tk.created_by] || null
 
   const { data: lineCosts } = useQuery({
-    queryKey: ['line-costs', allTickets.map(t => t.id).join(',')],
-    queryFn: async () => {
-      if (!allTickets.length) return {}
-      const { data: lines } = await supabase
-        .from('occurrence_lines')
-        .select('occurrence_id, cost_approx')
-        .in('occurrence_id', allTickets.map(t => t.id))
-      if (!lines) return {}
-      const costs = {}
-      lines.forEach(l => { costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0) })
-      return costs
-    },
+    queryKey: ['line-costs', allTickets.map(t => t.id)],
+    queryFn: () => fetchLineCostTotals(allTickets.map(t => t.id)),
     enabled: allTickets.length > 0,
   })
 
@@ -141,6 +131,13 @@ export default function TicketsPage() {
   // ── Delete mutation ──────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: async (ticketId) => {
+      // Supprimer les fichiers du Storage avant les enregistrements, sinon ils restent orphelins
+      const { data: photos } = await supabase.from('ticket_photos').select('path').eq('ticket_id', ticketId)
+      const paths = (photos || []).map(p => p.path).filter(Boolean)
+      if (paths.length) {
+        const { error: stErr } = await supabase.storage.from('ticket-photos').remove(paths)
+        if (stErr) console.warn('Storage cleanup failed:', stErr.message)
+      }
       await supabase.from('ticket_photos').delete().eq('ticket_id', ticketId)
       await supabase.from('occurrence_lines').delete().eq('occurrence_id', ticketId)
       const { error } = await supabase.from('tickets').delete().eq('id', ticketId)
@@ -152,12 +149,6 @@ export default function TicketsPage() {
     },
     onError: (err) => toast.error(err?.message || 'Erreur'),
   })
-
-  const handleDelete = (e, ticket) => {
-    e.stopPropagation() // éviter navigation vers le détail
-    const msg = `Supprimer l'occurrence SC# ${ticket.sc_number || ticket.id} ?\n\nCette action est irréversible.`
-    if (window.confirm(msg)) deleteMutation.mutate(ticket.id)
-  }
 
   const filtered = useMemo(() => {
     let result = allTickets
@@ -208,7 +199,8 @@ export default function TicketsPage() {
         .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
-      const url     = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+      // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
+      const url     = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
       const a = document.createElement('a'); a.href = url; a.download = `sqh-fy${fiscalYear}.csv`; a.click()
     } catch { toast.error('Export failed') }
   }

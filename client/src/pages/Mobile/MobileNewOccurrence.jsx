@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
+import { usePermissions } from '../../hooks/usePermissions'
 import toast from 'react-hot-toast'
 
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -13,8 +14,6 @@ const URGENCIES   = [
   { value:'urgent',    label:'Urgent' },
   { value:'normal',    label:'Normal' },
 ]
-const EDITOR_ROLES = ['admin','manager','cpm','service_desk']
-
 const emptyLine = () => ({
   quality_issue: '', description: '', line_item: '',
   foliot_id: '', plant: '', affected_qty: '', total_qty: '', photos: [],
@@ -234,10 +233,10 @@ export default function MobileNewOccurrence() {
     },
   })
 
+  const { canCreateMobile: isEditor } = usePermissions()
   const canGoStep2  = !!form.issue_reception_date
   const canGoStep3  = lines.some(l => l.quality_issue.trim())
   const totalPhotos = lines.reduce((sum, l) => sum + (l.photos?.length||0), 0)
-const isEditor = user?.perm_create_mobile !== false
 
   const handleLogout = async () => {
     await logout()
@@ -289,6 +288,7 @@ const isEditor = user?.perm_create_mobile !== false
         .select()
       if (linesErr) throw linesErr
 
+      let failedPhotos = 0
       for (let li = 0; li < lines.length; li++) {
         const linePhotos = lines[li].photos || []
         if (!linePhotos.length) continue
@@ -304,7 +304,7 @@ const isEditor = user?.perm_create_mobile !== false
             const ext  = (photo.name||'photo.jpg').split('.').pop().replace(/[^a-z0-9]/gi,'') || 'jpg'
             const path = `tickets/${occ.id}/${Date.now()}_${li}_${Math.random().toString(36).slice(2,5)}.${ext}`
             const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, blob, { contentType: blob.type })
-            if (upErr) { console.warn('Photo upload failed:', upErr.message); continue }
+            if (upErr) { console.warn('Photo upload failed:', upErr.message); failedPhotos++; continue }
             const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
             await supabase.from('ticket_photos').insert({
               ticket_id: occ.id, url: urlData.publicUrl,
@@ -312,12 +312,16 @@ const isEditor = user?.perm_create_mobile !== false
             })
           } catch (photoErr) {
             console.warn('Photo error:', photoErr)
+            failedPhotos++
           }
         }
       }
 
       queryClient.invalidateQueries(['tickets'])
       toast.success(t('ticket.created'))
+      if (failedPhotos > 0) {
+        toast(`${failedPhotos} photo(s) ✕`, { icon: '⚠️', duration: 6000 })
+      }
       setStep(4)
     } catch (err) {
       console.error(err)

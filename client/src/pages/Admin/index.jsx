@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
+import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import UserModal from './UserModal'
 import toast from 'react-hot-toast'
@@ -76,7 +77,7 @@ export default function AdminPage() {
   const [tempPwdData, setTempPwdData] = useState(null) // { userName, tempPassword }
   const [resettingId, setResettingId] = useState(null)
   const { t } = useTranslation()
-  const isDark = document.documentElement.classList.contains('dark')
+  const { dark: isDark } = useThemeStore()
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin-users'],

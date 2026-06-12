@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
-import { ticketApi, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
@@ -118,7 +119,7 @@ export default function MeetingsPage() {
   const [showNewMeeting,   setShowNewMeeting]   = useState(false)
   const [newMeetingDate,   setNewMeetingDate]   = useState('')
 
-  const isDark = document.documentElement.classList.contains('dark')
+  const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
 
 const { data: meetings, isLoading: loadingMeetings } = useQuery({
@@ -191,19 +192,8 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 
   // Fetch real costs from occurrence_lines
   const { data: lineCosts } = useQuery({
-    queryKey: ['line-costs-meeting', tickets.map(t => t?.id).join(',')],
-    queryFn: async () => {
-      if (!tickets.length) return {}
-      const ids = tickets.map(t => t?.id).filter(Boolean)
-      const { data: lines } = await supabase
-        .from('occurrence_lines')
-        .select('occurrence_id, cost_approx')
-        .in('occurrence_id', ids)
-      if (!lines) return {}
-      const costs = {}
-      lines.forEach(l => { costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0) })
-      return costs
-    },
+    queryKey: ['line-costs-meeting', tickets.map(t => t?.id)],
+    queryFn: () => fetchLineCostTotals(tickets.map(t => t?.id)),
     enabled: tickets.length > 0,
   })
 
@@ -306,6 +296,24 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     onError: (e) => toast.error(e.message),
   })
 
+  const handleExportExcel = () => {
+    if (!selMeeting) return
+    const esc  = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const row  = (cells) => cells.map(esc).join(',')
+    const lines = [
+      row([t('meeting.title'), formatDate(selMeeting.meeting_date)]),
+      '',
+      row(['SC#', t('ticket.issue'), t('ticket.department'), t('ticket.cost')]),
+      ...tickets.map(tk => row([tk?.sc_number, tk?.quality_issue, tk?.department, Math.round(getTicketCost(tk))])),
+      '',
+      row([t('meeting.action_label'), t('meeting.owner'), t('meeting.due_date'), t('ticket.status')]),
+      ...actList.map(a => row([a.text, a.owner, a.due, a.status])),
+    ]
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }))
+    const el  = document.createElement('a')
+    el.href = url; el.download = `meeting-${selMeeting.meeting_date}.csv`; el.click()
+  }
+
   return (
     <>
       <PageHeader
@@ -313,8 +321,10 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
         subtitle={t('meeting.subtitle')}
         actions={
           <div className="flex gap-2">
-            <button className="btn-ghost text-xs"><i className="ti ti-file-export" aria-hidden="true" /> {t('meeting.export_pdf')}</button>
-            <button className="btn-ghost text-xs"><i className="ti ti-table-export" aria-hidden="true" /> {t('meeting.export_excel')}</button>
+            <button className="btn-ghost text-xs" onClick={handleExportExcel} disabled={!selId}
+              title={!selId ? t('meeting.select_prompt') : ''}>
+              <i className="ti ti-table-export" aria-hidden="true" /> {t('meeting.export_excel')}
+            </button>
             <button className="btn-primary" onClick={() => setShowNewMeeting(true)}>
               <i className="ti ti-plus" aria-hidden="true" /> {t('meeting.new')}
             </button>
@@ -343,7 +353,9 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  deleteMeetingMut.mutate(m.id)
+                  if (window.confirm(`${t('common.confirm_delete')}\n${weekLabel(m.meeting_date)} — ${formatDate(m.meeting_date)}`)) {
+                    deleteMeetingMut.mutate(m.id)
+                  }
                 }}
                 className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 bg-transparent border-0 cursor-pointer"
                 title={t('common.delete')}>

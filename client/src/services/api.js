@@ -56,15 +56,6 @@ export const ticketApi = {
     return { data: { tickets: data, total: data.length } }
   },
 
-  listMultiYear: async (fiscalYears = [2025, 2026]) => {
-    const { data, error } = await supabase
-      .from('tickets_with_cost')
-      .select('fiscal_year, fiscal_month, department, real_cost, categories')
-      .in('fiscal_year', fiscalYears)
-    if (error) throw error
-    return { data }
-  },
-
   get: async (id) => {
     const { data, error } = await supabase
       .from('tickets_with_cost')
@@ -97,128 +88,27 @@ export const ticketApi = {
     return { data }
   },
 
-  remove: async (id) => {
-    const { error } = await supabase.from('tickets').delete().eq('id', id)
+}
+
+// ─── Line costs ──────────────────────────────────────────────────────────────
+// Somme des coûts (cost_approx) des lignes par occurrence.
+// Par lots: un .in() avec des centaines d'UUID dépasse la limite d'URL de
+// PostgREST et la requête échoue.
+export async function fetchLineCostTotals(occurrenceIds) {
+  const ids = [...new Set((occurrenceIds || []).filter(Boolean))]
+  const totals = {}
+  const CHUNK = 150
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('occurrence_lines')
+      .select('occurrence_id, cost_approx')
+      .in('occurrence_id', ids.slice(i, i + CHUNK))
     if (error) throw error
-    return { data: { success: true } }
-  },
-
-  export: async (params = {}) => {
-    return { data: '' }
-  },
-}
-
-// ─── KPI Calculations ────────────────────────────────────────────────────────
-export function calcKpis(tickets) {
-  const scCost = tickets
-    .filter(t => t.department !== 'Client' && t.cost_approx > 0)
-    .reduce((sum, t) => sum + Number(t.cost_approx || 0), 0)
-
-  const totalCost = tickets
-    .filter(t => t.cost_approx != null && t.cost_approx > 0)
-    .reduce((sum, t) => sum + Number(t.cost_approx), 0)
-
-  const clientCost = tickets
-    .filter(t => t.department === 'Client' && t.cost_approx > 0)
-    .reduce((sum, t) => sum + Number(t.cost_approx || 0), 0)
-
-  const byDepartment = {}
-  tickets.forEach(t => {
-    byDepartment[t.department] = (byDepartment[t.department] || 0) + 1
-  })
-
-  const costByDepartment = {}
-  tickets.filter(t => t.cost_approx > 0 && t.department).forEach(t => {
-    costByDepartment[t.department] = (costByDepartment[t.department] || 0) + Number(t.cost_approx)
-  })
-
-  const byCategory = {}
-  tickets.forEach(t => {
-    const c = t.categories || 'Other'
-    byCategory[c] = (byCategory[c] || 0) + 1
-  })
-
-  const byFiscalMonth = {}
-  tickets.forEach(t => {
-    const fm = t.fiscal_month
-    if (fm) byFiscalMonth[fm] = (byFiscalMonth[fm] || 0) + 1
-  })
-
-  const completed = tickets.filter(t => t.status === 'completed').length
-  const open      = tickets.filter(t => !['completed', 'cancelled'].includes(t.status)).length
-  const total     = tickets.length
-
-  return {
-    total, open, completed,
-    completionPct: total ? Math.round(completed / total * 100) : 0,
-    totalCost, scCost, clientCost,
-    byDepartment, costByDepartment, byCategory, byFiscalMonth,
-  }
-}
-
-export function calcScCostPct(scCost, revenue) {
-  if (!revenue || revenue === 0) return 0
-  return scCost / revenue
-}
-
-// ─── Photo API ───────────────────────────────────────────────────────────────
-export const photoApi = {
-  upload: async (ticketId, files) => {
-    const uploaded = []
-    for (const file of files) {
-      const ext = file.name.split('.').pop()
-      const path = 'tickets/' + ticketId + '/' + Date.now() + '.' + ext
-      const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
-      if (error) throw error
-      uploaded.push({ path, name: file.name })
+    for (const l of data || []) {
+      totals[l.occurrence_id] = (totals[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
     }
-    return { data: uploaded }
-  },
-  getUrl: async (ticketId, path) => {
-    const { data } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-    return { data: { url: data.publicUrl } }
-  },
-  remove: async (ticketId, path) => {
-    const { error } = await supabase.storage.from('ticket-photos').remove([path])
-    if (error) throw error
-    return { data: { success: true } }
-  },
-}
-
-// ─── Meeting API ─────────────────────────────────────────────────────────────
-export const meetingApi = {
-  list: async () => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .select('*')
-      .order('meeting_date', { ascending: false })
-    if (error) throw error
-    return { data }
-  },
-  getByDate: async (date) => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .select('*')
-      .eq('meeting_date', date)
-      .single()
-    if (error && error.code !== 'PGRST116') throw error
-    return { data: data || null }
-  },
-  create: async (payload) => {
-    const { data, error } = await supabase.from('meetings').insert(payload).select().single()
-    if (error) throw error
-    return { data }
-  },
-  updateNotes: async (date, notes) => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .update({ notes, updated_at: new Date().toISOString() })
-      .eq('meeting_date', date)
-      .select()
-      .single()
-    if (error) throw error
-    return { data }
-  },
+  }
+  return totals
 }
 
 // ─── Admin API ───────────────────────────────────────────────────────────────
@@ -309,15 +199,3 @@ export const adminApi = {
   },
 }
 
-// ─── Import API ───────────────────────────────────────────────────────────────
-export const importApi = {
-  preview: async () => ({ data: {} }),
-  run:     async () => ({ data: {} }),
-}
-
-export default {
-  get:    async () => ({}),
-  post:   async () => ({}),
-  patch:  async () => ({}),
-  delete: async () => ({}),
-}

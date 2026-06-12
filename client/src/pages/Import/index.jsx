@@ -245,7 +245,8 @@ export default function ImportPage() {
         quality_issue:    r.quality_issue || '(sans titre)',
         sc_number:        r.sc_number     || null,
         date_yyyy_mm:     r.date_yyyy_mm  || null,
-        issue_reception_date: r.date_yyyy_mm || null,
+        // issue_reception_date est une colonne DATE — 'YYYY-MM' seul est rejeté par Postgres
+        issue_reception_date: r.date_yyyy_mm ? `${r.date_yyyy_mm}-01` : null,
         ship_to:          r.ship_to       || null,
         sold_to:          r.sold_to       || null,
         brand:            r.brand         || null,
