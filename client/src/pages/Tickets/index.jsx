@@ -87,6 +87,7 @@ export default function TicketsPage() {
   const [fShipTo, setFShipTo]   = useState(new Set())
   const [fSC,     setFSC]       = useState(new Set())
   const [fDate,   setFDate]     = useState(new Set())
+  const [fCreator, setFCreator] = useState(new Set())
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
@@ -96,6 +97,24 @@ export default function TicketsPage() {
   })
 
   const allTickets = data?.tickets || []
+
+  // Profils pour afficher/filtrer par créateur
+  const { data: profiles } = useQuery({
+    queryKey: ['user-profiles-names'],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_profiles').select('id, full_name')
+      return data || []
+    },
+    staleTime: 30 * 60 * 1000,
+  })
+
+  const profileMap = useMemo(() => {
+    const map = {}
+    ;(profiles || []).forEach(p => { map[p.id] = p.full_name })
+    return map
+  }, [profiles])
+
+  const getCreator = (tk) => profileMap[tk.created_by] || null
 
   const { data: lineCosts } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id).join(',')],
@@ -145,8 +164,8 @@ export default function TicketsPage() {
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(tk =>
-        [tk.sc_number, tk.quality_issue, tk.ship_to, tk.sold_to, tk.brand,
-         tk.department, tk.categories, tk.ref_so, tk.plant, tk.status]
+        [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.ship_to, tk.sold_to, tk.brand,
+         tk.department, tk.categories, tk.ref_so, tk.original_so, tk.plant, tk.status, getCreator(tk)]
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
@@ -157,30 +176,37 @@ export default function TicketsPage() {
     if (fShipTo.size > 0) result = result.filter(tk => fShipTo.has(tk.ship_to))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
+    if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate])
+  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fCreator, profileMap])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
+  const creatorNames = useMemo(
+    () => [...new Set(allTickets.map(tk => getCreator(tk)).filter(Boolean))].sort(),
+    [allTickets, profileMap]
+  )
 
   const [page, setPage] = useState(1)
   const start   = (page - 1) * PAGE_SIZE
   const tickets = filtered.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < filtered.length
 
-  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fiscalYear])
+  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fCreator, fiscalYear])
 
-  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size || fSC.size || fDate.size
+  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size || fSC.size || fDate.size || fCreator.size
 
   const clearAll = () => {
     setSearch(''); setFStatus(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFShipTo(new Set())
-    setFSC(new Set()); setFDate(new Set())
+    setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
   }
 
   const handleExport = () => {
     try {
-      const headers = ['sc_number', 'issue_reception_date', 'quality_issue', 'ship_to', 'brand', 'department', 'status', 'cost_approx']
-      const rows    = filtered.map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
+      const headers = ['occurrence_no', 'sc_number', 'original_so', 'issue_reception_date', 'quality_issue', 'ship_to', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
+      const rows    = filtered
+        .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
+        .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       const url     = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
       const a = document.createElement('a'); a.href = url; a.download = `sqh-fy${fiscalYear}.csv`; a.click()
@@ -245,8 +271,14 @@ export default function TicketsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-[#161B22] sticky top-0 z-10">
               <tr>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-14">
+                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">#</span>
+                </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={setFSC} onClear={() => setFSC(new Set())} />
+                </th>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.original_so')}</span>
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={setFDate} onClear={() => setFDate(new Set())} />
@@ -269,6 +301,9 @@ export default function TicketsPage() {
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.cost')}</span>
                 </th>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={setFCreator} onClear={() => setFCreator(new Set())} />
+                </th>
                 {/* Coluna de acções — só visível para admin/manager */}
                 {isManager && (
                   <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-12" />
@@ -283,7 +318,9 @@ export default function TicketsPage() {
                   <tr key={ticket.id}
                     className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group"
                     onClick={() => navigate(`/tickets/${ticket.id}`)}>
+                    <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-700 dark:text-gray-300">{ticket.occurrence_no ? `#${ticket.occurrence_no}` : '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.original_so || '—'}</td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
                     <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.ship_to || '—'}</td>
@@ -297,6 +334,7 @@ export default function TicketsPage() {
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
                       {cost ? `$${Math.round(cost).toLocaleString()}` : '—'}
                     </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{getCreator(ticket) || '—'}</td>
                     {/* Botão apagar — só admin/manager */}
                     {isManager && (
                       <td className="px-2 py-2.5">

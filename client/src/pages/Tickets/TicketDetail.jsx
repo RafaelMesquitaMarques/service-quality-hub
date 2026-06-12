@@ -37,6 +37,8 @@ const DEPARTMENTS = [
   'Project Mgnt','EOI','Vietnam','Planning',
 ]
 const CATEGORIES = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
+const URGENCIES   = ['overnight','urgent','normal']
+const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
 const COLORS  = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
 const TOOLS   = [
   { id:'select',  icon:'ti-cursor-text',    label:'Sélection' },
@@ -338,14 +340,17 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   const saveLine = async () => {
     const { error } = await supabase.from('occurrence_lines').update({
       quality_issue: form.quality_issue,
+      description:   form.description || null,
       categories:    form.categories,
       department:    form.department,
       line_item:     form.line_item,
       foliot_id:     form.foliot_id,
       plant:         form.plant,
       affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
+      total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
       cost_approx:   form.cost_approx  ? Number(form.cost_approx)  : null,
       cost_final:    form.cost_final   ? Number(form.cost_final)   : null,
+      root_cause:    form.root_cause   || null,
       updated_at:    new Date().toISOString(),
     }).eq('id', line.id)
     if (error) { toast.error(t('common.error')); return }
@@ -356,6 +361,8 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   // canEdit: role-based (from parent) AND status allows it
   const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
+  // Catégorie & Département se remplissent à l'étape Réunion qualité
+  const isQM = ['quality_meeting','completed'].includes(status)
 
   const imgPhotos  = (photos || []).filter(p =>  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
   const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
@@ -389,20 +396,28 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 <label className="label">{t('ticket.issue')} *</label>
                 <input className="input text-xs" value={form.quality_issue || ''} onChange={e => setForm(f => ({...f, quality_issue: e.target.value}))} />
               </div>
-              <div>
-                <label className="label">{t('ticket.categories')}</label>
-                <select className="input text-xs" value={form.categories || ''} onChange={e => setForm(f => ({...f, categories: e.target.value}))}>
-                  <option value="">—</option>
-                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                </select>
+              <div className="col-span-2">
+                <label className="label">{t('ticket.description')}</label>
+                <textarea className="input text-xs" rows={2} value={form.description || ''} onChange={e => setForm(f => ({...f, description: e.target.value}))} />
               </div>
-              <div>
-                <label className="label">{t('ticket.department')}</label>
-                <select className="input text-xs" value={form.department || ''} onChange={e => setForm(f => ({...f, department: e.target.value}))}>
-                  <option value="">—</option>
-                  {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                </select>
-              </div>
+              {isQM && (
+                <>
+                  <div>
+                    <label className="label">{t('ticket.categories')}</label>
+                    <select className="input text-xs" value={form.categories || ''} onChange={e => setForm(f => ({...f, categories: e.target.value}))}>
+                      <option value="">—</option>
+                      {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.department')}</label>
+                    <select className="input text-xs" value={form.department || ''} onChange={e => setForm(f => ({...f, department: e.target.value}))}>
+                      <option value="">—</option>
+                      {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="label">{t('ticket.line_item')}</label>
                 <input className="input text-xs" value={form.line_item || ''} onChange={e => setForm(f => ({...f, line_item: e.target.value}))} />
@@ -423,12 +438,20 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 <input className="input text-xs" type="number" value={form.affected_qty || ''} onChange={e => setForm(f => ({...f, affected_qty: e.target.value}))} />
               </div>
               <div>
+                <label className="label">{t('ticket.total_qty')}</label>
+                <input className="input text-xs" type="number" value={form.total_qty || ''} onChange={e => setForm(f => ({...f, total_qty: e.target.value}))} />
+              </div>
+              <div>
                 <label className="label">{t('ticket.cost')}</label>
                 <input className="input text-xs" value={form.cost_approx || ''} onChange={e => setForm(f => ({...f, cost_approx: e.target.value}))} placeholder="$0.00" />
               </div>
               <div>
                 <label className="label">{t('ticket.cost_final')}</label>
                 <input className="input text-xs" value={form.cost_final || ''} onChange={e => setForm(f => ({...f, cost_final: e.target.value}))} placeholder="$0.00" />
+              </div>
+              <div className="col-span-2">
+                <label className="label">{t('ticket.root_cause')}</label>
+                <textarea className="input text-xs" rows={2} value={form.root_cause || ''} onChange={e => setForm(f => ({...f, root_cause: e.target.value}))} placeholder={t('ticket.root_cause_placeholder')} />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">
@@ -441,13 +464,18 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
             {line.quality_issue && (
               <div className="col-span-2 text-gray-900 dark:text-gray-100 font-medium mb-1">{line.quality_issue}</div>
             )}
+            {line.description && (
+              <div className="col-span-2 text-gray-600 dark:text-gray-300 mb-1">{line.description}</div>
+            )}
             {[
               [t('ticket.line_item'), line.line_item],
               [t('ticket.foliot_id'), line.foliot_id],
               [t('ticket.plant'), line.plant],
               [t('ticket.affected_qty'), line.affected_qty],
+              [t('ticket.total_qty'), line.total_qty],
               [t('ticket.cost'), line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
               [t('ticket.cost_final'), line.cost_final ? `$${Number(line.cost_final).toLocaleString()}` : null],
+              [t('ticket.root_cause'), line.root_cause],
             ].filter(([,v]) => v).map(([label, val]) => (
               <div key={label} className="flex justify-between py-1.5 px-2 odd:bg-white dark:odd:bg-gray-900 even:bg-gray-100 dark:even:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
                 <span className="text-gray-400">{label}</span>
@@ -538,10 +566,11 @@ export default function TicketDetail() {
   const [rootCause,   setRootCause]   = useState('')
   const [corrective,  setCorrective]  = useState('')
   const [sdNotes,     setSdNotes]     = useState('')
+  const [scNumber,    setScNumber]    = useState('')
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
-  const [newLine,     setNewLine]     = useState({ quality_issue:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', cost_approx:'' })
+  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', cost_approx:'' })
 
   // Edição dos campos de informação
   const [editingInfo, setEditingInfo] = useState(false)
@@ -560,6 +589,7 @@ export default function TicketDetail() {
       setRootCause(ticket.root_cause || '')
       setCorrective(ticket.corrective_action || '')
       setSdNotes(ticket.service_desk_notes || '')
+      setScNumber(ticket.sc_number || '')
       setInitialized(true)
     }
   }, [ticket, initialized])
@@ -590,6 +620,15 @@ export default function TicketDetail() {
     },
   })
 
+  const { data: creator } = useQuery({
+    queryKey: ['ticket-creator', ticket?.created_by],
+    queryFn: async () => {
+      const { data } = await supabase.from('user_profiles').select('full_name').eq('id', ticket.created_by).single()
+      return data
+    },
+    enabled: !!ticket?.created_by,
+  })
+
   const updateMut = useMutation({
     mutationFn: (payload) => ticketApi.update(id, payload),
     onSuccess: () => { queryClient.invalidateQueries(['ticket', id]); toast.success(t('common.save')) },
@@ -602,12 +641,14 @@ export default function TicketDetail() {
       const { error } = await supabase.from('occurrence_lines').insert({
         occurrence_id: id,
         quality_issue: newLine.quality_issue || null,
+        description:   newLine.description   || null,
         categories:    newLine.categories    || null,
         department:    newLine.department    || null,
         line_item:     newLine.line_item     || null,
         foliot_id:     newLine.foliot_id     || null,
         plant:         newLine.plant         || null,
         affected_qty:  newLine.affected_qty  ? Number(newLine.affected_qty) : null,
+        total_qty:     newLine.total_qty     ? Number(newLine.total_qty)    : null,
         cost_approx:   newLine.cost_approx   ? Number(newLine.cost_approx)  : null,
         sort_order:    maxOrder + 1,
       })
@@ -616,7 +657,7 @@ export default function TicketDetail() {
     onSuccess: () => {
       refetchLines()
       setAddingLine(false)
-      setNewLine({ quality_issue:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', cost_approx:'' })
+      setNewLine({ quality_issue:'', description:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', cost_approx:'' })
       toast.success(t('ticket.add_line'))
     },
     onError: () => toast.error(t('common.error')),
@@ -633,11 +674,18 @@ export default function TicketDetail() {
 
   const handleSave = () => updateMut.mutate({
     root_cause: rootCause, corrective_action: corrective, service_desk_notes: sdNotes,
+    sc_number: scNumber || null,
   })
 
   // Salvar edição dos campos de informação
   const handleSaveInfo = () => {
-    updateMut.mutate(infoDraft, {
+    updateMut.mutate({
+      ...infoDraft,
+      delivery_date:    infoDraft.delivery_date || null,
+      installer_needed: infoDraft.installer_needed === '' ? null : infoDraft.installer_needed === 'yes',
+      urgency:          infoDraft.urgency || null,
+      comment:          infoDraft.comment || null,
+    }, {
       onSuccess: () => setEditingInfo(false)
     })
   }
@@ -656,7 +704,7 @@ export default function TicketDetail() {
     <>
       <PageHeader
         title={ticket.quality_issue || `SC# ${ticket.sc_number}`}
-        subtitle={`SC# ${ticket.sc_number || '—'} · ${formatDate(ticket.issue_reception_date)}`}
+        subtitle={`${ticket.occurrence_no ? `#${ticket.occurrence_no} · ` : ''}SC# ${ticket.sc_number || '—'} · ${formatDate(ticket.issue_reception_date)}`}
         actions={
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
@@ -755,8 +803,13 @@ export default function TicketDetail() {
                         sold_to: ticket.sold_to || '',
                         brand:   ticket.brand   || '',
                         ref_so:  ticket.ref_so  || '',
+                        original_so: ticket.original_so || '',
                         sc_number: ticket.sc_number || '',
                         issue_reception_date: ticket.issue_reception_date || '',
+                        delivery_date: ticket.delivery_date || '',
+                        installer_needed: ticket.installer_needed === true ? 'yes' : ticket.installer_needed === false ? 'no' : '',
+                        urgency: ticket.urgency || '',
+                        comment: ticket.comment || '',
                       })
                       setEditingInfo(true)
                     }}>
@@ -773,6 +826,7 @@ export default function TicketDetail() {
                       ['sold_to',  t('ticket.sold_to')],
                       ['brand',    t('ticket.brand')],
                       ['ref_so',   t('ticket.ref_so')],
+                      ['original_so', t('ticket.original_so')],
                       ['sc_number',t('ticket.sc_number')],
                     ].map(([key, label]) => (
                       <div key={key}>
@@ -784,6 +838,29 @@ export default function TicketDetail() {
                       <label className="label">{t('ticket.reception_date')}</label>
                       <input className="input text-xs" type="date" value={infoDraft.issue_reception_date?.slice(0,10) || ''} onChange={e => setInfoDraft(d => ({ ...d, issue_reception_date: e.target.value }))} />
                     </div>
+                    <div>
+                      <label className="label">{t('ticket.delivery_date')}</label>
+                      <input className="input text-xs" type="date" value={infoDraft.delivery_date?.slice(0,10) || ''} onChange={e => setInfoDraft(d => ({ ...d, delivery_date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.installer_needed')}</label>
+                      <select className="input text-xs" value={infoDraft.installer_needed} onChange={e => setInfoDraft(d => ({ ...d, installer_needed: e.target.value }))}>
+                        <option value="">—</option>
+                        <option value="yes">{t('common.yes')}</option>
+                        <option value="no">{t('common.no')}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.urgency')}</label>
+                      <select className="input text-xs" value={infoDraft.urgency} onChange={e => setInfoDraft(d => ({ ...d, urgency: e.target.value }))}>
+                        <option value="">—</option>
+                        {URGENCIES.map(u => <option key={u} value={u}>{URGENCY_LBL[u]}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.comment')}</label>
+                      <textarea className="input text-xs" rows={2} value={infoDraft.comment} onChange={e => setInfoDraft(d => ({ ...d, comment: e.target.value }))} />
+                    </div>
                     <div className="flex justify-end gap-2 pt-1">
                       <button onClick={() => setEditingInfo(false)} className="btn-ghost text-xs">{t('common.cancel')}</button>
                       <button onClick={handleSaveInfo} disabled={updateMut.isPending} className="btn-primary text-xs">{t('common.save')}</button>
@@ -792,12 +869,19 @@ export default function TicketDetail() {
                 ) : (
                   <>
                     {[
+                      [t('ticket.occurrence_no'),  ticket.occurrence_no ? `#${ticket.occurrence_no}` : null],
+                      [t('ticket.created_by'),     creator?.full_name],
                       [t('ticket.ship_to'),        ticket.ship_to],
                       [t('ticket.sold_to'),         ticket.sold_to],
                       [t('ticket.brand'),           ticket.brand],
                       [t('ticket.ref_so'),          ticket.ref_so],
+                      [t('ticket.original_so'),     ticket.original_so],
                       [t('ticket.sc_number'),       ticket.sc_number],
                       [t('ticket.reception_date'),  formatDate(ticket.issue_reception_date)],
+                      [t('ticket.delivery_date'),   ticket.delivery_date ? formatDate(ticket.delivery_date) : null],
+                      [t('ticket.installer_needed'), ticket.installer_needed === true ? t('common.yes') : ticket.installer_needed === false ? t('common.no') : null],
+                      [t('ticket.urgency'),         URGENCY_LBL[ticket.urgency] || null],
+                      [t('ticket.comment'),         ticket.comment],
                       ['SC Cost total',             totalCost > 0 ? `$${Math.round(totalCost).toLocaleString()}` : null],
                       ['Coût final total',          finalCost > 0 ? `$${Math.round(finalCost).toLocaleString()}` : null],
                     ].filter(([,v]) => v).map(([label, value]) => (
@@ -814,12 +898,22 @@ export default function TicketDetail() {
             {/* SD Notes */}
             {['service_desk','quality_meeting','completed'].includes(ticket.status) && (
               <div className="card">
-                <SectionHeader icon="ti-notes" title={t('ticket.sd_notes')} />
-                <div className="px-4 py-3">
-                  <textarea rows={3} value={sdNotes} onChange={e => setSdNotes(e.target.value)}
-                    disabled={!canEdit}
-                    placeholder={t('ticket.sd_notes_placeholder')}
-                    className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                <SectionHeader icon="ti-notes" title={t('ticket.step2')} />
+                <div className="px-4 py-3 flex flex-col gap-3">
+                  <div>
+                    <label className="label">{t('ticket.sc_number')}</label>
+                    <input value={scNumber} onChange={e => setScNumber(e.target.value)}
+                      disabled={!canEdit}
+                      placeholder="SC#..."
+                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.sd_notes')}</label>
+                    <textarea rows={3} value={sdNotes} onChange={e => setSdNotes(e.target.value)}
+                      disabled={!canEdit}
+                      placeholder={t('ticket.sd_notes_placeholder')}
+                      className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
                 </div>
               </div>
             )}
@@ -851,7 +945,7 @@ export default function TicketDetail() {
               <div className="px-4 py-2">
                 {[
                   { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text: t('ticket.last_modified') },
-                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text: `${t('ticket.created')} · SC# ${ticket.sc_number || '—'}` },
+                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text: `${t('ticket.created')}${creator?.full_name ? ` · ${creator.full_name}` : ''} · SC# ${ticket.sc_number || '—'}` },
                 ].map((h, i) => (
                   <div key={i} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800 text-xs">
                     <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: h.dot }} />
@@ -884,18 +978,26 @@ export default function TicketDetail() {
                         <label className="label">{t('ticket.issue')} *</label>
                         <input className="input text-xs" value={newLine.quality_issue} onChange={e => setNewLine(f => ({...f, quality_issue: e.target.value}))} placeholder="Description..." />
                       </div>
-                      <div>
-                        <label className="label">{t('ticket.categories')}</label>
-                        <select className="input text-xs" value={newLine.categories} onChange={e => setNewLine(f => ({...f, categories: e.target.value}))}>
-                          <option value="">—</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                        </select>
+                      <div className="col-span-2">
+                        <label className="label">{t('ticket.description')}</label>
+                        <textarea className="input text-xs" rows={2} value={newLine.description} onChange={e => setNewLine(f => ({...f, description: e.target.value}))} />
                       </div>
-                      <div>
-                        <label className="label">{t('ticket.department')}</label>
-                        <select className="input text-xs" value={newLine.department} onChange={e => setNewLine(f => ({...f, department: e.target.value}))}>
-                          <option value="">—</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                        </select>
-                      </div>
+                      {['quality_meeting','completed'].includes(ticket.status) && (
+                        <>
+                          <div>
+                            <label className="label">{t('ticket.categories')}</label>
+                            <select className="input text-xs" value={newLine.categories} onChange={e => setNewLine(f => ({...f, categories: e.target.value}))}>
+                              <option value="">—</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="label">{t('ticket.department')}</label>
+                            <select className="input text-xs" value={newLine.department} onChange={e => setNewLine(f => ({...f, department: e.target.value}))}>
+                              <option value="">—</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      )}
                       <div>
                         <label className="label">{t('ticket.line_item')}</label>
                         <input className="input text-xs" value={newLine.line_item} onChange={e => setNewLine(f => ({...f, line_item: e.target.value}))} />
@@ -913,6 +1015,10 @@ export default function TicketDetail() {
                       <div>
                         <label className="label">{t('ticket.affected_qty')}</label>
                         <input className="input text-xs" type="number" value={newLine.affected_qty} onChange={e => setNewLine(f => ({...f, affected_qty: e.target.value}))} />
+                      </div>
+                      <div>
+                        <label className="label">{t('ticket.total_qty')}</label>
+                        <input className="input text-xs" type="number" value={newLine.total_qty} onChange={e => setNewLine(f => ({...f, total_qty: e.target.value}))} />
                       </div>
                       <div>
                         <label className="label">{t('ticket.cost')}</label>

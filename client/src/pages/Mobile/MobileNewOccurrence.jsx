@@ -7,14 +7,17 @@ import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import toast from 'react-hot-toast'
 
-const DEPARTMENTS = ['Client','Shipping','Supplier','Production','Logistics','Install','Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC','Project Mgnt','EOI','Vietnam','Planning']
-const CATEGORIES  = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
+const URGENCIES   = [
+  { value:'overnight', label:'Overnight' },
+  { value:'urgent',    label:'Urgent' },
+  { value:'normal',    label:'Normal' },
+]
 const EDITOR_ROLES = ['admin','manager','cpm','service_desk']
 
 const emptyLine = () => ({
-  quality_issue: '', categories: '', department: '', line_item: '',
-  foliot_id: '', plant: '', affected_qty: '', cost_approx: '', photos: [],
+  quality_issue: '', description: '', line_item: '',
+  foliot_id: '', plant: '', affected_qty: '', total_qty: '', photos: [],
 })
 
 function StepBar({ step }) {
@@ -119,14 +122,14 @@ const handleFiles = (files) => {
         />
       </Field>
 
-      <div style={s.row2}>
-        <Field label={t('ticket.categories')}>
-          <MSelect value={line.categories} onChange={v => onChange(idx,'categories',v)} options={CATEGORIES} />
-        </Field>
-        <Field label={t('ticket.department')}>
-          <MSelect value={line.department} onChange={v => onChange(idx,'department',v)} options={DEPARTMENTS} />
-        </Field>
-      </div>
+      <Field label={t('ticket.description')}>
+        <textarea
+          value={line.description}
+          onChange={e => onChange(idx, 'description', e.target.value)}
+          placeholder={t('ticket.description')}
+          style={{ ...s.input, minHeight: 60, resize: 'vertical' }}
+        />
+      </Field>
 
       <div style={s.row2}>
         <Field label={t('ticket.line_item')}>
@@ -137,22 +140,22 @@ const handleFiles = (files) => {
         </Field>
       </div>
 
+      <Field label={t('ticket.plant')}>
+        <MSelect
+          value={line.plant}
+          onChange={v => onChange(idx,'plant',v)}
+          options={(plants||[]).map(p => ({ value: p.name, label: p.name }))}
+        />
+      </Field>
+
       <div style={s.row2}>
-        <Field label={t('ticket.plant')}>
-          <MSelect
-            value={line.plant}
-            onChange={v => onChange(idx,'plant',v)}
-            options={(plants||[]).map(p => ({ value: p.name, label: p.name }))}
-          />
-        </Field>
         <Field label={t('ticket.affected_qty')}>
           <MInput value={line.affected_qty} onChange={v => onChange(idx,'affected_qty',v)} type="number" placeholder="0" />
         </Field>
+        <Field label={t('ticket.total_qty')}>
+          <MInput value={line.total_qty} onChange={v => onChange(idx,'total_qty',v)} type="number" placeholder="0" />
+        </Field>
       </div>
-
-      <Field label={t('ticket.cost')}>
-        <MInput value={line.cost_approx} onChange={v => onChange(idx,'cost_approx',v)} placeholder="0.00" />
-      </Field>
 
       <div style={s.photosSection}>
         <span style={s.photosLabel}>{t('ticket.photos')}</span>
@@ -204,7 +207,8 @@ export default function MobileNewOccurrence() {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand: '', ship_to: '', sold_to: '', ref_so: '', sc_number: '',
+    brand: '', ship_to: '', sold_to: '', ref_so: '', original_so: '',
+    delivery_date: '', installer_needed: '', urgency: '', comment: '',
   })
   const [lines, setLines] = useState([emptyLine()])
 
@@ -251,18 +255,21 @@ const isEditor = user?.perm_create_mobile !== false
         date_yyyy_mm:  dateYYYYMM,
         fiscal_year:   getFiscalYear(dateYYYYMM),
         fiscal_month:  getFiscalMonth(dateYYYYMM),
-        brand:        form.brand     || null,
-        ship_to:      form.ship_to   || null,
-        sold_to:      form.sold_to   || null,
-        ref_so:       form.ref_so    || null,
-        sc_number:    form.sc_number || null,
+        brand:            form.brand         || null,
+        ship_to:          form.ship_to       || null,
+        sold_to:          form.sold_to       || null,
+        ref_so:           form.ref_so        || null,
+        original_so:      form.original_so   || null,
+        created_by:       user?.id           || null,
+        delivery_date:    form.delivery_date || null,
+        installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
+        urgency:          form.urgency       || null,
+        comment:          form.comment       || null,
         status:       'service_desk',
         quality_issue: lines[0]?.quality_issue || null,
         plant:         lines[0]?.plant         || null,
-        categories:    lines[0]?.categories    || null,
         affected_qty:  lines[0]?.affected_qty  ? Number(lines[0].affected_qty) : null,
-        department:    lines[0]?.department    || null,
-        cost_approx:   lines[0]?.cost_approx   ? Number(lines[0].cost_approx)  : null,
+        total_qty:     lines[0]?.total_qty     ? Number(lines[0].total_qty)    : null,
       }).select().single()
       if (occErr) throw occErr
 
@@ -271,13 +278,12 @@ const isEditor = user?.perm_create_mobile !== false
         .insert(lines.map((l, i) => ({
           occurrence_id: occ.id,
           quality_issue: l.quality_issue || null,
-          categories:    l.categories    || null,
-          department:    l.department    || null,
+          description:   l.description   || null,
           line_item:     l.line_item     || null,
           foliot_id:     l.foliot_id     || null,
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
-          cost_approx:   l.cost_approx   ? Number(l.cost_approx)  : null,
+          total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
           sort_order:    i,
         })))
         .select()
@@ -336,7 +342,7 @@ const isEditor = user?.perm_create_mobile !== false
         <button
           onClick={() => {
             setStep(1)
-            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', sc_number:'' })
+            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', original_so:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
             setLines([emptyLine()])
           }}
           style={s.btnPrimary}
@@ -371,17 +377,17 @@ const isEditor = user?.perm_create_mobile !== false
         {step === 1 && (
           <div style={s.stepContent}>
             <div style={s.sectionTitle}>{t('ticket.informations')}</div>
-            <Field label={t('ticket.reception_date')} required>
-              <MInput type="date" value={form.issue_reception_date} onChange={v => setField('issue_reception_date', v)} />
-            </Field>
             <div style={s.row2}>
-              <Field label={t('ticket.brand')}>
-                <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
+              <Field label={t('ticket.reception_date')} required>
+                <MInput type="date" value={form.issue_reception_date} onChange={v => setField('issue_reception_date', v)} />
               </Field>
-              <Field label={t('ticket.sc_number')}>
-                <MInput value={form.sc_number} onChange={v => setField('sc_number',v)} placeholder="SC#..." />
+              <Field label={t('ticket.delivery_date')}>
+                <MInput type="date" value={form.delivery_date} onChange={v => setField('delivery_date', v)} />
               </Field>
             </div>
+            <Field label={t('ticket.brand')}>
+              <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
+            </Field>
             <div style={s.row2}>
               <Field label={t('ticket.ship_to')}>
                 <MInput value={form.ship_to} onChange={v => setField('ship_to',v)} placeholder="Ship To..." />
@@ -390,8 +396,29 @@ const isEditor = user?.perm_create_mobile !== false
                 <MInput value={form.sold_to} onChange={v => setField('sold_to',v)} placeholder="Sold To..." />
               </Field>
             </div>
-            <Field label={t('ticket.ref_so')}>
-              <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
+            <div style={s.row2}>
+              <Field label={t('ticket.ref_so')}>
+                <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
+              </Field>
+              <Field label={t('ticket.original_so')}>
+                <MInput value={form.original_so} onChange={v => setField('original_so',v)} placeholder="Original SO..." />
+              </Field>
+            </div>
+            <div style={s.row2}>
+              <Field label={t('ticket.installer_needed')}>
+                <MSelect value={form.installer_needed} onChange={v => setField('installer_needed',v)} options={[{ value:'yes', label:t('common.yes') }, { value:'no', label:t('common.no') }]} />
+              </Field>
+              <Field label={t('ticket.urgency')}>
+                <MSelect value={form.urgency} onChange={v => setField('urgency',v)} options={URGENCIES} />
+              </Field>
+            </div>
+            <Field label={t('ticket.comment')}>
+              <textarea
+                value={form.comment}
+                onChange={e => setField('comment', e.target.value)}
+                placeholder="Commentaire..."
+                style={{ ...s.input, minHeight: 70, resize: 'vertical' }}
+              />
             </Field>
           </div>
         )}
@@ -415,11 +442,15 @@ const isEditor = user?.perm_create_mobile !== false
               <div style={s.summaryTitle}>{t('ticket.informations')}</div>
               {[
                 [t('ticket.reception_date'), form.issue_reception_date],
+                [t('ticket.delivery_date'), form.delivery_date],
                 [t('ticket.brand'), form.brand],
                 [t('ticket.ship_to'), form.ship_to],
                 [t('ticket.sold_to'), form.sold_to],
                 [t('ticket.ref_so'), form.ref_so],
-                [t('ticket.sc_number'), form.sc_number],
+                [t('ticket.original_so'), form.original_so],
+                [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
+                [t('ticket.urgency'), URGENCIES.find(u => u.value === form.urgency)?.label],
+                [t('ticket.comment'), form.comment],
               ].filter(([,v]) => v).map(([label, val]) => (
                 <div key={label} style={s.summaryRow}>
                   <span style={s.summaryKey}>{label}</span>
@@ -435,7 +466,7 @@ const isEditor = user?.perm_create_mobile !== false
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:'#111827' }}>{l.quality_issue || '—'}</div>
                     <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>
-                      {[l.department, l.plant, l.affected_qty ? `${t('ticket.affected_qty')}: ${l.affected_qty}` : '', l.cost_approx ? `$${l.cost_approx}` : ''].filter(Boolean).join(' · ')}
+                      {[l.plant, l.line_item, l.affected_qty ? `${t('ticket.affected_qty')}: ${l.affected_qty}${l.total_qty ? ` / ${l.total_qty}` : ''}` : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
                   {(l.photos?.length||0) > 0 && (

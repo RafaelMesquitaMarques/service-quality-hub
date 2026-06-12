@@ -59,7 +59,7 @@ export const ticketApi = {
   listMultiYear: async (fiscalYears = [2025, 2026]) => {
     const { data, error } = await supabase
       .from('tickets_with_cost')
-      .select('fiscal_year, fiscal_month, department, real_cost, categories, month_name')
+      .select('fiscal_year, fiscal_month, department, real_cost, categories')
       .in('fiscal_year', fiscalYears)
     if (error) throw error
     return { data }

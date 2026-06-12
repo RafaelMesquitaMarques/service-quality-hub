@@ -3,12 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
+import { useAuthStore } from '../../store/authStore'
 import { Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
 
-const DEPARTMENTS = ['Client','Shipping','Supplier','Production','Logistics','Install','Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC','Project Mgnt','EOI','Vietnam','Planning']
-const CATEGORIES  = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
+const URGENCIES   = [
+  { value:'overnight', label:'Overnight' },
+  { value:'urgent',    label:'Urgent' },
+  { value:'normal',    label:'Normal' },
+]
 const COLORS      = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
 const TOOLS       = [
   { id:'select',  icon:'ti-cursor-text',    label:'Sélection' },
@@ -323,17 +327,9 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
           <label className="label">{t('ticket.issue')} *</label>
           <input className="input text-xs" value={line.quality_issue||''} onChange={e => onChange(idx,'quality_issue',e.target.value)} placeholder="Description du problème..." />
         </div>
-        <div>
-          <label className="label">{t('ticket.categories')}</label>
-          <select className="input text-xs" value={line.categories||''} onChange={e => onChange(idx,'categories',e.target.value)}>
-            <option value="">—</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">{t('ticket.department')}</label>
-          <select className="input text-xs" value={line.department||''} onChange={e => onChange(idx,'department',e.target.value)}>
-            <option value="">—</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-          </select>
+        <div className="col-span-2">
+          <label className="label">{t('ticket.description')}</label>
+          <textarea className="input text-xs" rows={2} value={line.description||''} onChange={e => onChange(idx,'description',e.target.value)} placeholder="Description détaillée du problème..." />
         </div>
         <div>
           <label className="label">{t('ticket.line_item')}</label>
@@ -354,8 +350,8 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
           <input className="input text-xs" type="number" min="0" value={line.affected_qty||''} onChange={e => onChange(idx,'affected_qty',e.target.value)} placeholder="0" />
         </div>
         <div>
-          <label className="label">{t('ticket.cost')}</label>
-          <input className="input text-xs" value={line.cost_approx||''} onChange={e => onChange(idx,'cost_approx',e.target.value)} placeholder="$0.00" />
+          <label className="label">{t('ticket.total_qty')}</label>
+          <input className="input text-xs" type="number" min="0" value={line.total_qty||''} onChange={e => onChange(idx,'total_qty',e.target.value)} placeholder="0" />
         </div>
       </div>
 
@@ -400,17 +396,19 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
 export default function TicketModal({ onClose }) {
   const { t }       = useTranslation()
   const queryClient = useQueryClient()
+  const { user }    = useAuthStore()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand:'', ship_to:'', sold_to:'', ref_so:'', sc_number:'',
+    brand:'', ship_to:'', sold_to:'', ref_so:'', original_so:'',
+    delivery_date:'', installer_needed:'', urgency:'', comment:'',
   })
 
   const emptyLine = () => ({
-    quality_issue:'', categories:'', department:'', line_item:'',
-    foliot_id:'', plant:'', affected_qty:'', cost_approx:'', photos:[],
+    quality_issue:'', description:'', line_item:'',
+    foliot_id:'', plant:'', affected_qty:'', total_qty:'', photos:[],
   })
   const [lines, setLines] = useState([emptyLine()])
 
@@ -453,18 +451,21 @@ export default function TicketModal({ onClose }) {
         date_yyyy_mm:  dateYYYYMM,
         fiscal_year:   getFiscalYear(dateYYYYMM),
         fiscal_month:  getFiscalMonth(dateYYYYMM),
-        brand:         form.brand      || null,
-        ship_to:       form.ship_to    || null,
-        sold_to:       form.sold_to    || null,
-        ref_so:        form.ref_so     || null,
-        sc_number:     form.sc_number  || null,
+        brand:            form.brand         || null,
+        ship_to:          form.ship_to       || null,
+        sold_to:          form.sold_to       || null,
+        ref_so:           form.ref_so        || null,
+        original_so:      form.original_so   || null,
+        created_by:       user?.id           || null,
+        delivery_date:    form.delivery_date || null,
+        installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
+        urgency:          form.urgency       || null,
+        comment:          form.comment       || null,
         status:        'service_desk',
         quality_issue: lines[0]?.quality_issue || null,
         plant:         lines[0]?.plant         || null,
-        categories:    lines[0]?.categories    || null,
         affected_qty:  lines[0]?.affected_qty  ? Number(lines[0].affected_qty) : null,
-        department:    lines[0]?.department    || null,
-        cost_approx:   lines[0]?.cost_approx   ? Number(lines[0].cost_approx)  : null,
+        total_qty:     lines[0]?.total_qty     ? Number(lines[0].total_qty)    : null,
       }).select().single()
       if (occErr) throw occErr
 
@@ -474,13 +475,12 @@ export default function TicketModal({ onClose }) {
         .insert(lines.map((l,i) => ({
           occurrence_id: occ.id,
           quality_issue: l.quality_issue || null,
-          categories:    l.categories    || null,
-          department:    l.department    || null,
+          description:   l.description   || null,
           line_item:     l.line_item     || null,
           foliot_id:     l.foliot_id     || null,
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
-          cost_approx:   l.cost_approx   ? Number(l.cost_approx)  : null,
+          total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
           sort_order:    i,
         })))
         .select()
@@ -552,11 +552,18 @@ export default function TicketModal({ onClose }) {
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div><label className="label">{t('ticket.reception_date')} *</label><input type="date" className="input" value={form.issue_reception_date} onChange={e => setField('issue_reception_date',e.target.value)} /></div>
+                <div><label className="label">{t('ticket.delivery_date')}</label><input type="date" className="input" value={form.delivery_date} onChange={e => setField('delivery_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.brand')}</label><select className="input" value={form.brand} onChange={e => setField('brand',e.target.value)}><option value="">—</option>{BRANDS.map(b => <option key={b}>{b}</option>)}</select></div>
-                <div><label className="label">{t('ticket.sc_number')}</label><input className="input" value={form.sc_number} onChange={e => setField('sc_number',e.target.value)} placeholder="SC#..." /></div>
                 <div><label className="label">{t('ticket.ship_to')}</label><input className="input" value={form.ship_to} onChange={e => setField('ship_to',e.target.value)} placeholder="Ship To..." /></div>
                 <div><label className="label">{t('ticket.sold_to')}</label><input className="input" value={form.sold_to} onChange={e => setField('sold_to',e.target.value)} placeholder="Sold To..." /></div>
                 <div><label className="label">{t('ticket.ref_so')}</label><input className="input" value={form.ref_so} onChange={e => setField('ref_so',e.target.value)} placeholder="REF SO..." /></div>
+                <div><label className="label">{t('ticket.original_so')}</label><input className="input" value={form.original_so} onChange={e => setField('original_so',e.target.value)} placeholder="Original SO..." /></div>
+                <div><label className="label">{t('ticket.installer_needed')}</label><select className="input" value={form.installer_needed} onChange={e => setField('installer_needed',e.target.value)}><option value="">—</option><option value="yes">{t('common.yes')}</option><option value="no">{t('common.no')}</option></select></div>
+                <div><label className="label">{t('ticket.urgency')}</label><select className="input" value={form.urgency} onChange={e => setField('urgency',e.target.value)}><option value="">—</option>{URGENCIES.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
+              </div>
+              <div>
+                <label className="label">{t('ticket.comment')}</label>
+                <textarea className="input" rows={2} value={form.comment} onChange={e => setField('comment',e.target.value)} placeholder="Commentaire..." />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -575,7 +582,18 @@ export default function TicketModal({ onClose }) {
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
                 <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Informations générales</div>
                 <div className="grid grid-cols-2 gap-1">
-                  {[[t('ticket.reception_date'),form.issue_reception_date],[t('ticket.brand'),form.brand],[t('ticket.ship_to'),form.ship_to],[t('ticket.sold_to'),form.sold_to],[t('ticket.ref_so'),form.ref_so],[t('ticket.sc_number'),form.sc_number]].filter(([,v])=>v).map(([l,v]) => (
+                  {[
+                    [t('ticket.reception_date'), form.issue_reception_date],
+                    [t('ticket.delivery_date'),  form.delivery_date],
+                    [t('ticket.brand'),          form.brand],
+                    [t('ticket.ship_to'),        form.ship_to],
+                    [t('ticket.sold_to'),        form.sold_to],
+                    [t('ticket.ref_so'),         form.ref_so],
+                    [t('ticket.original_so'),    form.original_so],
+                    [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
+                    [t('ticket.urgency'),        URGENCIES.find(u => u.value === form.urgency)?.label],
+                    [t('ticket.comment'),        form.comment],
+                  ].filter(([,v])=>v).map(([l,v]) => (
                     <div key={l} className="flex justify-between text-xs py-1 border-b border-gray-50 dark:border-gray-800">
                       <span className="text-gray-400">{l}</span>
                       <span className="text-gray-900 dark:text-gray-100 font-medium">{v}</span>
@@ -590,7 +608,7 @@ export default function TicketModal({ onClose }) {
                     <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-medium" style={{ background:'#E6F1FB', color:'#185FA5', fontSize:9 }}>{i+1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 dark:text-gray-100 truncate">{l.quality_issue||'—'}</div>
-                      <div className="text-gray-400">{[l.department,l.plant,l.line_item,l.affected_qty?`Qté: ${l.affected_qty}`:'',l.cost_approx?`$${l.cost_approx}`:''].filter(Boolean).join(' · ')}</div>
+                      <div className="text-gray-400">{[l.plant,l.line_item,l.affected_qty?`Qté: ${l.affected_qty}${l.total_qty?` / ${l.total_qty}`:''}`:''].filter(Boolean).join(' · ')}</div>
                     </div>
                     {(l.photos?.length||0) > 0 && <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded text-xs">{l.photos.length} photo{l.photos.length>1?'s':''}</span>}
                   </div>

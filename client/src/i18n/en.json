@@ -42,6 +42,9 @@
     "affected_pct": "Affected %",
     "sc_number": "SC#",
     "ref_so": "REF SO",
+    "original_so": "Original SO",
+    "occurrence_no": "Occurrence #",
+    "created_by": "Created by",
     "line_item": "Line item",
     "foliot_id": "Foliot ID",
     "item": "Item",
@@ -50,6 +53,10 @@
     "corrective_action": "Corrective action",
     "meeting_date": "Meeting date",
     "reception_date": "Reception date",
+    "delivery_date": "Delivery date",
+    "installer_needed": "Installer needed",
+    "urgency": "Status",
+    "comment": "Comment",
     "photos": "Photos & Attachments",
     "history": "History",
     "informations": "Information",
@@ -239,7 +246,9 @@
     "logout": "Logout",
     "add": "Add",
     "confirm": "Confirm",
-    "step": "Step"
+    "step": "Step",
+    "yes": "Yes",
+    "no": "No"
   },
   "auth": {
     "login": "Login",

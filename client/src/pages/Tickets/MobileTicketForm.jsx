@@ -3,15 +3,15 @@ import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
+import { useAuthStore } from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
-const DEPARTMENTS = ['Client','Shipping','Supplier','Production','Logistics','Install','Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC','Project Mgnt','EOI','Vietnam','Planning']
-const CATEGORIES  = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
-const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
+const BRANDS = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
 
 export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
   const { t, i18n } = useTranslation()
+  const { user } = useAuthStore()
   const lang = i18n.language?.startsWith('fr') ? 'fr' : 'en'
   const fileRef = useRef(null)
 
@@ -20,15 +20,12 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
   const [photos, setPhotos] = useState([])
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0, 10),
-    sc_number: '',
     brand: '',
     ship_to: '',
-    department: '',
-    categories: '',
     quality_issue: '',
     plant: '',
     affected_qty: '',
-    cost_approx: '',
+    total_qty: '',
   })
 
   const { data: plants } = useQuery({
@@ -73,12 +70,12 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
         fiscal_month:  getFiscalMonth(dateYYYYMM),
         brand:         form.brand      || null,
         ship_to:       form.ship_to    || null,
-        sc_number:     form.sc_number  || null,
+        created_by:    user?.id        || null,
         status:        'service_desk',
         quality_issue: form.quality_issue,
-        department:    form.department || null,
-        categories:    form.categories || null,
-        cost_approx:   form.cost_approx ? Number(form.cost_approx) : null,
+        plant:         form.plant || null,
+        affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
+        total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
       }).select().single()
       if (occErr) throw occErr
 
@@ -86,11 +83,9 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
       const { data: line, error: lineErr } = await supabase.from('occurrence_lines').insert({
         occurrence_id: occ.id,
         quality_issue: form.quality_issue,
-        department:    form.department || null,
-        categories:    form.categories || null,
         plant:         form.plant      || null,
         affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
-        cost_approx:   form.cost_approx  ? Number(form.cost_approx)  : null,
+        total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
         sort_order:    0,
       }).select().single()
       if (lineErr) throw lineErr
@@ -141,8 +136,7 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
       // Reset form
       setForm({
         issue_reception_date: new Date().toISOString().slice(0, 10),
-        sc_number: '', brand: '', ship_to: '', department: '',
-        categories: '', quality_issue: '', plant: '', affected_qty: '', cost_approx: '',
+        brand: '', ship_to: '', quality_issue: '', plant: '', affected_qty: '', total_qty: '',
       })
       setPhotos([])
     } catch (e) {
@@ -234,27 +228,16 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">SC#</label>
-              <input
-                value={form.sc_number}
-                onChange={e => sf('sc_number', e.target.value)}
-                placeholder="SC#..."
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
-                {lang === 'fr' ? 'Date' : 'Date'}
-              </label>
-              <input
-                type="date"
-                value={form.issue_reception_date}
-                onChange={e => sf('issue_reception_date', e.target.value)}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
+              {lang === 'fr' ? 'Date' : 'Date'}
+            </label>
+            <input
+              type="date"
+              value={form.issue_reception_date}
+              onChange={e => sf('issue_reception_date', e.target.value)}
+              className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
 
           <div>
@@ -290,26 +273,6 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
-                {lang === 'fr' ? 'Catégorie' : 'Category'}
-              </label>
-              <select value={form.categories} onChange={e => sf('categories', e.target.value)}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">—</option>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
-                {lang === 'fr' ? 'Département' : 'Department'}
-              </label>
-              <select value={form.department} onChange={e => sf('department', e.target.value)}
-                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">—</option>
-                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
                 {lang === 'fr' ? 'Usine' : 'Plant'}
               </label>
               <select value={form.plant} onChange={e => sf('plant', e.target.value)}
@@ -326,6 +289,18 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
                 type="number"
                 value={form.affected_qty}
                 onChange={e => sf('affected_qty', e.target.value)}
+                placeholder="0"
+                className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block font-medium">
+                {lang === 'fr' ? 'Qté totale' : 'Total qty'}
+              </label>
+              <input
+                type="number"
+                value={form.total_qty}
+                onChange={e => sf('total_qty', e.target.value)}
                 placeholder="0"
                 className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
