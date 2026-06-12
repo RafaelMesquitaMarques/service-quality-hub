@@ -212,6 +212,31 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
     const objs = c.getObjects(); if (objs.length > 1) { c.remove(objs[objs.length-1]); c.renderAll() }
   }
 
+  const handleDeleteSelected = () => {
+    const c = fabricRef.current; if (!c) return
+    const active = c.getActiveObject()
+    if (active?.isEditing) return // texte en cours d'édition
+    const objs = c.getActiveObjects()
+    if (!objs.length) return
+    objs.forEach(o => c.remove(o))
+    c.discardActiveObject()
+    c.renderAll()
+  }
+
+  // Touche Delete/Backspace pour supprimer l'annotation sélectionnée
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const c = fabricRef.current; if (!c) return
+      const active = c.getActiveObject()
+      if (!active || active.isEditing) return
+      e.preventDefault()
+      handleDeleteSelected()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
   const handleSave = () => {
     const c = fabricRef.current; if (!c) return
     onSave(c.toDataURL({ format:'jpeg', quality:0.85 }))
@@ -239,8 +264,11 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
           <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
           <input type="range" min="1" max="8" value={thick} onChange={e => setThick(Number(e.target.value))} style={{ width:60 }} />
           <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
-          <button onClick={handleUndo} title="Undo" aria-label="Undo" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+          <button onClick={handleUndo} title="Annuler le dernier" aria-label="Annuler le dernier" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
             <i className="ti ti-arrow-back-up" style={{ fontSize:13,color:'var(--color-text-secondary)' }} aria-hidden="true" />
+          </button>
+          <button onClick={handleDeleteSelected} title="Supprimer la sélection (Delete)" aria-label="Supprimer la sélection" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+            <i className="ti ti-trash" style={{ fontSize:13, color:'#ef4444' }} aria-hidden="true" />
           </button>
         </div>
         {measuring && (
