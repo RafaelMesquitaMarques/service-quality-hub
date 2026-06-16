@@ -143,6 +143,7 @@
     "add_tickets_title": "Ajouter des occurrences à la réunion",
     "search_tickets": "Rechercher SC#, client, problème...",
     "all_depts": "Tous les depts.",
+    "all_statuses": "Tous les statuts",
     "no_tickets_found": "Aucune occurrence trouvée",
     "close": "Fermer",
     "already_selected": "déjà sélectionnées",

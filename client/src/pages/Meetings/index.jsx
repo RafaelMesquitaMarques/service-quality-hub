@@ -43,12 +43,14 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
   const { t } = useTranslation()
   const [search, setSearch]   = useState('')
   const [dept,   setDept]     = useState('')
+  const [status, setStatus]   = useState('quality_meeting')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
   const selectedIds = new Set((selected || []).map(t => t?.id))
   const filtered = (tickets || []).filter(tk => {
     if (selectedIds.has(tk.id)) return false
     if (dept && tk.department !== dept) return false
+    if (status && tk.status !== status) return false
     if (dateFrom && tk.issue_reception_date < dateFrom) return false
     if (dateTo   && tk.issue_reception_date > dateTo)   return false
     if (search) {
@@ -75,6 +77,13 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
             value={dept} onChange={e => setDept(e.target.value)}>
             <option value="">{t('meeting.all_depts')}</option>
             {DEPTS.map(d => <option key={d}>{d}</option>)}
+          </select>
+          <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
+            value={status} onChange={e => setStatus(e.target.value)}>
+            <option value="">{t('meeting.all_statuses')}</option>
+            {['not_started','service_desk','quality_meeting','completed','cancelled'].map(s => (
+              <option key={s} value={s}>{t(`status.${s}`)}</option>
+            ))}
           </select>
           <input type="date" className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none"
             value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
