@@ -80,6 +80,71 @@ function SectionHeader({ icon, title, right }) {
   )
 }
 
+// ── Champ d'une ligne (libellé / valeur, fond zébré) ───────────────────────
+function LineField({ label, value, highlight }) {
+  return (
+    <div className="flex justify-between py-1.5 px-2 odd:bg-white dark:odd:bg-gray-900 even:bg-gray-100 dark:even:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
+      <span className="text-gray-400">{label}</span>
+      <span className={`text-gray-900 dark:text-gray-100 ${highlight ? 'text-red-500 font-medium' : ''}`}>{value}</span>
+    </div>
+  )
+}
+
+// ── Lightbox (visualisation agrandie avec zoom) ────────────────────────────
+function Lightbox({ url, onClose }) {
+  const [scale, setScale] = useState(1)
+  const [pos,   setPos]   = useState({ x: 0, y: 0 })
+  const drag = useRef(null)
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const zoomBy = (d) => setScale(s => {
+    const ns = Math.min(6, Math.max(1, +(s + d).toFixed(2)))
+    if (ns <= 1) setPos({ x: 0, y: 0 })
+    return ns
+  })
+  const reset = () => { setScale(1); setPos({ x: 0, y: 0 }) }
+
+  const onWheel = (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 0.3 : -0.3) }
+  const onDown  = (e) => { if (scale > 1) drag.current = { x: e.clientX - pos.x, y: e.clientY - pos.y } }
+  const onMove  = (e) => { if (drag.current) setPos({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }) }
+  const onUp    = () => { drag.current = null }
+
+  const btn = "w-9 h-9 rounded-full flex items-center justify-center text-white text-base border-0 cursor-pointer"
+  const btnStyle = { background: 'rgba(255,255,255,0.15)' }
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center select-none"
+      style={{ background: 'rgba(0,0,0,0.92)' }}
+      onClick={onClose} onWheel={onWheel} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
+      <div className="absolute top-4 right-4 flex gap-2 z-10" onClick={e => e.stopPropagation()}>
+        <button className={btn} style={btnStyle} onClick={() => zoomBy(-0.5)} title="Dézoomer"><i className="ti ti-minus" /></button>
+        <button className={btn} style={btnStyle} onClick={() => zoomBy(0.5)}  title="Zoomer"><i className="ti ti-plus" /></button>
+        <button className={btn} style={btnStyle} onClick={reset}              title="Réinitialiser"><i className="ti ti-aspect-ratio" /></button>
+        <button className={btn} style={btnStyle} onClick={onClose}            title="Fermer">✕</button>
+      </div>
+      <img src={url} draggable={false} alt=""
+        onClick={e => e.stopPropagation()}
+        onDoubleClick={e => { e.stopPropagation(); scale > 1 ? reset() : setScale(2.5) }}
+        onMouseDown={onDown}
+        style={{
+          maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain',
+          transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+          transition: drag.current ? 'none' : 'transform 0.12s ease-out',
+          cursor: scale > 1 ? 'grab' : 'zoom-in',
+        }}
+      />
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-xs" onClick={e => e.stopPropagation()}>
+        {Math.round(scale * 100)}% · molette ou double-clic pour zoomer
+      </div>
+    </div>
+  )
+}
+
 // ── Photo Annotator ────────────────────────────────────────────────────────
 function PhotoAnnotator({ photo, onSave, onClose }) {
   const canvasRef  = useRef(null)
@@ -295,7 +360,7 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
 }
 
 // ── Line Card (display + edit) ─────────────────────────────────────────────
-function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp }) {
+function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp, onView }) {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ ...line })
   const [annotating, setAnnotating] = useState(null)
@@ -395,6 +460,17 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   const imgPhotos  = (photos || []).filter(p =>  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
   const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
 
+  const idFields = [
+    [t('ticket.line_item'), line.line_item],
+    [t('ticket.foliot_id'), line.foliot_id],
+    [t('ticket.plant'),     line.plant],
+  ].filter(([, v]) => v)
+  const costFields = [
+    [t('ticket.cost'),       line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
+    [t('ticket.cost_final'), line.cost_final  ? `$${Number(line.cost_final).toLocaleString()}`  : null],
+    [t('ticket.root_cause'), line.root_cause],
+  ].filter(([, v]) => v)
+
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-3 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-[#161B22] border-b border-gray-100 dark:border-gray-800">
@@ -488,60 +564,56 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+          <div className="text-xs mb-2">
             {line.quality_issue && (
-              <div className="col-span-2 text-gray-900 dark:text-gray-100 font-medium mb-1">{line.quality_issue}</div>
+              <div className="text-gray-900 dark:text-gray-100 font-medium mb-1">{line.quality_issue}</div>
             )}
             {line.description && (
-              <div className="col-span-2 text-gray-600 dark:text-gray-300 mb-1">{line.description}</div>
+              <div className="text-gray-600 dark:text-gray-300 mb-2">{line.description}</div>
             )}
-            {[
-              [t('ticket.line_item'), line.line_item],
-              [t('ticket.foliot_id'), line.foliot_id],
-              [t('ticket.plant'), line.plant],
-              [t('ticket.affected_qty'), line.affected_qty],
-              [t('ticket.total_qty'), line.total_qty],
-              [t('ticket.cost'), line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
-              [t('ticket.cost_final'), line.cost_final ? `$${Number(line.cost_final).toLocaleString()}` : null],
-              [t('ticket.root_cause'), line.root_cause],
-            ].filter(([,v]) => v).map(([label, val]) => (
-              <div key={label} className="flex justify-between py-1.5 px-2 odd:bg-white dark:odd:bg-gray-900 even:bg-gray-100 dark:even:bg-gray-800 border-b border-gray-200 dark:border-gray-600">
-                <span className="text-gray-400">{label}</span>
-                <span className={`text-gray-900 dark:text-gray-100 ${label === t('ticket.cost_final') ? 'text-red-500 font-medium' : ''}`}>{val}</span>
+            {idFields.length > 0 && (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                {idFields.map(([label, val]) => <LineField key={label} label={label} value={val} />)}
               </div>
-            ))}
+            )}
+            {/* Affected qty et Total qty toujours côte à côte */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+              <LineField label={t('ticket.affected_qty')} value={line.affected_qty != null ? line.affected_qty : '—'} />
+              <LineField label={t('ticket.total_qty')}    value={line.total_qty    != null ? line.total_qty    : '—'} />
+            </div>
+            {costFields.length > 0 && (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+                {costFields.map(([label, val]) => <LineField key={label} label={label} value={val} highlight={label === t('ticket.cost_final')} />)}
+              </div>
+            )}
           </div>
         )}
 
         {/* Photos */}
         <div className="border-t border-gray-100 dark:border-gray-800 pt-2 mt-2">
-          {canEditLine && (photos || []).length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mb-2">
-              {TOOLS.map(tk => (
-                <button key={tk.id} title={tk.label} aria-label={tk.label}
-                  className="w-6 h-6 rounded flex items-center justify-center border cursor-pointer"
-                  style={{ border:'0.5px solid var(--color-border-tertiary)', background:'var(--color-background-primary)', color:'var(--color-text-secondary)' }}>
-                  <i className={`ti ${tk.icon}`} style={{ fontSize:11 }} aria-hidden="true" />
-                </button>
-              ))}
-              <div style={{ width:1,height:16,background:'var(--color-border-tertiary)',margin:'0 2px' }} />
-              {COLORS.map(c => (
-                <div key={c} style={{ width:11,height:11,borderRadius:'50%',background:c,cursor:'pointer',border:'0.5px solid var(--color-border-tertiary)' }} />
-              ))}
-            </div>
-          )}
-
           {imgPhotos.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {imgPhotos.map(p => (
-                <div key={p.id} className="relative group cursor-pointer" onClick={() => setAnnotating(p)}>
-                  <img src={p.url} alt="" className="w-14 h-14 object-cover rounded border border-gray-200 dark:border-gray-700" />
-                  {canEditLine && (
-                    <button onClick={e => { e.stopPropagation(); deletePhotoMut.mutate({ photoId: p.id, path: p.path }) }}
-                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-xs items-center justify-center hidden group-hover:flex border-0 cursor-pointer">
-                      <i className="ti ti-x" style={{ fontSize:8 }} aria-hidden="true" />
-                    </button>
-                  )}
+                <div key={p.id} className="relative group">
+                  <img src={p.url} alt="" onClick={() => onView(p.url)}
+                    className="w-24 h-24 object-cover rounded border border-gray-200 dark:border-gray-700 cursor-zoom-in" />
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {canEditLine && (
+                      <button onClick={e => { e.stopPropagation(); setAnnotating(p) }} title="Annoter"
+                        className="w-5 h-5 rounded bg-black/60 hover:bg-black/80 text-white flex items-center justify-center border-0 cursor-pointer">
+                        <i className="ti ti-pencil" style={{ fontSize:10 }} aria-hidden="true" />
+                      </button>
+                    )}
+                    {canEditLine && (
+                      <button onClick={e => { e.stopPropagation(); deletePhotoMut.mutate({ photoId: p.id, path: p.path }) }} title="Supprimer"
+                        className="w-5 h-5 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center border-0 cursor-pointer">
+                        <i className="ti ti-x" style={{ fontSize:10 }} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <i className="ti ti-zoom-in text-white" style={{ fontSize:13, filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.9))' }} aria-hidden="true" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1064,7 +1136,7 @@ export default function TicketDetail() {
                 {(lines || []).map(line => (
                   <LineCard key={line.id} line={line} occurrenceId={id}
                     onUpdate={refetchLines} onDelete={(lineId) => deleteLineMut.mutate(lineId)}
-                    plants={plants} status={ticket.status} t={t} canEdit={canEdit} />
+                    plants={plants} status={ticket.status} t={t} canEdit={canEdit} onView={setLightbox} />
                 ))}
                 {(lines || []).length === 0 && !addingLine && (
                   <div className="text-center py-6 text-xs text-gray-400">{t('common.no_results')}</div>
@@ -1075,12 +1147,7 @@ export default function TicketDetail() {
         </div>
       </div>
 
-      {lightbox && (
-        <div onClick={() => setLightbox(null)} className="fixed inset-0 flex items-center justify-center z-[2000] cursor-zoom-out p-5" style={{ background:'rgba(0,0,0,0.92)' }}>
-          <img src={lightbox} className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" onClick={e => e.stopPropagation()} />
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center text-white text-lg border-none cursor-pointer" style={{ background:'rgba(255,255,255,0.15)' }}>✕</button>
-        </div>
-      )}
+      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </>
   )
 }
