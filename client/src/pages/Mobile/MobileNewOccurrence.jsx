@@ -206,7 +206,7 @@ export default function MobileNewOccurrence() {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand: '', ship_to: '', sold_to: '', ref_so: '', original_so: '',
+    brand: '', ship_to: '', sold_to: '', ref_so: '',
     delivery_date: '', installer_needed: '', urgency: '', comment: '',
   })
   const [lines, setLines] = useState([emptyLine()])
@@ -258,7 +258,6 @@ export default function MobileNewOccurrence() {
         ship_to:          form.ship_to       || null,
         sold_to:          form.sold_to       || null,
         ref_so:           form.ref_so        || null,
-        original_so:      form.original_so   || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
@@ -346,7 +345,7 @@ export default function MobileNewOccurrence() {
         <button
           onClick={() => {
             setStep(1)
-            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', original_so:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
+            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
             setLines([emptyLine()])
           }}
           style={s.btnPrimary}
@@ -400,14 +399,9 @@ export default function MobileNewOccurrence() {
                 <MInput value={form.sold_to} onChange={v => setField('sold_to',v)} placeholder="Sold To..." />
               </Field>
             </div>
-            <div style={s.row2}>
-              <Field label={t('ticket.ref_so')}>
-                <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
-              </Field>
-              <Field label={t('ticket.original_so')}>
-                <MInput value={form.original_so} onChange={v => setField('original_so',v)} placeholder="Original SO..." />
-              </Field>
-            </div>
+            <Field label={t('ticket.ref_so')}>
+              <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
+            </Field>
             <div style={s.row2}>
               <Field label={t('ticket.installer_needed')}>
                 <MSelect value={form.installer_needed} onChange={v => setField('installer_needed',v)} options={[{ value:'yes', label:t('common.yes') }, { value:'no', label:t('common.no') }]} />
@@ -451,7 +445,6 @@ export default function MobileNewOccurrence() {
                 [t('ticket.ship_to'), form.ship_to],
                 [t('ticket.sold_to'), form.sold_to],
                 [t('ticket.ref_so'), form.ref_so],
-                [t('ticket.original_so'), form.original_so],
                 [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
                 [t('ticket.urgency'), URGENCIES.find(u => u.value === form.urgency)?.label],
                 [t('ticket.comment'), form.comment],

@@ -37,6 +37,7 @@ const DEPARTMENTS = [
   'Project Mgnt','EOI','Vietnam','Planning',
 ]
 const CATEGORIES = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
+const ROOT_CAUSES = ['Fabrication','Matériau','Conception/design','Assemblage','Transport/manutention','Fournisseur','Installation','Commande/spécification','Autre']
 const URGENCIES   = ['overnight','urgent','normal']
 const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
 const COLORS  = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
@@ -434,16 +435,11 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     const { error } = await supabase.from('occurrence_lines').update({
       quality_issue: form.quality_issue,
       description:   form.description || null,
-      categories:    form.categories,
-      department:    form.department,
       line_item:     form.line_item,
       foliot_id:     form.foliot_id,
       plant:         form.plant,
       affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
       total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
-      cost_approx:   form.cost_approx  ? Number(form.cost_approx)  : null,
-      cost_final:    form.cost_final   ? Number(form.cost_final)   : null,
-      root_cause:    form.root_cause   || null,
       updated_at:    new Date().toISOString(),
     }).eq('id', line.id)
     if (error) { toast.error(t('common.error')); return }
@@ -454,8 +450,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   // canEdit: role-based (from parent) AND status allows it
   const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
-  // Catégorie & Département se remplissent à l'étape Réunion qualité
-  const isQM = ['quality_meeting','completed'].includes(status)
 
   const imgPhotos  = (photos || []).filter(p =>  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
   const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
@@ -465,19 +459,12 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     [t('ticket.foliot_id'), line.foliot_id],
     [t('ticket.plant'),     line.plant],
   ].filter(([, v]) => v)
-  const costFields = [
-    [t('ticket.cost'),       line.cost_approx ? `$${Number(line.cost_approx).toLocaleString()}` : null],
-    [t('ticket.cost_final'), line.cost_final  ? `$${Number(line.cost_final).toLocaleString()}`  : null],
-    [t('ticket.root_cause'), line.root_cause],
-  ].filter(([, v]) => v)
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-3 overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-[#161B22] border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-900 dark:text-gray-100">{t('ticket.line_n')} {line.sort_order + 1}</span>
-          {line.categories && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{line.categories}</span>}
-          {line.department && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">{line.department}</span>}
         </div>
         {canEditLine && (
           <div className="flex gap-1">
@@ -504,24 +491,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 <label className="label">{t('ticket.description')}</label>
                 <textarea className="input text-xs" rows={2} value={form.description || ''} onChange={e => setForm(f => ({...f, description: e.target.value}))} />
               </div>
-              {isQM && (
-                <>
-                  <div>
-                    <label className="label">{t('ticket.categories')}</label>
-                    <select className="input text-xs" value={form.categories || ''} onChange={e => setForm(f => ({...f, categories: e.target.value}))}>
-                      <option value="">—</option>
-                      {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">{t('ticket.department')}</label>
-                    <select className="input text-xs" value={form.department || ''} onChange={e => setForm(f => ({...f, department: e.target.value}))}>
-                      <option value="">—</option>
-                      {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                    </select>
-                  </div>
-                </>
-              )}
               <div>
                 <label className="label">{t('ticket.line_item')}</label>
                 <input className="input text-xs" value={form.line_item || ''} onChange={e => setForm(f => ({...f, line_item: e.target.value}))} />
@@ -544,18 +513,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               <div>
                 <label className="label">{t('ticket.total_qty')}</label>
                 <input className="input text-xs" type="number" value={form.total_qty || ''} onChange={e => setForm(f => ({...f, total_qty: e.target.value}))} />
-              </div>
-              <div>
-                <label className="label">{t('ticket.cost')}</label>
-                <input className="input text-xs" value={form.cost_approx || ''} onChange={e => setForm(f => ({...f, cost_approx: e.target.value}))} placeholder="$0.00" />
-              </div>
-              <div>
-                <label className="label">{t('ticket.cost_final')}</label>
-                <input className="input text-xs" value={form.cost_final || ''} onChange={e => setForm(f => ({...f, cost_final: e.target.value}))} placeholder="$0.00" />
-              </div>
-              <div className="col-span-2">
-                <label className="label">{t('ticket.root_cause')}</label>
-                <textarea className="input text-xs" rows={2} value={form.root_cause || ''} onChange={e => setForm(f => ({...f, root_cause: e.target.value}))} placeholder={t('ticket.root_cause_placeholder')} />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">
@@ -581,11 +538,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               <LineField label={t('ticket.affected_qty')} value={line.affected_qty != null ? line.affected_qty : '—'} />
               <LineField label={t('ticket.total_qty')}    value={line.total_qty    != null ? line.total_qty    : '—'} />
             </div>
-            {costFields.length > 0 && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
-                {costFields.map(([label, val]) => <LineField key={label} label={label} value={val} highlight={label === t('ticket.cost_final')} />)}
-              </div>
-            )}
           </div>
         )}
 
@@ -667,10 +619,14 @@ export default function TicketDetail() {
   const [corrective,  setCorrective]  = useState('')
   const [sdNotes,     setSdNotes]     = useState('')
   const [scNumber,    setScNumber]    = useState('')
+  const [categories,  setCategories]  = useState('')
+  const [department,  setDepartment]  = useState('')
+  const [costApprox,  setCostApprox]  = useState('')
+  const [costFinal,   setCostFinal]   = useState('')
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
-  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', cost_approx:'' })
+  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'' })
 
   // Edição dos campos de informação
   const [editingInfo, setEditingInfo] = useState(false)
@@ -690,6 +646,10 @@ export default function TicketDetail() {
       setCorrective(ticket.corrective_action || '')
       setSdNotes(ticket.service_desk_notes || '')
       setScNumber(ticket.sc_number || '')
+      setCategories(ticket.categories || '')
+      setDepartment(ticket.department || '')
+      setCostApprox(ticket.cost_approx != null ? String(ticket.cost_approx) : '')
+      setCostFinal(ticket.cost_final != null ? String(ticket.cost_final) : '')
       setInitialized(true)
     }
   }, [ticket, initialized])
@@ -742,14 +702,11 @@ export default function TicketDetail() {
         occurrence_id: id,
         quality_issue: newLine.quality_issue || null,
         description:   newLine.description   || null,
-        categories:    newLine.categories    || null,
-        department:    newLine.department    || null,
         line_item:     newLine.line_item     || null,
         foliot_id:     newLine.foliot_id     || null,
         plant:         newLine.plant         || null,
         affected_qty:  newLine.affected_qty  ? Number(newLine.affected_qty) : null,
         total_qty:     newLine.total_qty     ? Number(newLine.total_qty)    : null,
-        cost_approx:   newLine.cost_approx   ? Number(newLine.cost_approx)  : null,
         sort_order:    maxOrder + 1,
       })
       if (error) throw error
@@ -757,7 +714,7 @@ export default function TicketDetail() {
     onSuccess: () => {
       refetchLines()
       setAddingLine(false)
-      setNewLine({ quality_issue:'', description:'', categories:'', department:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', cost_approx:'' })
+      setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'' })
       toast.success(t('ticket.add_line'))
     },
     onError: () => toast.error(t('common.error')),
@@ -773,8 +730,14 @@ export default function TicketDetail() {
   })
 
   const handleSave = () => updateMut.mutate({
-    root_cause: rootCause, corrective_action: corrective, service_desk_notes: sdNotes,
-    sc_number: scNumber || null,
+    root_cause:         rootCause  || null,
+    corrective_action:  corrective || null,
+    service_desk_notes: sdNotes    || null,
+    sc_number:          scNumber   || null,
+    categories:         categories || null,
+    department:         department || null,
+    cost_approx:        costApprox !== '' ? Number(costApprox) : null,
+    cost_final:         costFinal  !== '' ? Number(costFinal)  : null,
   })
 
   // Salvar edição dos campos de informação
@@ -794,8 +757,6 @@ export default function TicketDetail() {
   if (!ticket) return null
 
   const sc = SC[ticket.status] || SC.not_started
-  const totalCost = (lines || []).reduce((s, l) => s + Number(l.cost_approx || 0), 0)
-  const finalCost = (lines || []).reduce((s, l) => s + Number(l.cost_final  || 0), 0)
 
   const prev = prevStatus(ticket.status)
   const next = nextStatus(ticket.status)
@@ -903,7 +864,6 @@ export default function TicketDetail() {
                         sold_to: ticket.sold_to || '',
                         brand:   ticket.brand   || '',
                         ref_so:  ticket.ref_so  || '',
-                        original_so: ticket.original_so || '',
                         sc_number: ticket.sc_number || '',
                         issue_reception_date: ticket.issue_reception_date || '',
                         delivery_date: ticket.delivery_date || '',
@@ -926,7 +886,6 @@ export default function TicketDetail() {
                       ['sold_to',  t('ticket.sold_to')],
                       ['brand',    t('ticket.brand')],
                       ['ref_so',   t('ticket.ref_so')],
-                      ['original_so', t('ticket.original_so')],
                       ['sc_number',t('ticket.sc_number')],
                     ].map(([key, label]) => (
                       <div key={key}>
@@ -975,15 +934,12 @@ export default function TicketDetail() {
                       [t('ticket.sold_to'),         ticket.sold_to],
                       [t('ticket.brand'),           ticket.brand],
                       [t('ticket.ref_so'),          ticket.ref_so],
-                      [t('ticket.original_so'),     ticket.original_so],
                       [t('ticket.sc_number'),       ticket.sc_number],
                       [t('ticket.reception_date'),  formatDate(ticket.issue_reception_date)],
                       [t('ticket.delivery_date'),   ticket.delivery_date ? formatDate(ticket.delivery_date) : null],
                       [t('ticket.installer_needed'), ticket.installer_needed === true ? t('common.yes') : ticket.installer_needed === false ? t('common.no') : null],
                       [t('ticket.urgency'),         URGENCY_LBL[ticket.urgency] || null],
                       [t('ticket.comment'),         ticket.comment],
-                      ['SC Cost total',             totalCost > 0 ? `$${Math.round(totalCost).toLocaleString()}` : null],
-                      ['Coût final total',          finalCost > 0 ? `$${Math.round(finalCost).toLocaleString()}` : null],
                     ].filter(([,v]) => v).map(([label, value]) => (
                       <div key={label} className="flex justify-between items-center py-1.5 border-b border-gray-50 dark:border-gray-800 text-xs">
                         <span className="text-gray-400">{label}</span>
@@ -1000,12 +956,19 @@ export default function TicketDetail() {
               <div className="card">
                 <SectionHeader icon="ti-notes" title={t('ticket.step2')} />
                 <div className="px-4 py-3 flex flex-col gap-3">
-                  <div>
-                    <label className="label">{t('ticket.sc_number')}</label>
-                    <input value={scNumber} onChange={e => setScNumber(e.target.value)}
-                      disabled={!canEdit}
-                      placeholder="SC#..."
-                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">{t('ticket.sc_number')}</label>
+                      <input value={scNumber} onChange={e => setScNumber(e.target.value)}
+                        disabled={!canEdit} placeholder="SC#..."
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.cost')}</label>
+                      <input type="number" min="0" value={costApprox} onChange={e => setCostApprox(e.target.value)}
+                        disabled={!canEdit} placeholder="$0.00"
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                    </div>
                   </div>
                   <div>
                     <label className="label">{t('ticket.sd_notes')}</label>
@@ -1018,22 +981,51 @@ export default function TicketDetail() {
               </div>
             )}
 
-            {/* Resolution */}
+            {/* Quality Meeting — classification + résolution */}
             {['quality_meeting','completed'].includes(ticket.status) && (
               <div className="card">
-                <SectionHeader icon="ti-tool" title={t('ticket.resolution')} />
+                <SectionHeader icon="ti-clipboard-check" title={t('ticket.step3')} />
                 <div className="px-4 py-3 flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">{t('ticket.categories')}</label>
+                      <select value={categories} onChange={e => setCategories(e.target.value)} disabled={!canEdit}
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                        <option value="">—</option>
+                        {categories && !CATEGORIES.includes(categories) && <option value={categories}>{categories}</option>}
+                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.department')}</label>
+                      <select value={department} onChange={e => setDepartment(e.target.value)} disabled={!canEdit}
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                        <option value="">—</option>
+                        {department && !DEPARTMENTS.includes(department) && <option value={department}>{department}</option>}
+                        {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  </div>
                   <div>
                     <label className="label">{t('ticket.root_cause')}</label>
-                    <textarea rows={3} value={rootCause} onChange={e => setRootCause(e.target.value)}
-                      disabled={!canEdit}
-                      placeholder={t('ticket.root_cause_placeholder')} className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                    <select value={rootCause} onChange={e => setRootCause(e.target.value)} disabled={!canEdit}
+                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                      <option value="">—</option>
+                      {rootCause && !ROOT_CAUSES.includes(rootCause) && <option value={rootCause}>{rootCause}</option>}
+                      {ROOT_CAUSES.map(r => <option key={r}>{r}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="label">{t('ticket.corrective_action')}</label>
                     <textarea rows={3} value={corrective} onChange={e => setCorrective(e.target.value)}
                       disabled={!canEdit}
                       placeholder={t('ticket.corrective_placeholder')} className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.cost_final')}</label>
+                    <input type="number" min="0" value={costFinal} onChange={e => setCostFinal(e.target.value)}
+                      disabled={!canEdit} placeholder="$0.00"
+                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
                   </div>
                 </div>
               </div>
@@ -1082,22 +1074,6 @@ export default function TicketDetail() {
                         <label className="label">{t('ticket.description')}</label>
                         <textarea className="input text-xs" rows={2} value={newLine.description} onChange={e => setNewLine(f => ({...f, description: e.target.value}))} />
                       </div>
-                      {['quality_meeting','completed'].includes(ticket.status) && (
-                        <>
-                          <div>
-                            <label className="label">{t('ticket.categories')}</label>
-                            <select className="input text-xs" value={newLine.categories} onChange={e => setNewLine(f => ({...f, categories: e.target.value}))}>
-                              <option value="">—</option>{CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="label">{t('ticket.department')}</label>
-                            <select className="input text-xs" value={newLine.department} onChange={e => setNewLine(f => ({...f, department: e.target.value}))}>
-                              <option value="">—</option>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-                            </select>
-                          </div>
-                        </>
-                      )}
                       <div>
                         <label className="label">{t('ticket.line_item')}</label>
                         <input className="input text-xs" value={newLine.line_item} onChange={e => setNewLine(f => ({...f, line_item: e.target.value}))} />
@@ -1119,10 +1095,6 @@ export default function TicketDetail() {
                       <div>
                         <label className="label">{t('ticket.total_qty')}</label>
                         <input className="input text-xs" type="number" value={newLine.total_qty} onChange={e => setNewLine(f => ({...f, total_qty: e.target.value}))} />
-                      </div>
-                      <div>
-                        <label className="label">{t('ticket.cost')}</label>
-                        <input className="input text-xs" value={newLine.cost_approx} onChange={e => setNewLine(f => ({...f, cost_approx: e.target.value}))} placeholder="$0.00" />
                       </div>
                     </div>
                     <div className="flex justify-end gap-2 mt-2">

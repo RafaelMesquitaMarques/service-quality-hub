@@ -156,7 +156,7 @@ export default function TicketsPage() {
       const q = search.toLowerCase()
       result = result.filter(tk =>
         [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.ship_to, tk.sold_to, tk.brand,
-         tk.department, tk.categories, tk.ref_so, tk.original_so, tk.plant, tk.status, getCreator(tk)]
+         tk.department, tk.categories, tk.ref_so, tk.plant, tk.status, getCreator(tk)]
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
@@ -194,7 +194,7 @@ export default function TicketsPage() {
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'original_so', 'issue_reception_date', 'quality_issue', 'ship_to', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'ship_to', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
       const rows    = filtered
         .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
@@ -270,9 +270,6 @@ export default function TicketsPage() {
                   <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={setFSC} onClear={() => setFSC(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.original_so')}</span>
-                </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={setFDate} onClear={() => setFDate(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
@@ -312,7 +309,6 @@ export default function TicketsPage() {
                     onClick={() => navigate(`/tickets/${ticket.id}`)}>
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-700 dark:text-gray-300">{ticket.occurrence_no ? `#${ticket.occurrence_no}` : '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.original_so || '—'}</td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
                     <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.ship_to || '—'}</td>

@@ -430,7 +430,7 @@ export default function TicketModal({ onClose }) {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand:'', ship_to:'', sold_to:'', ref_so:'', original_so:'',
+    brand:'', ship_to:'', sold_to:'', ref_so:'',
     delivery_date:'', installer_needed:'', urgency:'', comment:'',
   })
 
@@ -483,7 +483,6 @@ export default function TicketModal({ onClose }) {
         ship_to:          form.ship_to       || null,
         sold_to:          form.sold_to       || null,
         ref_so:           form.ref_so        || null,
-        original_so:      form.original_so   || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
@@ -590,7 +589,6 @@ export default function TicketModal({ onClose }) {
                 <div><label className="label">{t('ticket.ship_to')}</label><input className="input" value={form.ship_to} onChange={e => setField('ship_to',e.target.value)} placeholder="Ship To..." /></div>
                 <div><label className="label">{t('ticket.sold_to')}</label><input className="input" value={form.sold_to} onChange={e => setField('sold_to',e.target.value)} placeholder="Sold To..." /></div>
                 <div><label className="label">{t('ticket.ref_so')}</label><input className="input" value={form.ref_so} onChange={e => setField('ref_so',e.target.value)} placeholder="REF SO..." /></div>
-                <div><label className="label">{t('ticket.original_so')}</label><input className="input" value={form.original_so} onChange={e => setField('original_so',e.target.value)} placeholder="Original SO..." /></div>
                 <div><label className="label">{t('ticket.installer_needed')}</label><select className="input" value={form.installer_needed} onChange={e => setField('installer_needed',e.target.value)}><option value="">—</option><option value="yes">{t('common.yes')}</option><option value="no">{t('common.no')}</option></select></div>
                 <div><label className="label">{t('ticket.urgency')}</label><select className="input" value={form.urgency} onChange={e => setField('urgency',e.target.value)}><option value="">—</option>{URGENCIES.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
               </div>
@@ -622,7 +620,6 @@ export default function TicketModal({ onClose }) {
                     [t('ticket.ship_to'),        form.ship_to],
                     [t('ticket.sold_to'),        form.sold_to],
                     [t('ticket.ref_so'),         form.ref_so],
-                    [t('ticket.original_so'),    form.original_so],
                     [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
                     [t('ticket.urgency'),        URGENCIES.find(u => u.value === form.urgency)?.label],
                     [t('ticket.comment'),        form.comment],
