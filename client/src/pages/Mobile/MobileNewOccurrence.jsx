@@ -6,6 +6,7 @@ import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import { usePermissions } from '../../hooks/usePermissions'
+import { buildMediaItem, isVideoFile, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
 import toast from 'react-hot-toast'
 
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -16,7 +17,7 @@ const URGENCIES   = [
 ]
 const emptyLine = () => ({
   quality_issue: '', description: '', line_item: '',
-  foliot_id: '', plant: '', affected_qty: '', total_qty: '', photos: [],
+  foliot_id: '', plant: '', affected_qty: '', total_qty: '', completion_type: '', photos: [],
 })
 
 function StepBar({ step }) {
@@ -89,18 +90,18 @@ function LineCard({ line, idx, onChange, onDelete, plants }) {
   const { t }     = useTranslation()
   const fileRef   = useRef(null)
   const cameraRef = useRef(null)
+  const videoRef  = useRef(null)
 
-const handleFiles = (files) => {
-  const newPhotos = Array.from(files).map(f => ({
-    file: f,
-    buffer: null,
-    type: f.type || 'image/jpeg',
-    name: f.name,
-    preview: URL.createObjectURL(f),
-    dataUrl: null,
-    annotated: false,
-  }))
-  onChange(idx, '_addPhotos', newPhotos)
+const handleFiles = async (files) => {
+  const items = []
+  for (const f of Array.from(files)) {
+    if (isVideoFile(f) && f.size > MAX_VIDEO_BYTES) {
+      toast.error(`${f.name} — ${t('ticket.video_too_large', { mb: MAX_VIDEO_MB })}`)
+      continue
+    }
+    items.push(await buildMediaItem(f))
+  }
+  if (items.length) onChange(idx, '_addPhotos', items)
 }
 
   return (
@@ -156,18 +157,37 @@ const handleFiles = (files) => {
         </Field>
       </div>
 
+      <Field label={t('ticket.completion_type')}>
+        <MSelect
+          value={line.completion_type}
+          onChange={v => onChange(idx,'completion_type',v)}
+          options={[{ value:'complete', label:t('ticket.complete_product') }, { value:'parts', label:t('ticket.parts_only') }]}
+        />
+      </Field>
+
       <div style={s.photosSection}>
         <span style={s.photosLabel}>{t('ticket.photos')}</span>
         <div style={s.photoGrid}>
           {(line.photos||[]).map((p, pi) => (
             <div key={pi} style={s.photoThumb}>
-              <img src={p.dataUrl || p.preview} alt="" style={s.thumbImg} />
+              {p.isVideo ? (
+                <>
+                  <video src={p.preview} style={s.thumbImg} muted playsInline />
+                  <span style={s.videoBadge}>▶</span>
+                </>
+              ) : (
+                <img src={p.dataUrl || p.preview} alt="" style={s.thumbImg} />
+              )}
               <button onClick={() => onChange(idx,'_removePhoto',pi)} style={s.removePhoto}>✕</button>
             </div>
           ))}
           <button onClick={() => cameraRef.current?.click()} style={s.addPhotoBtn}>
             <span style={{ fontSize: 22 }}>📷</span>
-            <span style={{ fontSize: 10, color: '#6B7280' }}>Caméra</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>Photo</span>
+          </button>
+          <button onClick={() => videoRef.current?.click()} style={s.addPhotoBtn}>
+            <span style={{ fontSize: 22 }}>🎥</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>Vidéo</span>
           </button>
           <button onClick={() => fileRef.current?.click()} style={s.addPhotoBtn}>
             <span style={{ fontSize: 22 }}>🖼️</span>
@@ -183,9 +203,17 @@ const handleFiles = (files) => {
           onChange={e => handleFiles(e.target.files)}
         />
         <input
+          ref={videoRef}
+          type="file"
+          accept="video/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={e => handleFiles(e.target.files)}
+        />
+        <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif,video/*"
           multiple
           style={{ display: 'none' }}
           onChange={e => handleFiles(e.target.files)}
@@ -206,7 +234,7 @@ export default function MobileNewOccurrence() {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand: '', ship_to: '', sold_to: '', ref_so: '',
+    brand: '', ship_to: '', sold_to: '', ref_so: '', project_name: '',
     delivery_date: '', installer_needed: '', urgency: '', comment: '',
   })
   const [lines, setLines] = useState([emptyLine()])
@@ -258,6 +286,7 @@ export default function MobileNewOccurrence() {
         ship_to:          form.ship_to       || null,
         sold_to:          form.sold_to       || null,
         ref_so:           form.ref_so        || null,
+        project_name:     form.project_name  || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
@@ -282,6 +311,7 @@ export default function MobileNewOccurrence() {
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
           total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
+          completion_type: l.completion_type || null,
           sort_order:    i,
         })))
         .select()
@@ -307,7 +337,7 @@ export default function MobileNewOccurrence() {
             const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
             await supabase.from('ticket_photos').insert({
               ticket_id: occ.id, url: urlData.publicUrl,
-              name: photo.name||'photo.jpg', path, line_id: lineId,
+              name: photo.name||'photo.jpg', path, line_id: lineId, media_type: photo.mediaType || 'image',
             })
           } catch (photoErr) {
             console.warn('Photo error:', photoErr)
@@ -345,7 +375,7 @@ export default function MobileNewOccurrence() {
         <button
           onClick={() => {
             setStep(1)
-            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
+            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', project_name:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
             setLines([emptyLine()])
           }}
           style={s.btnPrimary}
@@ -380,6 +410,9 @@ export default function MobileNewOccurrence() {
         {step === 1 && (
           <div style={s.stepContent}>
             <div style={s.sectionTitle}>{t('ticket.informations')}</div>
+            <Field label={t('ticket.project_name')}>
+              <MInput value={form.project_name} onChange={v => setField('project_name',v)} placeholder={t('ticket.project_name')} />
+            </Field>
             <div style={s.row2}>
               <Field label={t('ticket.reception_date')} required>
                 <MInput type="date" value={form.issue_reception_date} onChange={v => setField('issue_reception_date', v)} />
@@ -439,6 +472,7 @@ export default function MobileNewOccurrence() {
             <div style={s.summaryCard}>
               <div style={s.summaryTitle}>{t('ticket.informations')}</div>
               {[
+                [t('ticket.project_name'), form.project_name],
                 [t('ticket.reception_date'), form.issue_reception_date],
                 [t('ticket.delivery_date'), form.delivery_date],
                 [t('ticket.brand'), form.brand],
@@ -463,7 +497,7 @@ export default function MobileNewOccurrence() {
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:'#111827' }}>{l.quality_issue || '—'}</div>
                     <div style={{ fontSize:12, color:'#6B7280', marginTop:2 }}>
-                      {[l.plant, l.line_item, l.affected_qty ? `${t('ticket.affected_qty')}: ${l.affected_qty}${l.total_qty ? ` / ${l.total_qty}` : ''}` : ''].filter(Boolean).join(' · ')}
+                      {[l.plant, l.line_item, l.completion_type ? (l.completion_type === 'complete' ? t('ticket.complete_product') : t('ticket.parts_only')) : '', l.affected_qty ? `${t('ticket.affected_qty')}: ${l.affected_qty}${l.total_qty ? ` / ${l.total_qty}` : ''}` : ''].filter(Boolean).join(' · ')}
                     </div>
                   </div>
                   {(l.photos?.length||0) > 0 && (
@@ -684,6 +718,16 @@ const s = {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
+  },
+  videoBadge: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    color: '#fff',
+    fontSize: 18,
+    textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+    pointerEvents: 'none',
   },
   removePhoto: {
     position: 'absolute',

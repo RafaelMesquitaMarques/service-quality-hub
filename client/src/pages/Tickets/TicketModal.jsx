@@ -5,6 +5,7 @@ import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import { Spinner } from '../../components/ui'
+import { buildMediaItem, isVideoFile, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
 import toast from 'react-hot-toast'
 
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -321,16 +322,15 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
   const [annotating, setAnnotating] = useState(null)
 
   const handleFiles = async (files) => {
-    const newPhotos = await Promise.all(Array.from(files).map(async f => ({
-      file: f,
-      buffer: await f.arrayBuffer(),
-      type: f.type || 'image/jpeg',
-      name: f.name,
-      preview: URL.createObjectURL(f),
-      dataUrl: null,
-      annotated: false,
-    })))
-    onChange(idx, '_addPhotos', newPhotos)
+    const items = []
+    for (const f of Array.from(files)) {
+      if (isVideoFile(f) && f.size > MAX_VIDEO_BYTES) {
+        toast.error(`${f.name} — ${t('ticket.video_too_large', { mb: MAX_VIDEO_MB })}`)
+        continue
+      }
+      items.push(await buildMediaItem(f))
+    }
+    if (items.length) onChange(idx, '_addPhotos', items)
   }
 
   const handleAnnotationSave = (dataUrl) => {
@@ -381,18 +381,35 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
           <label className="label">{t('ticket.total_qty')}</label>
           <input className="input text-xs" type="number" min="0" value={line.total_qty||''} onChange={e => onChange(idx,'total_qty',e.target.value)} placeholder="0" />
         </div>
+        <div className="col-span-2">
+          <label className="label">{t('ticket.completion_type')}</label>
+          <select className="input text-xs" value={line.completion_type||''} onChange={e => onChange(idx,'completion_type',e.target.value)}>
+            <option value="">—</option>
+            <option value="complete">{t('ticket.complete_product')}</option>
+            <option value="parts">{t('ticket.parts_only')}</option>
+          </select>
+        </div>
       </div>
 
       <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
-        <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Photos</div>
+        <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">{t('ticket.photos')}</div>
         {(line.photos||[]).length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
             {(line.photos||[]).map((p, pi) => (
-              <div key={pi} className="relative group" style={{ cursor:'pointer' }} onClick={() => setAnnotating(pi)}>
-                <img src={p.dataUrl || p.preview} alt="" className="w-16 h-16 object-cover rounded border border-gray-200 dark:border-gray-700" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded transition-all flex items-center justify-center">
-                  <i className="ti ti-pencil text-white opacity-0 group-hover:opacity-100 text-sm" aria-hidden="true" />
-                </div>
+              <div key={pi} className="relative group" style={{ cursor: p.isVideo ? 'default' : 'pointer' }} onClick={() => { if (!p.isVideo) setAnnotating(pi) }}>
+                {p.isVideo ? (
+                  <div className="w-16 h-16 rounded border border-gray-200 dark:border-gray-700 bg-black flex items-center justify-center overflow-hidden relative">
+                    <video src={p.preview} className="w-full h-full object-cover" muted playsInline />
+                    <i className="ti ti-player-play-filled text-white absolute" style={{ fontSize:18, filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }} aria-hidden="true" />
+                  </div>
+                ) : (
+                  <>
+                    <img src={p.dataUrl || p.preview} alt="" className="w-16 h-16 object-cover rounded border border-gray-200 dark:border-gray-700" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded transition-all flex items-center justify-center">
+                      <i className="ti ti-pencil text-white opacity-0 group-hover:opacity-100 text-sm" aria-hidden="true" />
+                    </div>
+                  </>
+                )}
                 <button onClick={e => { e.stopPropagation(); onChange(idx,'_removePhoto',pi) }}
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center border-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ fontSize:8 }}>✕</button>
@@ -404,8 +421,8 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
           </div>
         )}
         <label className="btn-ghost text-xs py-1 px-2 cursor-pointer inline-flex items-center gap-1">
-          <i className="ti ti-upload text-xs" aria-hidden="true" /> Importer
-          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
+          <i className="ti ti-upload text-xs" aria-hidden="true" /> {t('ticket.add_media')}
+          <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif,video/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
         </label>
       </div>
 
@@ -430,13 +447,13 @@ export default function TicketModal({ onClose }) {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand:'', ship_to:'', sold_to:'', ref_so:'',
+    brand:'', ship_to:'', sold_to:'', ref_so:'', project_name:'',
     delivery_date:'', installer_needed:'', urgency:'', comment:'',
   })
 
   const emptyLine = () => ({
     quality_issue:'', description:'', line_item:'',
-    foliot_id:'', plant:'', affected_qty:'', total_qty:'', photos:[],
+    foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'', photos:[],
   })
   const [lines, setLines] = useState([emptyLine()])
 
@@ -483,6 +500,7 @@ export default function TicketModal({ onClose }) {
         ship_to:          form.ship_to       || null,
         sold_to:          form.sold_to       || null,
         ref_so:           form.ref_so        || null,
+        project_name:     form.project_name  || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
@@ -508,6 +526,7 @@ export default function TicketModal({ onClose }) {
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
           total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
+          completion_type: l.completion_type || null,
           sort_order:    i,
         })))
         .select()
@@ -542,7 +561,7 @@ export default function TicketModal({ onClose }) {
             if (upErr) { console.warn('Photo upload failed:', upErr.message); failedPhotos++; continue }
             const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
             await supabase.from('ticket_photos').insert({
-              ticket_id: occ.id, url: urlData.publicUrl, name: photo.name || 'photo.jpg', path, line_id: lineId,
+              ticket_id: occ.id, url: urlData.publicUrl, name: photo.name || 'photo.jpg', path, line_id: lineId, media_type: photo.mediaType || 'image',
             })
           } catch (photoErr) {
             console.warn('Photo error (non-fatal):', photoErr)
@@ -582,6 +601,10 @@ export default function TicketModal({ onClose }) {
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {step === 1 && (
             <div className="space-y-4">
+              <div>
+                <label className="label">{t('ticket.project_name')}</label>
+                <input className="input" value={form.project_name} onChange={e => setField('project_name',e.target.value)} placeholder={t('ticket.project_name')} />
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <div><label className="label">{t('ticket.reception_date')} *</label><input type="date" className="input" value={form.issue_reception_date} onChange={e => setField('issue_reception_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.delivery_date')}</label><input type="date" className="input" value={form.delivery_date} onChange={e => setField('delivery_date',e.target.value)} /></div>
@@ -614,6 +637,7 @@ export default function TicketModal({ onClose }) {
                 <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Informations générales</div>
                 <div className="grid grid-cols-2 gap-1">
                   {[
+                    [t('ticket.project_name'),   form.project_name],
                     [t('ticket.reception_date'), form.issue_reception_date],
                     [t('ticket.delivery_date'),  form.delivery_date],
                     [t('ticket.brand'),          form.brand],
@@ -638,7 +662,7 @@ export default function TicketModal({ onClose }) {
                     <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-medium" style={{ background:'#E6F1FB', color:'#185FA5', fontSize:9 }}>{i+1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 dark:text-gray-100 truncate">{l.quality_issue||'—'}</div>
-                      <div className="text-gray-400">{[l.plant,l.line_item,l.affected_qty?`Qté: ${l.affected_qty}${l.total_qty?` / ${l.total_qty}`:''}`:''].filter(Boolean).join(' · ')}</div>
+                      <div className="text-gray-400">{[l.plant,l.line_item,l.completion_type?(l.completion_type==='complete'?t('ticket.complete_product'):t('ticket.parts_only')):'',l.affected_qty?`Qté: ${l.affected_qty}${l.total_qty?` / ${l.total_qty}`:''}`:''].filter(Boolean).join(' · ')}</div>
                     </div>
                     {(l.photos?.length||0) > 0 && <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded text-xs">{l.photos.length} photo{l.photos.length>1?'s':''}</span>}
                   </div>

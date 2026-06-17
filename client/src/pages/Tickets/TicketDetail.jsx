@@ -7,6 +7,7 @@ import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useThemeStore } from '../../store/themeStore'
+import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
@@ -377,18 +378,20 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   })
 
   const uploadMut = useMutation({
-    mutationFn: async (file) => {
-      const ext = file.name.split('.').pop().replace(/[^a-z0-9]/gi, '') || 'jpg'
-      const path = `tickets/${occurrenceId}/${Date.now()}_line${line.id}.${ext}`
-      const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
+    mutationFn: async (rawFile) => {
+      const file  = await normalizeMediaFile(rawFile)
+      const video = isVideoFile(file)
+      const ext   = (file.name || 'photo.jpg').split('.').pop().replace(/[^a-z0-9]/gi, '') || 'jpg'
+      const path  = `tickets/${occurrenceId}/${Date.now()}_line${line.id}.${ext}`
+      const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file, { contentType: file.type || undefined })
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
       const { error: dbErr } = await supabase.from('ticket_photos').insert({
-        ticket_id: occurrenceId, url: urlData.publicUrl, name: file.name, path, line_id: line.id
+        ticket_id: occurrenceId, url: urlData.publicUrl, name: file.name, path, line_id: line.id, media_type: video ? 'video' : 'image'
       })
       if (dbErr) throw dbErr
     },
-    onSuccess: () => { refetchPhotos(); toast.success('Photo ajoutée') },
+    onSuccess: () => { refetchPhotos(); toast.success(t('common.save')) },
     onError: (e) => { console.error('Upload error:', e); toast.error(e?.message || t('common.error')) },
   })
 
@@ -440,6 +443,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
       plant:         form.plant,
       affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
       total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
+      completion_type: form.completion_type || null,
       updated_at:    new Date().toISOString(),
     }).eq('id', line.id)
     if (error) { toast.error(t('common.error')); return }
@@ -451,13 +455,19 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   // canEdit: role-based (from parent) AND status allows it
   const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
 
-  const imgPhotos  = (photos || []).filter(p =>  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
-  const filePhotos = (photos || []).filter(p => !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
+  const isVid       = p => p.media_type === 'video' || isVideoUrl(p.url)
+  const videoPhotos = (photos || []).filter(p =>  isVid(p))
+  const imgPhotos   = (photos || []).filter(p => !isVid(p) &&  p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
+  const filePhotos  = (photos || []).filter(p => !isVid(p) && !p.url?.match(/\.(jpg|jpeg|png|gif|webp)/i))
+
+  const completionLabel = line.completion_type === 'complete' ? t('ticket.complete_product')
+    : line.completion_type === 'parts' ? t('ticket.parts_only') : null
 
   const idFields = [
-    [t('ticket.line_item'), line.line_item],
-    [t('ticket.foliot_id'), line.foliot_id],
-    [t('ticket.plant'),     line.plant],
+    [t('ticket.line_item'),      line.line_item],
+    [t('ticket.foliot_id'),      line.foliot_id],
+    [t('ticket.plant'),          line.plant],
+    [t('ticket.completion_type'), completionLabel],
   ].filter(([, v]) => v)
 
   return (
@@ -513,6 +523,14 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               <div>
                 <label className="label">{t('ticket.total_qty')}</label>
                 <input className="input text-xs" type="number" value={form.total_qty || ''} onChange={e => setForm(f => ({...f, total_qty: e.target.value}))} />
+              </div>
+              <div className="col-span-2">
+                <label className="label">{t('ticket.completion_type')}</label>
+                <select className="input text-xs" value={form.completion_type || ''} onChange={e => setForm(f => ({...f, completion_type: e.target.value}))}>
+                  <option value="">—</option>
+                  <option value="complete">{t('ticket.complete_product')}</option>
+                  <option value="parts">{t('ticket.parts_only')}</option>
+                </select>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">
@@ -570,6 +588,21 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               ))}
             </div>
           )}
+          {videoPhotos.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {videoPhotos.map(p => (
+                <div key={p.id} className="relative group">
+                  <video src={p.url} controls playsInline className="w-44 rounded border border-gray-200 dark:border-gray-700 bg-black" />
+                  {canEditLine && (
+                    <button onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })} title="Supprimer"
+                      className="absolute top-1 right-1 w-5 h-5 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center border-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                      <i className="ti ti-x" style={{ fontSize:10 }} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {filePhotos.map(p => (
             <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 dark:bg-[#161B22] rounded text-xs mb-1">
               <i className="ti ti-file text-red-400 text-sm" aria-hidden="true" />
@@ -584,9 +617,12 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
           {canEditLine && (
             <label className="btn-ghost text-xs py-1 px-2 cursor-pointer">
-              <i className="ti ti-upload text-xs" aria-hidden="true" /> {(photos || []).length === 0 ? 'Ajouter photos' : 'Ajouter'}
-              <input ref={fileRef} type="file" accept="image/*,.pdf" multiple className="hidden"
-                onChange={e => Array.from(e.target.files).forEach(f => uploadMut.mutate(f))} />
+              <i className="ti ti-upload text-xs" aria-hidden="true" /> {(photos || []).length === 0 ? t('ticket.add_media') : t('common.add')}
+              <input ref={fileRef} type="file" accept="image/*,.heic,.heif,video/*,.pdf" multiple className="hidden"
+                onChange={e => Array.from(e.target.files).forEach(f => {
+                  if (isVideoFile(f) && f.size > MAX_VIDEO_BYTES) { toast.error(`${f.name} — ${t('ticket.video_too_large', { mb: MAX_VIDEO_MB })}`); return }
+                  uploadMut.mutate(f)
+                })} />
             </label>
           )}
         </div>
@@ -626,7 +662,7 @@ export default function TicketDetail() {
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
-  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'' })
+  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
 
   // Edição dos campos de informação
   const [editingInfo, setEditingInfo] = useState(false)
@@ -707,6 +743,7 @@ export default function TicketDetail() {
         plant:         newLine.plant         || null,
         affected_qty:  newLine.affected_qty  ? Number(newLine.affected_qty) : null,
         total_qty:     newLine.total_qty     ? Number(newLine.total_qty)    : null,
+        completion_type: newLine.completion_type || null,
         sort_order:    maxOrder + 1,
       })
       if (error) throw error
@@ -714,7 +751,7 @@ export default function TicketDetail() {
     onSuccess: () => {
       refetchLines()
       setAddingLine(false)
-      setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'' })
+      setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
       toast.success(t('ticket.add_line'))
     },
     onError: () => toast.error(t('common.error')),
@@ -860,6 +897,7 @@ export default function TicketDetail() {
                   canEdit && !editingInfo ? (
                     <button className="btn-ghost text-xs py-0.5 px-2" onClick={() => {
                       setInfoDraft({
+                        project_name: ticket.project_name || '',
                         ship_to: ticket.ship_to || '',
                         sold_to: ticket.sold_to || '',
                         brand:   ticket.brand   || '',
@@ -882,6 +920,7 @@ export default function TicketDetail() {
                 {editingInfo && infoDraft ? (
                   <div className="space-y-2">
                     {[
+                      ['project_name', t('ticket.project_name')],
                       ['ship_to',  t('ticket.ship_to')],
                       ['sold_to',  t('ticket.sold_to')],
                       ['brand',    t('ticket.brand')],
@@ -929,6 +968,7 @@ export default function TicketDetail() {
                   <>
                     {[
                       [t('ticket.occurrence_no'),  ticket.occurrence_no ? `#${ticket.occurrence_no}` : null],
+                      [t('ticket.project_name'),   ticket.project_name],
                       [t('ticket.created_by'),     creator?.full_name],
                       [t('ticket.ship_to'),        ticket.ship_to],
                       [t('ticket.sold_to'),         ticket.sold_to],
@@ -1095,6 +1135,14 @@ export default function TicketDetail() {
                       <div>
                         <label className="label">{t('ticket.total_qty')}</label>
                         <input className="input text-xs" type="number" value={newLine.total_qty} onChange={e => setNewLine(f => ({...f, total_qty: e.target.value}))} />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="label">{t('ticket.completion_type')}</label>
+                        <select className="input text-xs" value={newLine.completion_type} onChange={e => setNewLine(f => ({...f, completion_type: e.target.value}))}>
+                          <option value="">—</option>
+                          <option value="complete">{t('ticket.complete_product')}</option>
+                          <option value="parts">{t('ticket.parts_only')}</option>
+                        </select>
                       </div>
                     </div>
                     <div className="flex justify-end gap-2 mt-2">
