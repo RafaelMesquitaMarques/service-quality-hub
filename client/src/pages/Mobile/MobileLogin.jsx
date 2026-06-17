@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
+import Logo from '../../components/Logo'
 
 export default function MobileLogin() {
   const navigate = useNavigate()
@@ -32,13 +33,7 @@ export default function MobileLogin() {
     <div style={styles.root}>
       <div style={styles.card}>
         <div style={styles.header}>
-          <div style={styles.iconWrap}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"
-                stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <h1 style={styles.title}>Service Quality</h1>
+          <Logo withTagline style={{ height: 72, color: '#13212E', marginBottom: 4 }} />
           <p style={styles.subtitle}>Signalement d'occurrences</p>
         </div>
 

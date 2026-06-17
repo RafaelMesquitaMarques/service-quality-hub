@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { usePermissions } from '../../hooks/usePermissions'
 import ChangePasswordModal from '../ChangePasswordModal'
+import Logo from '../Logo'
 import i18n from '../../i18n'
 
 const ROLE_COLORS = {
@@ -154,11 +155,7 @@ export default function Layout() {
       <div className="flex desktop-layout">
         <nav className="desktop-sidebar w-52 flex-shrink-0 flex flex-col transition-colors" style={{ background: navBg }}>
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-center">
-            <img
-              src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
-              alt="Quality Hub"
-              style={{ height: 36, width: 'auto', mixBlendMode: 'lighten' }}
-            />
+            <Logo style={{ height: 34, color: '#fff' }} />
           </div>
 
           <div className="flex-1 py-2">
@@ -229,11 +226,7 @@ export default function Layout() {
 
         <div className="flex-1 flex flex-col desktop-main bg-gray-50 dark:bg-[#0D1117] transition-colors" style={{ minWidth: 0 }}>
           <div className="mobile-topbar items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" style={{ background: navBg }}>
-            <img
-              src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
-              alt="Quality Hub"
-              style={{ height: 26, mixBlendMode: 'lighten' }}
-            />
+            <Logo style={{ height: 24, color: '#fff' }} />
             <div className="flex items-center gap-2">
               <button onClick={toggleLang} className="text-xs text-white/70 px-2 py-1">
                 {i18n.language === 'fr' ? 'EN' : 'FR'}

@@ -5,6 +5,7 @@ import { supabase } from '../../services/supabase'
 import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
+import Logo from '../../components/Logo'
 import toast from 'react-hot-toast'
 
 const BRANDS = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -152,11 +153,7 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
       {/* Header */}
       <div className="bg-[#1A3A5C] px-4 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <img
-            src="https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png"
-            alt="Quality Hub"
-            style={{ height: 28, mixBlendMode: 'lighten' }}
-          />
+          <Logo style={{ height: 24, color: '#fff' }} />
           <span className="text-white text-sm font-semibold">
             {lang === 'fr' ? 'Nouvelle occurrence' : 'New occurrence'}
           </span>

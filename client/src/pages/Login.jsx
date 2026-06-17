@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../store/authStore'
-
-const LOGO_URL = 'https://kbunsdmpesivntujvuzi.supabase.co/storage/v1/object/public/ticket-photos/tickets/ChatGPT%20Image%2031%20mai%202026,%2020_46_28.png'
+import Logo from '../components/Logo'
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -32,7 +31,7 @@ if (isMobile) {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0D1117] p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src={LOGO_URL} alt="Quality Hub" style={{ height: 48, width: 'auto', margin: '0 auto 16px', display: 'block' }} />
+          <Logo withTagline className="text-gray-900 dark:text-white" style={{ height: 64, margin: '0 auto 12px', display: 'block' }} />
           <p className="text-sm text-gray-400 mt-1">Foliot Furniture</p>
         </div>
         <div className="card p-6">
