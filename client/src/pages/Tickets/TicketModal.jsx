@@ -16,17 +16,18 @@ const URGENCIES   = [
 ]
 const COLORS      = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
 const TOOLS       = [
-  { id:'select',  icon:'ti-cursor-text',    label:'Sélection' },
-  { id:'pen',     icon:'ti-pencil',         label:'Stylo' },
-  { id:'arrow',   icon:'ti-arrow-up-right', label:'Flèche' },
-  { id:'rect',    icon:'ti-square',         label:'Rectangle' },
-  { id:'circle',  icon:'ti-circle',         label:'Cercle' },
-  { id:'text',    icon:'ti-letter-t',       label:'Texte' },
-  { id:'measure', icon:'ti-ruler',          label:'Mesure' },
+  { id:'select',  icon:'ti-cursor-text',    key:'ticket.annot_select' },
+  { id:'pen',     icon:'ti-pencil',         key:'ticket.annot_pen' },
+  { id:'arrow',   icon:'ti-arrow-up-right', key:'ticket.annot_arrow' },
+  { id:'rect',    icon:'ti-square',         key:'ticket.annot_rect' },
+  { id:'circle',  icon:'ti-circle',         key:'ticket.annot_circle' },
+  { id:'text',    icon:'ti-letter-t',       key:'ticket.annot_text' },
+  { id:'measure', icon:'ti-ruler',          key:'ticket.annot_measure' },
 ]
 
 // ── Photo Annotator ────────────────────────────────────────────────────────
 function PhotoAnnotator({ photoUrl, onSave, onClose }) {
+  const { t }       = useTranslation()
   const canvasRef   = useRef(null)
   const fabricRef   = useRef(null)
   const ptsRef      = useRef([])
@@ -236,12 +237,12 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
       <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" style={{ maxWidth:620, width:'100%' }}>
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Annotation</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('ticket.annotation')}</span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer text-xl leading-none">✕</button>
         </div>
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-1 flex-wrap bg-gray-50 dark:bg-[#0D1117]">
           {TOOLS.map(tk => (
-            <button key={tk.id} onClick={() => setTool(tk.id)} title={tk.label} aria-label={tk.label}
+            <button key={tk.id} onClick={() => setTool(tk.id)} title={t(tk.key)} aria-label={t(tk.key)}
               className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-all border-0"
               style={{ background: tool===tk.id ? color+'33' : 'transparent', outline: tool===tk.id ? `2px solid ${color}` : '1px solid var(--color-border-tertiary)', color: tool===tk.id ? color : 'var(--color-text-secondary)' }}>
               <i className={`ti ${tk.icon}`} style={{ fontSize:13 }} aria-hidden="true" />
@@ -254,17 +255,17 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
           <div style={{ width:1, height:20, background:'var(--color-border-tertiary)', margin:'0 3px' }} />
           <input type="range" min="1" max="8" value={thick} step="1" onChange={e => setThick(Number(e.target.value))} style={{ width:55 }} />
           <div style={{ width:1, height:20, background:'var(--color-border-tertiary)', margin:'0 3px' }} />
-          <button onClick={handleUndo} title="Annuler le dernier" aria-label="Annuler le dernier" className="w-7 h-7 rounded flex items-center justify-center cursor-pointer bg-transparent border-0" style={{ outline:'1px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)' }}>
+          <button onClick={handleUndo} title={t('ticket.annot_undo')} aria-label={t('ticket.annot_undo')} className="w-7 h-7 rounded flex items-center justify-center cursor-pointer bg-transparent border-0" style={{ outline:'1px solid var(--color-border-tertiary)', color:'var(--color-text-secondary)' }}>
             <i className="ti ti-arrow-back-up" style={{ fontSize:13 }} aria-hidden="true" />
           </button>
-          <button onClick={handleDeleteSelected} title="Supprimer la sélection (Delete)" aria-label="Supprimer la sélection" className="w-7 h-7 rounded flex items-center justify-center cursor-pointer bg-transparent border-0" style={{ outline:'1px solid var(--color-border-tertiary)', color:'#ef4444' }}>
+          <button onClick={handleDeleteSelected} title={t('ticket.annot_delete')} aria-label={t('ticket.annot_delete')} className="w-7 h-7 rounded flex items-center justify-center cursor-pointer bg-transparent border-0" style={{ outline:'1px solid var(--color-border-tertiary)', color:'#ef4444' }}>
             <i className="ti ti-trash" style={{ fontSize:13 }} aria-hidden="true" />
           </button>
         </div>
         {measuring && (
           <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center gap-3">
             <i className="ti ti-ruler text-amber-600 text-sm" aria-hidden="true" />
-            <span className="text-xs text-amber-700 dark:text-amber-300">Mesure tracée — entrez la valeur:</span>
+            <span className="text-xs text-amber-700 dark:text-amber-300">{t('ticket.annot_measure_prompt')}</span>
             <input type="text" value={measureVal} onChange={e => setMeasureVal(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSaveMeasure()}
               className="border border-amber-300 rounded px-2 py-1 text-xs w-20 outline-none dark:bg-[#161B22] dark:text-gray-100"
@@ -282,8 +283,8 @@ function PhotoAnnotator({ photoUrl, onSave, onClose }) {
           <canvas ref={canvasRef} />
         </div>
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100 dark:border-gray-800">
-          <button onClick={onClose} className="btn-ghost text-xs">Annuler</button>
-          <button onClick={handleSave} className="btn-primary text-xs" disabled={!ready}>Sauvegarder</button>
+          <button onClick={onClose} className="btn-ghost text-xs">{t('common.cancel')}</button>
+          <button onClick={handleSave} className="btn-primary text-xs" disabled={!ready}>{t('common.save')}</button>
         </div>
       </div>
     </div>
@@ -296,7 +297,7 @@ function StepIndicator({ current, t }) {
     <div className="flex items-center px-5 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#161B22]">
       {[
         { n:1, label:t('ticket.step1'), desc:t('ticket.step1_desc') },
-        { n:2, label:'Confirmation',   desc:'Vérifier et soumettre' },
+        { n:2, label:t('ticket.confirmation'), desc:t('ticket.confirm_desc') },
       ].map((s, i, arr) => (
         <div key={s.n} className="flex items-center flex-1">
           <div className="flex items-center gap-2">
@@ -375,11 +376,11 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div className="col-span-2">
           <label className="label">{t('ticket.issue')} *</label>
-          <input className="input text-xs" value={line.quality_issue||''} onChange={e => onChange(idx,'quality_issue',e.target.value)} placeholder="Description du problème..." />
+          <input className="input text-xs" value={line.quality_issue||''} onChange={e => onChange(idx,'quality_issue',e.target.value)} placeholder={t('ticket.issue_placeholder')} />
         </div>
         <div className="col-span-2">
           <label className="label">{t('ticket.description')}</label>
-          <textarea className="input text-xs" rows={2} value={line.description||''} onChange={e => onChange(idx,'description',e.target.value)} placeholder="Description détaillée du problème..." />
+          <textarea className="input text-xs" rows={2} value={line.description||''} onChange={e => onChange(idx,'description',e.target.value)} placeholder={t('ticket.description_placeholder')} />
         </div>
         <div>
           <label className="label">{t('ticket.line_item')}</label>
@@ -446,7 +447,7 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center border-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ fontSize:8 }}>✕</button>
                 {p.annotated && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-white text-center rounded-b" style={{ fontSize:8, padding:'1px 0' }}>annoté</div>
+                  <div className="absolute bottom-0 left-0 right-0 bg-blue-500/80 text-white text-center rounded-b" style={{ fontSize:8, padding:'1px 0' }}>{t('ticket.annotated')}</div>
                 )}
               </div>
             ))}
@@ -617,9 +618,9 @@ export default function TicketModal({ onClose }) {
       }
 
       queryClient.invalidateQueries(['tickets'])
-      toast.success('Occurrence créée et soumise au Service Desk')
+      toast.success(t('ticket.created_sd_toast'))
       if (failedPhotos > 0) {
-        toast(`${failedPhotos} photo${failedPhotos > 1 ? 's' : ''} n'a pas pu être téléversée — réessayez depuis la page de l'occurrence`, { icon: '⚠️', duration: 6000 })
+        toast(t('ticket.photos_upload_failed', { count: failedPhotos }), { icon: '⚠️', duration: 6000 })
       }
       onClose()
     } catch (e) {
@@ -661,7 +662,7 @@ export default function TicketModal({ onClose }) {
               </div>
               <div>
                 <label className="label">{t('ticket.comment')}</label>
-                <textarea className="input" rows={2} value={form.comment} onChange={e => setField('comment',e.target.value)} placeholder="Commentaire..." />
+                <textarea className="input" rows={2} value={form.comment} onChange={e => setField('comment',e.target.value)} placeholder={t('ticket.comment_placeholder')} />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -678,7 +679,7 @@ export default function TicketModal({ onClose }) {
           {step === 2 && (
             <div className="space-y-3">
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Informations générales</div>
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">{t('ticket.general_info')}</div>
                 <div className="grid grid-cols-2 gap-1">
                   {[
                     [t('ticket.project_name'),   form.project_name],
@@ -712,7 +713,7 @@ export default function TicketModal({ onClose }) {
               </div>
               <div className="flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs text-amber-700 dark:text-amber-300">
                 <i className="ti ti-send text-sm" aria-hidden="true" />
-                {t('ticket.submit_to_sd')} — le statut passera à Service Desk
+                {t('ticket.submit_to_sd')} — {t('ticket.will_move_to_sd')}
               </div>
             </div>
           )}
