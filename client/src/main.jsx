@@ -3,8 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
-import './i18n'
+import i18n from './i18n'
 import './index.css'
+import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore } from './store/authStore'
 import { useThemeStore } from './store/themeStore'
 import { usePermissions } from './hooks/usePermissions'
@@ -53,6 +54,7 @@ function ProtectedRoute({ children, perm }) {
 function App() {
   const { init } = useAuthStore()
   const { init: initTheme } = useThemeStore()
+  const userLanguage = useAuthStore(s => s.user?.language)
   const [ready, setReady] = React.useState(false)
 
   React.useEffect(() => {
@@ -60,6 +62,15 @@ function App() {
     setReady(true)
     init()
   }, [])
+
+  // Appliquer la langue enregistrée dans le profil (sinon tout le monde
+  // démarre en français, ce qui pousse les anglophones à utiliser la
+  // traduction auto du navigateur — qui fait planter l'app).
+  React.useEffect(() => {
+    if (userLanguage && userLanguage !== i18n.language) {
+      i18n.changeLanguage(userLanguage)
+    }
+  }, [userLanguage])
 
   if (!ready) return (
     <div style={{
@@ -74,6 +85,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <ErrorBoundary>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
 
@@ -107,6 +119,7 @@ function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
       <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
     </QueryClientProvider>
