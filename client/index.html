@@ -1,8 +1,13 @@
 <!DOCTYPE html>
 <!-- v2 -->
-<html lang="fr">
+<html lang="fr" translate="no">
   <head>
     <meta charset="UTF-8" />
+    <!-- Disable Chrome/browser auto-translation: it rewrites DOM text nodes and
+         crashes React (NotFoundError on removeChild) when the UI re-renders,
+         producing a blank white screen. The app is bilingual (FR/EN) with its
+         own in-app language switch, so browser translation is not needed. -->
+    <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CheckMate — Foliot</title>

@@ -10,4 +10,12 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false }
 })
 
+// Garder <html lang> aligné sur la langue de l'app : aide le navigateur à ne pas
+// proposer de traduire (la traduction auto casse le rendu React -> écran blanc).
+const applyHtmlLang = (lng) => {
+  if (typeof document !== 'undefined' && lng) document.documentElement.lang = lng
+}
+applyHtmlLang(i18n.language)
+i18n.on('languageChanged', applyHtmlLang)
+
 export default i18n
