@@ -4,6 +4,7 @@
     "tickets": "Occurrences",
     "weekly_review": "Weekly Review",
     "import": "Import Excel",
+    "referentials": "Clients & Brands",
     "admin": "Admin"
   },
   "status": {
@@ -200,6 +201,33 @@
     "no_plants": "No plant",
     "active": "Active",
     "inactive": "Inactive"
+  },
+  "referentials": {
+    "title": "Clients & Brands",
+    "subtitle": "Manage clients and brands",
+    "clients": "Clients",
+    "brands": "Brands",
+    "new_client": "New client",
+    "edit_client": "Edit client",
+    "new_brand": "New brand",
+    "edit_brand": "Edit brand",
+    "name": "Name",
+    "contact": "Contact",
+    "email": "Email",
+    "phone": "Phone",
+    "city": "City",
+    "notes": "Notes",
+    "status": "Status",
+    "actions": "Actions",
+    "active": "Active",
+    "inactive": "Inactive",
+    "active_label": "Active",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "delete_confirm": "Delete",
+    "no_clients": "No clients",
+    "no_brands": "No brands",
+    "required": "{{field}} is required"
   },
   "import": {
     "title": "Import SAP / Excel",

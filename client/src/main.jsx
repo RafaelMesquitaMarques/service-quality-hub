@@ -17,6 +17,7 @@ import MeetingsPage from './pages/Meetings'
 import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
+import ReferentialsPage from './pages/Referentials'
 import MobileLayout from './pages/Mobile/MobileLayout'
 import MobileLogin from './pages/Mobile/MobileLogin'
 import MobileNewOccurrence from './pages/Mobile/MobileNewOccurrence'
@@ -98,6 +99,9 @@ function App() {
             } />
             <Route path="plants" element={
               <ProtectedRoute perm="canManagePlants"><PlantsPage /></ProtectedRoute>
+            } />
+            <Route path="referentials" element={
+              <ProtectedRoute perm="canManagePlants"><ReferentialsPage /></ProtectedRoute>
             } />
           </Route>
 

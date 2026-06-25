@@ -4,6 +4,7 @@
     "tickets": "Occurrences",
     "weekly_review": "Revue hebdomadaire",
     "import": "Importer Excel",
+    "referentials": "Clients & Marques",
     "admin": "Administration"
   },
   "status": {
@@ -200,6 +201,33 @@
     "no_plants": "Aucune usine",
     "active": "Actif",
     "inactive": "Inactif"
+  },
+  "referentials": {
+    "title": "Clients & Marques",
+    "subtitle": "Gérer les clients et les marques",
+    "clients": "Clients",
+    "brands": "Marques",
+    "new_client": "Nouveau client",
+    "edit_client": "Modifier le client",
+    "new_brand": "Nouvelle marque",
+    "edit_brand": "Modifier la marque",
+    "name": "Nom",
+    "contact": "Contact",
+    "email": "Email",
+    "phone": "Téléphone",
+    "city": "Ville",
+    "notes": "Notes",
+    "status": "Statut",
+    "actions": "Actions",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "active_label": "Actif",
+    "activate": "Activer",
+    "deactivate": "Désactiver",
+    "delete_confirm": "Supprimer",
+    "no_clients": "Aucun client",
+    "no_brands": "Aucune marque",
+    "required": "« {{field}} » est obligatoire"
   },
   "import": {
     "title": "Import SAP / Excel",

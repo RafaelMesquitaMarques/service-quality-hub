@@ -521,6 +521,16 @@ export default function TicketModal({ onClose }) {
     },
   })
 
+  // Marques depuis le référentiel (fallback sur la liste codée en dur si vide)
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const { data } = await supabase.from('brands').select('name').eq('active',true).order('name')
+      return data || []
+    },
+  })
+  const brandOptions = brands?.length ? brands.map(b => b.name) : BRANDS
+
   const handleSubmit = async () => {
     if (submitting) return
     setSubmitting(true)
@@ -645,7 +655,7 @@ export default function TicketModal({ onClose }) {
                 <div><label className="label">{t('ticket.reception_date')} *</label><input type="date" className="input" value={form.issue_reception_date} onChange={e => setField('issue_reception_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.delivery_date')}</label><input type="date" className="input" value={form.delivery_date} onChange={e => setField('delivery_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.wish_delivery_date')}</label><input type="date" className="input" value={form.wish_delivery_date} onChange={e => setField('wish_delivery_date',e.target.value)} /></div>
-                <div><label className="label">{t('ticket.brand')}</label><select className="input" value={form.brand} onChange={e => setField('brand',e.target.value)}><option value="">—</option>{BRANDS.map(b => <option key={b}>{b}</option>)}</select></div>
+                <div><label className="label">{t('ticket.brand')}</label><select className="input" value={form.brand} onChange={e => setField('brand',e.target.value)}><option value="">—</option>{form.brand && !brandOptions.includes(form.brand) && <option value={form.brand}>{form.brand}</option>}{brandOptions.map(b => <option key={b}>{b}</option>)}</select></div>
                 <div><label className="label">{t('ticket.installer_needed')}</label><select className="input" value={form.installer_needed} onChange={e => setField('installer_needed',e.target.value)}><option value="">—</option><option value="yes">{t('common.yes')}</option><option value="no">{t('common.no')}</option></select></div>
                 <div><label className="label">{t('ticket.urgency')}</label><select className="input" value={form.urgency} onChange={e => setField('urgency',e.target.value)}><option value="">—</option>{URGENCIES.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
               </div>

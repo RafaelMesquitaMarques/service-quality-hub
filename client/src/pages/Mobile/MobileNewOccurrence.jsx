@@ -265,6 +265,16 @@ export default function MobileNewOccurrence() {
     },
   })
 
+  // Marques depuis le référentiel (fallback sur la liste codée en dur si vide)
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const { data } = await supabase.from('brands').select('name').eq('active',true).order('name')
+      return data || []
+    },
+  })
+  const brandOptions = brands?.length ? brands.map(b => b.name) : BRANDS
+
   const { canCreateMobile: isEditor } = usePermissions()
   const canGoStep2  = !!form.issue_reception_date
   const canGoStep3  = lines.some(l => l.quality_issue.trim())
@@ -429,7 +439,7 @@ export default function MobileNewOccurrence() {
                 <MInput type="date" value={form.wish_delivery_date} onChange={v => setField('wish_delivery_date', v)} />
               </Field>
               <Field label={t('ticket.brand')}>
-                <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
+                <MSelect value={form.brand} onChange={v => setField('brand',v)} options={brandOptions} />
               </Field>
             </div>
             <div style={s.row2}>
