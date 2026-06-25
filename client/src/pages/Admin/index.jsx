@@ -34,6 +34,7 @@ function getInitials(name) {
 
 // ── Modal senha temporária ────────────────────────────────────────────────
 function TempPasswordModal({ userName, tempPassword, onClose }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const copy = () => {
@@ -46,8 +47,8 @@ function TempPasswordModal({ userName, tempPassword, onClose }) {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, padding:16 }}>
       <div style={{ background:'#fff', borderRadius:12, border:'1px solid #e5e7eb', width:'100%', maxWidth:400, boxShadow:'0 24px 48px rgba(0,0,0,0.2)', overflow:'hidden' }}>
         <div style={{ background:'#1e40af', padding:'16px 20px' }}>
-          <div style={{ fontSize:15, fontWeight:600, color:'#fff' }}>🔐 Mot de passe temporaire</div>
-          <div style={{ fontSize:12, color:'#bfdbfe', marginTop:2 }}>Communiquer ce mot de passe à {userName}</div>
+          <div style={{ fontSize:15, fontWeight:600, color:'#fff' }}>🔐 {t('admin.temp_password_title')}</div>
+          <div style={{ fontSize:12, color:'#bfdbfe', marginTop:2 }}>{t('admin.communicate_password', { name: userName })}</div>
         </div>
         <div style={{ padding:'20px' }}>
           <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'12px 16px', marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
@@ -55,14 +56,14 @@ function TempPasswordModal({ userName, tempPassword, onClose }) {
               {tempPassword}
             </code>
             <button onClick={copy} style={{ background: copied ? '#16a34a' : '#1e40af', color:'#fff', border:'none', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', flexShrink:0 }}>
-              {copied ? '✓ Copié' : 'Copier'}
+              {copied ? '✓ ' + t('admin.copied') : t('admin.copy')}
             </button>
           </div>
           <div style={{ background:'#fefce8', border:'1px solid #fef08a', borderRadius:8, padding:'10px 12px', fontSize:12, color:'#854d0e', marginBottom:16 }}>
-            ⚠️ L'utilisateur devra changer ce mot de passe à la première connexion.
+            ⚠️ {t('admin.must_change_notice')}
           </div>
           <button onClick={onClose} style={{ width:'100%', padding:'10px', borderRadius:8, background:'#1e40af', color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            Fermer
+            {t('common.close')}
           </button>
         </div>
       </div>
@@ -94,15 +95,15 @@ export default function AdminPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id) => adminApi.deactivate(id),
-    onSuccess: () => { queryClient.invalidateQueries(['admin-users']); toast.success('Utilisateur désactivé') },
-    onError: () => toast.error('Erreur'),
+    onSuccess: () => { queryClient.invalidateQueries(['admin-users']); toast.success(t('admin.user_deactivated')) },
+    onError: () => toast.error(t('common.error')),
   })
 
   const handleEdit  = (user) => { setEditUser(user); setShowModal(true) }
   const handleClose = () => { setShowModal(false); setEditUser(null); queryClient.invalidateQueries(['admin-users']) }
 
   const handleResetPassword = async (user) => {
-    if (!window.confirm(`Réinitialiser le mot de passe de ${user.full_name} ?`)) return
+    if (!window.confirm(t('admin.reset_confirm', { name: user.full_name }))) return
     setResettingId(user.id)
     try {
       const { data: sessionData } = await supabase.auth.getSession()
@@ -121,12 +122,12 @@ export default function AdminPage() {
       })
 
       const result = await res.json()
-      if (!res.ok) throw new Error(result?.error || 'Erreur serveur')
+      if (!res.ok) throw new Error(result?.error || t('common.error'))
 
       setTempPwdData({ userName: user.full_name, tempPassword: result.temp_password })
       queryClient.invalidateQueries(['admin-users'])
     } catch (err) {
-      toast.error(err.message || 'Erreur lors de la réinitialisation')
+      toast.error(err.message || t('admin.reset_error'))
     } finally {
       setResettingId(null)
     }
@@ -194,7 +195,7 @@ export default function AdminPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: roleBg, color: roleCl }}>
-                          {role.label}
+                          {t(`roles.${user.role}`)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{user.department || '—'}</td>
@@ -223,7 +224,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => handleResetPassword(user)}
                             disabled={isResetting}
-                            title="Réinitialiser le mot de passe"
+                            title={t('admin.reset_title')}
                             className="text-xs py-1 px-2.5 rounded-lg border cursor-pointer inline-flex items-center gap-1"
                             style={{ border: '1px solid ' + (isDark ? '#1e3a5f' : '#bfdbfe'), background: isDark ? '#0f1f3d' : '#eff6ff', color: '#3b82f6', opacity: isResetting ? 0.6 : 1 }}>
                             {isResetting

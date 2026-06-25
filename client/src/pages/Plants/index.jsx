@@ -36,9 +36,9 @@ export default function PlantsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries(['plants-admin'])
       queryClient.invalidateQueries(['plants'])
-      toast.success('Statut mis à jour')
+      toast.success(t('plants.status_updated'))
     },
-    onError: () => toast.error('Erreur'),
+    onError: () => toast.error(t('common.error')),
   })
 
   const deleteMutation = useMutation({
@@ -49,9 +49,9 @@ export default function PlantsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries(['plants-admin'])
       queryClient.invalidateQueries(['plants'])
-      toast.success('Usine supprimée')
+      toast.success(t('plants.deleted'))
     },
-    onError: () => toast.error('Erreur'),
+    onError: () => toast.error(t('common.error')),
   })
 
   const handleEdit  = (plant) => { setEditPlant(plant); setShowModal(true) }

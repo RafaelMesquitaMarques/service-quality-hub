@@ -86,6 +86,7 @@ export function BrandTag({ brand }) {
 
 // ── Confirm Dialog ────────────────────────────────────────────
 export function ConfirmDialog({ open, title, message, onConfirm, onCancel, danger = false }) {
+  const { t } = useTranslation()
   if (!open) return null
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -93,9 +94,9 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel, dange
         <h2 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">{title}</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="btn-ghost">Annuler</button>
+          <button onClick={onCancel} className="btn-ghost">{t('common.cancel')}</button>
           <button onClick={onConfirm} className={danger ? 'btn-danger' : 'btn-primary'}>
-            Confirmer
+            {t('common.confirm')}
           </button>
         </div>
       </div>

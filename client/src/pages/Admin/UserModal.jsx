@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { adminApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
@@ -29,6 +30,7 @@ const PERMISSIONS = [
 ]
 
 export default function UserModal({ user, plants, onClose }) {
+  const { t, i18n } = useTranslation()
   const isEdit = !!user
   const fileRef = useRef(null)
   const [saving, setSaving] = useState(false)
@@ -152,14 +154,20 @@ export default function UserModal({ user, plants, onClose }) {
     background:'#fff', color:'#111827', outline:'none', boxSizing:'border-box',
   }
 
-  const TITLE = isEdit ? 'Modifier utilisateur' : 'Ajouter un utilisateur'
-  const BTN   = saving ? 'Envoi...' : isEdit ? 'Enregistrer' : mode === 'invite' ? 'Envoyer invitation' : 'Creer utilisateur'
+  const uiLang = i18n.language === 'en' ? 'en' : 'fr'
+  const TITLE = isEdit
+    ? (uiLang === 'fr' ? 'Modifier utilisateur' : 'Edit user')
+    : (uiLang === 'fr' ? 'Ajouter un utilisateur' : 'Add user')
+  const BTN   = saving
+    ? (uiLang === 'fr' ? 'Envoi...' : 'Sending...')
+    : isEdit ? (uiLang === 'fr' ? 'Enregistrer' : 'Save')
+    : mode === 'invite' ? (uiLang === 'fr' ? 'Envoyer invitation' : 'Send invitation')
+    : (uiLang === 'fr' ? 'Créer utilisateur' : 'Create user')
 
   const modeInfo = {
     invite:   { fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.', en: 'An email will be sent with a link to set the password. The link expires after 24h.' },
     password: { fr: "L'utilisateur sera cree immediatement et pourra se connecter avec le mot de passe defini.", en: 'The user will be created immediately and can log in with the defined password.' },
   }
-  const uiLang = form.language === 'en' ? 'en' : 'fr'
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', zIndex:1000, overflowY:'auto' }}>
@@ -169,7 +177,7 @@ export default function UserModal({ user, plants, onClose }) {
         <div style={{ padding:'16px 44px 12px 20px', borderBottom:'1px solid #e5e7eb' }}>
           <div style={{ fontSize:15, fontWeight:500, color:'#111827' }}>{TITLE}</div>
           <div style={{ fontSize:12, color:'#6b7280', marginTop:2 }}>
-            {isEdit ? 'Modifier les informations du compte' : 'Choisir le mode de creation'}
+            {isEdit ? (uiLang === 'fr' ? 'Modifier les informations du compte' : 'Edit account information') : (uiLang === 'fr' ? 'Choisir le mode de création' : 'Choose the creation mode')}
           </div>
           <button onClick={onClose} style={{ position:'absolute', top:14, right:16, background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:18, lineHeight:1 }}>✕</button>
         </div>
@@ -260,7 +268,7 @@ export default function UserModal({ user, plants, onClose }) {
           <div style={{ marginBottom:10 }}>
             <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>Role *</label>
             <select style={inp} value={form.role} onChange={e => sf('role', e.target.value)}>
-              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {ROLES.map(r => <option key={r.value} value={r.value}>{t(`roles.${r.value}`)}</option>)}
             </select>
           </div>
 

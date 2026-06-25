@@ -161,7 +161,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHeader title={t('nav.dashboard')} subtitle={`FY${CURRENT_FISCAL_YEAR} — Vue d'ensemble qualité & coûts`} />
+      <PageHeader title={t('nav.dashboard')} subtitle={`FY${CURRENT_FISCAL_YEAR} — ${t('dashboard.overview_subtitle')}`} />
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
         {/* KPIs */}
@@ -180,7 +180,7 @@ export default function Dashboard() {
             sub="Tolerance 0.30%" subColor="text-gray-400" />
           <KpiCard label={t('dashboard.completion_rate')} value={`${completionPct}%`}
             icon="ti-circle-check" iconBg="#F0FDF4" iconColor="#16A34A"
-            trend={completionTrend()} sub={`${completed} complétées`} subColor="text-green-500" />
+            trend={completionTrend()} sub={`${completed} ${t('dashboard.completed')}`} subColor="text-green-500" />
         </div>
 
         {/* SC Cost % */}
@@ -238,7 +238,7 @@ export default function Dashboard() {
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
               {t('dashboard.by_department')} — Cost FY{CURRENT_FISCAL_YEAR}
-              <span className="ml-2 text-xs font-normal text-gray-400">({deptCostData.length} départements)</span>
+              <span className="ml-2 text-xs font-normal text-gray-400">({deptCostData.length} {t('dashboard.departments')})</span>
             </div>
             <ResponsiveContainer width="100%" height={deptHeight}>
               <BarChart data={deptCostData} layout="vertical" margin={{ left: 80 }}>
@@ -270,7 +270,7 @@ export default function Dashboard() {
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
               {t('dashboard.by_category')} — FY{CURRENT_FISCAL_YEAR}
-              <span className="ml-2 text-xs font-normal text-gray-400">({catData.length} catégories)</span>
+              <span className="ml-2 text-xs font-normal text-gray-400">({catData.length} {t('dashboard.categories')})</span>
             </div>
             <ResponsiveContainer width="100%" height={catHeight}>
               <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
