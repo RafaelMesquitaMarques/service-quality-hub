@@ -320,6 +320,7 @@ function StepIndicator({ current, t }) {
 function LineRow({ line, idx, onChange, onDelete, plants, t }) {
   const fileInputRef = useRef(null)
   const [annotating, setAnnotating] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   const handleFiles = async (files) => {
     const items = []
@@ -331,6 +332,27 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
       items.push(await buildMediaItem(f))
     }
     if (items.length) onChange(idx, '_addPhotos', items)
+  }
+
+  // Glisser-déposer : fichiers locaux (dont SharePoint synchronisé via OneDrive)
+  // ou, à défaut, un lien glissé (tentative best-effort).
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = e.dataTransfer?.files
+    if (files && files.length) { handleFiles(files); return }
+    const uri = (e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '').trim()
+    if (!/^https?:\/\//i.test(uri)) return
+    const url = uri.split('\n').find(l => /^https?:\/\//i.test(l)) || uri
+    try {
+      const res  = await fetch(url)
+      const blob = await res.blob()
+      if (!/^(image|video)\//.test(blob.type)) throw new Error('not-media')
+      const name = decodeURIComponent((url.split('/').pop() || 'photo.jpg').split('?')[0])
+      handleFiles([new File([blob], name || 'photo.jpg', { type: blob.type })])
+    } catch {
+      toast.error(t('ticket.sharepoint_drop_hint'))
+    }
   }
 
   const handleAnnotationSave = (dataUrl) => {
@@ -368,6 +390,10 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
           <input className="input text-xs" value={line.foliot_id||''} onChange={e => onChange(idx,'foliot_id',e.target.value)} placeholder="Foliot ID..." />
         </div>
         <div>
+          <label className="label">{t('ticket.ref_so')}</label>
+          <input className="input text-xs" value={line.ref_so||''} onChange={e => onChange(idx,'ref_so',e.target.value)} placeholder="REF SO..." />
+        </div>
+        <div>
           <label className="label">{t('ticket.plant')}</label>
           <select className="input text-xs" value={line.plant||''} onChange={e => onChange(idx,'plant',e.target.value)}>
             <option value="">—</option>{(plants||[]).map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
@@ -391,7 +417,13 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
         </div>
       </div>
 
-      <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+      <div
+        className={`border-t border-gray-200 dark:border-gray-700 pt-2 rounded-b transition-colors ${isDragging ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+        onDragEnter={(e) => { e.preventDefault(); setIsDragging(true) }}
+        onDragLeave={(e) => { e.preventDefault(); if (e.currentTarget === e.target) setIsDragging(false) }}
+        onDrop={handleDrop}
+      >
         <div className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">{t('ticket.photos')}</div>
         {(line.photos||[]).length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -420,10 +452,15 @@ function LineRow({ line, idx, onChange, onDelete, plants, t }) {
             ))}
           </div>
         )}
-        <label className="btn-ghost text-xs py-1 px-2 cursor-pointer inline-flex items-center gap-1">
-          <i className="ti ti-upload text-xs" aria-hidden="true" /> {t('ticket.add_media')}
-          <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif,video/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
-        </label>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="btn-ghost text-xs py-1 px-2 cursor-pointer inline-flex items-center gap-1">
+            <i className="ti ti-upload text-xs" aria-hidden="true" /> {t('ticket.add_media')}
+            <input ref={fileInputRef} type="file" accept="image/*,.heic,.heif,video/*" multiple className="hidden" onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
+          </label>
+          <span className="text-[11px] text-gray-400 inline-flex items-center gap-1">
+            <i className="ti ti-drag-drop text-xs" aria-hidden="true" /> {t('ticket.or_drag_drop')}
+          </span>
+        </div>
       </div>
 
       {photoBeingAnnotated && (
@@ -447,13 +484,13 @@ export default function TicketModal({ onClose }) {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand:'', ship_to:'', sold_to:'', ref_so:'', project_name:'',
-    delivery_date:'', installer_needed:'', urgency:'', comment:'',
+    brand:'', project_name:'',
+    delivery_date:'', wish_delivery_date:'', installer_needed:'', urgency:'', comment:'',
   })
 
   const emptyLine = () => ({
     quality_issue:'', description:'', line_item:'',
-    foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'', photos:[],
+    foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'', photos:[],
   })
   const [lines, setLines] = useState([emptyLine()])
 
@@ -497,12 +534,10 @@ export default function TicketModal({ onClose }) {
         fiscal_year:   getFiscalYear(dateYYYYMM),
         fiscal_month:  getFiscalMonth(dateYYYYMM),
         brand:            form.brand         || null,
-        ship_to:          form.ship_to       || null,
-        sold_to:          form.sold_to       || null,
-        ref_so:           form.ref_so        || null,
         project_name:     form.project_name  || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
+        wish_delivery_date: form.wish_delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
         urgency:          form.urgency       || null,
         comment:          form.comment       || null,
@@ -523,6 +558,7 @@ export default function TicketModal({ onClose }) {
           description:   l.description   || null,
           line_item:     l.line_item     || null,
           foliot_id:     l.foliot_id     || null,
+          ref_so:        l.ref_so        || null,
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
           total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
@@ -608,10 +644,8 @@ export default function TicketModal({ onClose }) {
               <div className="grid grid-cols-3 gap-3">
                 <div><label className="label">{t('ticket.reception_date')} *</label><input type="date" className="input" value={form.issue_reception_date} onChange={e => setField('issue_reception_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.delivery_date')}</label><input type="date" className="input" value={form.delivery_date} onChange={e => setField('delivery_date',e.target.value)} /></div>
+                <div><label className="label">{t('ticket.wish_delivery_date')}</label><input type="date" className="input" value={form.wish_delivery_date} onChange={e => setField('wish_delivery_date',e.target.value)} /></div>
                 <div><label className="label">{t('ticket.brand')}</label><select className="input" value={form.brand} onChange={e => setField('brand',e.target.value)}><option value="">—</option>{BRANDS.map(b => <option key={b}>{b}</option>)}</select></div>
-                <div><label className="label">{t('ticket.ship_to')}</label><input className="input" value={form.ship_to} onChange={e => setField('ship_to',e.target.value)} placeholder="Ship To..." /></div>
-                <div><label className="label">{t('ticket.sold_to')}</label><input className="input" value={form.sold_to} onChange={e => setField('sold_to',e.target.value)} placeholder="Sold To..." /></div>
-                <div><label className="label">{t('ticket.ref_so')}</label><input className="input" value={form.ref_so} onChange={e => setField('ref_so',e.target.value)} placeholder="REF SO..." /></div>
                 <div><label className="label">{t('ticket.installer_needed')}</label><select className="input" value={form.installer_needed} onChange={e => setField('installer_needed',e.target.value)}><option value="">—</option><option value="yes">{t('common.yes')}</option><option value="no">{t('common.no')}</option></select></div>
                 <div><label className="label">{t('ticket.urgency')}</label><select className="input" value={form.urgency} onChange={e => setField('urgency',e.target.value)}><option value="">—</option>{URGENCIES.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}</select></div>
               </div>
@@ -640,10 +674,8 @@ export default function TicketModal({ onClose }) {
                     [t('ticket.project_name'),   form.project_name],
                     [t('ticket.reception_date'), form.issue_reception_date],
                     [t('ticket.delivery_date'),  form.delivery_date],
+                    [t('ticket.wish_delivery_date'), form.wish_delivery_date],
                     [t('ticket.brand'),          form.brand],
-                    [t('ticket.ship_to'),        form.ship_to],
-                    [t('ticket.sold_to'),        form.sold_to],
-                    [t('ticket.ref_so'),         form.ref_so],
                     [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
                     [t('ticket.urgency'),        URGENCIES.find(u => u.value === form.urgency)?.label],
                     [t('ticket.comment'),        form.comment],

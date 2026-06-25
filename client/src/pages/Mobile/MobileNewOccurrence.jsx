@@ -17,7 +17,7 @@ const URGENCIES   = [
 ]
 const emptyLine = () => ({
   quality_issue: '', description: '', line_item: '',
-  foliot_id: '', plant: '', affected_qty: '', total_qty: '', completion_type: '', photos: [],
+  foliot_id: '', ref_so: '', plant: '', affected_qty: '', total_qty: '', completion_type: '', photos: [],
 })
 
 function StepBar({ step }) {
@@ -140,6 +140,10 @@ const handleFiles = async (files) => {
         </Field>
       </div>
 
+      <Field label={t('ticket.ref_so')}>
+        <MInput value={line.ref_so} onChange={v => onChange(idx,'ref_so',v)} placeholder="REF SO..." />
+      </Field>
+
       <Field label={t('ticket.plant')}>
         <MSelect
           value={line.plant}
@@ -200,7 +204,7 @@ const handleFiles = async (files) => {
           accept="image/*"
           capture="environment"
           style={{ display: 'none' }}
-          onChange={e => handleFiles(e.target.files)}
+          onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
         />
         <input
           ref={videoRef}
@@ -208,7 +212,7 @@ const handleFiles = async (files) => {
           accept="video/*"
           capture="environment"
           style={{ display: 'none' }}
-          onChange={e => handleFiles(e.target.files)}
+          onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
         />
         <input
           ref={fileRef}
@@ -216,7 +220,7 @@ const handleFiles = async (files) => {
           accept="image/*,.heic,.heif,video/*"
           multiple
           style={{ display: 'none' }}
-          onChange={e => handleFiles(e.target.files)}
+          onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
         />
       </div>
     </div>
@@ -234,8 +238,8 @@ export default function MobileNewOccurrence() {
 
   const [form, setForm] = useState({
     issue_reception_date: new Date().toISOString().slice(0,10),
-    brand: '', ship_to: '', sold_to: '', ref_so: '', project_name: '',
-    delivery_date: '', installer_needed: '', urgency: '', comment: '',
+    brand: '', project_name: '',
+    delivery_date: '', wish_delivery_date: '', installer_needed: '', urgency: '', comment: '',
   })
   const [lines, setLines] = useState([emptyLine()])
 
@@ -283,12 +287,10 @@ export default function MobileNewOccurrence() {
         fiscal_year:   getFiscalYear(dateYYYYMM),
         fiscal_month:  getFiscalMonth(dateYYYYMM),
         brand:            form.brand         || null,
-        ship_to:          form.ship_to       || null,
-        sold_to:          form.sold_to       || null,
-        ref_so:           form.ref_so        || null,
         project_name:     form.project_name  || null,
         created_by:       user?.id           || null,
         delivery_date:    form.delivery_date || null,
+        wish_delivery_date: form.wish_delivery_date || null,
         installer_needed: form.installer_needed === '' ? null : form.installer_needed === 'yes',
         urgency:          form.urgency       || null,
         comment:          form.comment       || null,
@@ -308,6 +310,7 @@ export default function MobileNewOccurrence() {
           description:   l.description   || null,
           line_item:     l.line_item     || null,
           foliot_id:     l.foliot_id     || null,
+          ref_so:        l.ref_so        || null,
           plant:         l.plant         || null,
           affected_qty:  l.affected_qty  ? Number(l.affected_qty) : null,
           total_qty:     l.total_qty     ? Number(l.total_qty)    : null,
@@ -375,7 +378,7 @@ export default function MobileNewOccurrence() {
         <button
           onClick={() => {
             setStep(1)
-            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', ship_to:'', sold_to:'', ref_so:'', project_name:'', delivery_date:'', installer_needed:'', urgency:'', comment:'' })
+            setForm({ issue_reception_date: new Date().toISOString().slice(0,10), brand:'', project_name:'', delivery_date:'', wish_delivery_date:'', installer_needed:'', urgency:'', comment:'' })
             setLines([emptyLine()])
           }}
           style={s.btnPrimary}
@@ -421,20 +424,14 @@ export default function MobileNewOccurrence() {
                 <MInput type="date" value={form.delivery_date} onChange={v => setField('delivery_date', v)} />
               </Field>
             </div>
-            <Field label={t('ticket.brand')}>
-              <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
-            </Field>
             <div style={s.row2}>
-              <Field label={t('ticket.ship_to')}>
-                <MInput value={form.ship_to} onChange={v => setField('ship_to',v)} placeholder="Ship To..." />
+              <Field label={t('ticket.wish_delivery_date')}>
+                <MInput type="date" value={form.wish_delivery_date} onChange={v => setField('wish_delivery_date', v)} />
               </Field>
-              <Field label={t('ticket.sold_to')}>
-                <MInput value={form.sold_to} onChange={v => setField('sold_to',v)} placeholder="Sold To..." />
+              <Field label={t('ticket.brand')}>
+                <MSelect value={form.brand} onChange={v => setField('brand',v)} options={BRANDS} />
               </Field>
             </div>
-            <Field label={t('ticket.ref_so')}>
-              <MInput value={form.ref_so} onChange={v => setField('ref_so',v)} placeholder="REF SO..." />
-            </Field>
             <div style={s.row2}>
               <Field label={t('ticket.installer_needed')}>
                 <MSelect value={form.installer_needed} onChange={v => setField('installer_needed',v)} options={[{ value:'yes', label:t('common.yes') }, { value:'no', label:t('common.no') }]} />
@@ -475,10 +472,8 @@ export default function MobileNewOccurrence() {
                 [t('ticket.project_name'), form.project_name],
                 [t('ticket.reception_date'), form.issue_reception_date],
                 [t('ticket.delivery_date'), form.delivery_date],
+                [t('ticket.wish_delivery_date'), form.wish_delivery_date],
                 [t('ticket.brand'), form.brand],
-                [t('ticket.ship_to'), form.ship_to],
-                [t('ticket.sold_to'), form.sold_to],
-                [t('ticket.ref_so'), form.ref_so],
                 [t('ticket.installer_needed'), form.installer_needed ? (form.installer_needed === 'yes' ? t('common.yes') : t('common.no')) : ''],
                 [t('ticket.urgency'), URGENCIES.find(u => u.value === form.urgency)?.label],
                 [t('ticket.comment'), form.comment],

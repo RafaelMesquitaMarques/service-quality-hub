@@ -84,7 +84,7 @@ export default function TicketsPage() {
   const [fBrand,  setFBrand]    = useState(new Set())
   const [fDept,   setFDept]     = useState(new Set())
   const [fPlant,  setFPlant]    = useState(new Set())
-  const [fShipTo, setFShipTo]   = useState(new Set())
+  const [fProject, setFProject]   = useState(new Set())
   const [fSC,     setFSC]       = useState(new Set())
   const [fDate,   setFDate]     = useState(new Set())
   const [fCreator, setFCreator] = useState(new Set())
@@ -155,8 +155,8 @@ export default function TicketsPage() {
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(tk =>
-        [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.ship_to, tk.sold_to, tk.brand,
-         tk.department, tk.categories, tk.ref_so, tk.plant, tk.status, getCreator(tk)]
+        [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.project_name, tk.brand,
+         tk.department, tk.categories, tk.plant, tk.status, getCreator(tk)]
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
@@ -164,12 +164,12 @@ export default function TicketsPage() {
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
     if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department))
     if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
-    if (fShipTo.size > 0) result = result.filter(tk => fShipTo.has(tk.ship_to))
+    if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fCreator, profileMap])
+  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   const creatorNames = useMemo(
@@ -182,19 +182,19 @@ export default function TicketsPage() {
   const tickets = filtered.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < filtered.length
 
-  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fShipTo, fSC, fDate, fCreator, fiscalYear])
+  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear])
 
-  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fShipTo.size || fSC.size || fDate.size || fCreator.size
+  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
   const clearAll = () => {
     setSearch(''); setFStatus(new Set()); setFBrand(new Set())
-    setFDept(new Set()); setFPlant(new Set()); setFShipTo(new Set())
+    setFDept(new Set()); setFPlant(new Set()); setFProject(new Set())
     setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
   }
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'ship_to', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
       const rows    = filtered
         .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
@@ -276,7 +276,7 @@ export default function TicketsPage() {
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.issue')}</span>
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label="Ship To" values={uniq('ship_to')} selected={fShipTo} onChange={setFShipTo} onClear={() => setFShipTo(new Set())} />
+                  <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={setFProject} onClear={() => setFProject(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={setFBrand} onClear={() => setFBrand(new Set())} />
@@ -311,7 +311,7 @@ export default function TicketsPage() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
                     <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.ship_to || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.project_name || '—'}</td>
                     <td className="px-4 py-2.5"><BrandTag brand={ticket.brand} /></td>
                     <td className="px-4 py-2.5">
                       {ticket.department

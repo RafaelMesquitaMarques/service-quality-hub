@@ -55,7 +55,7 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
     if (dateTo   && tk.issue_reception_date > dateTo)   return false
     if (search) {
       const q = search.toLowerCase()
-      return tk.quality_issue?.toLowerCase().includes(q) || tk.sc_number?.toLowerCase().includes(q) || tk.ship_to?.toLowerCase().includes(q)
+      return tk.quality_issue?.toLowerCase().includes(q) || tk.sc_number?.toLowerCase().includes(q) || tk.project_name?.toLowerCase().includes(q)
     }
     return true
   })

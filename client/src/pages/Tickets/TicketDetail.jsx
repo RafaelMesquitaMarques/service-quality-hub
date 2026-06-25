@@ -366,7 +366,32 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ ...line })
   const [annotating, setAnnotating] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef(null)
+
+  // Coût + classification au niveau de la ligne (édités inline, hors du mode édition descriptif)
+  const [clf, setClf] = useState({
+    cost_approx:       line.cost_approx != null ? String(line.cost_approx) : '',
+    categories:        line.categories || '',
+    department:        line.department || '',
+    root_cause:        line.root_cause || '',
+    corrective_action: line.corrective_action || '',
+  })
+  const [clfDirty, setClfDirty] = useState(false)
+
+  // Re-synchronise depuis la ligne quand les valeurs persistées changent
+  // (après sauvegarde / refetch). N'écrase pas une saisie en cours car le prop
+  // `line` ne change qu'après un save réussi.
+  useEffect(() => {
+    setClf({
+      cost_approx:       line.cost_approx != null ? String(line.cost_approx) : '',
+      categories:        line.categories || '',
+      department:        line.department || '',
+      root_cause:        line.root_cause || '',
+      corrective_action: line.corrective_action || '',
+    })
+    setClfDirty(false)
+  }, [line.id, line.cost_approx, line.categories, line.department, line.root_cause, line.corrective_action])
 
   const { data: photos, refetch: refetchPhotos } = useQuery({
     queryKey: ['line-photos', line.id],
@@ -434,12 +459,46 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     onError: (e) => { console.error('Annotation save error:', e); toast.error(e?.message || t('common.error')) },
   })
 
+  // Upload d'une liste de fichiers (input ou glisser-déposer)
+  const handleFiles = (fileList) => {
+    Array.from(fileList || []).forEach(f => {
+      if (isVideoFile(f) && f.size > MAX_VIDEO_BYTES) {
+        toast.error(`${f.name} — ${t('ticket.video_too_large', { mb: MAX_VIDEO_MB })}`)
+        return
+      }
+      uploadMut.mutate(f)
+    })
+  }
+
+  // Glisser-déposer : fichiers locaux (y compris dossiers SharePoint synchronisés
+  // via OneDrive) ou, à défaut, un lien glissé (tentative best-effort).
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (!canEditLine) return
+    const files = e.dataTransfer?.files
+    if (files && files.length) { handleFiles(files); return }
+    const uri = (e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '').trim()
+    if (!/^https?:\/\//i.test(uri)) return
+    const url = uri.split('\n').find(l => /^https?:\/\//i.test(l)) || uri
+    try {
+      const res  = await fetch(url)
+      const blob = await res.blob()
+      if (!/^(image|video)\//.test(blob.type)) throw new Error('not-media')
+      const name = decodeURIComponent((url.split('/').pop() || 'photo.jpg').split('?')[0])
+      handleFiles([new File([blob], name || 'photo.jpg', { type: blob.type })])
+    } catch {
+      toast.error(t('ticket.sharepoint_drop_hint'))
+    }
+  }
+
   const saveLine = async () => {
     const { error } = await supabase.from('occurrence_lines').update({
       quality_issue: form.quality_issue,
       description:   form.description || null,
       line_item:     form.line_item,
       foliot_id:     form.foliot_id,
+      ref_so:        form.ref_so || null,
       plant:         form.plant,
       affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
       total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
@@ -452,8 +511,28 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     setEditing(false)
   }
 
+  const saveClassification = async () => {
+    const { error } = await supabase.from('occurrence_lines').update({
+      cost_approx:       clf.cost_approx === '' ? null : Number(clf.cost_approx),
+      categories:        clf.categories || null,
+      department:        clf.department || null,
+      root_cause:        clf.root_cause || null,
+      corrective_action: clf.corrective_action || null,
+      updated_at:        new Date().toISOString(),
+    }).eq('id', line.id)
+    if (error) { toast.error(t('common.error')); return }
+    toast.success(t('common.save'))
+    onUpdate()
+    setClfDirty(false)
+  }
+
   // canEdit: role-based (from parent) AND status allows it
   const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
+
+  // Coût visible dès le Service Desk ; classification réservée à la Réunion qualité.
+  // Édition gérée par le rôle (canEditProp), comme les sections au niveau occurrence.
+  const showLineCost  = ['service_desk','quality_meeting','completed'].includes(status)
+  const showLineClass = ['quality_meeting','completed'].includes(status)
 
   const isVid       = p => p.media_type === 'video' || isVideoUrl(p.url)
   const videoPhotos = (photos || []).filter(p =>  isVid(p))
@@ -466,6 +545,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   const idFields = [
     [t('ticket.line_item'),      line.line_item],
     [t('ticket.foliot_id'),      line.foliot_id],
+    [t('ticket.ref_so'),         line.ref_so],
     [t('ticket.plant'),          line.plant],
     [t('ticket.completion_type'), completionLabel],
   ].filter(([, v]) => v)
@@ -508,6 +588,10 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
               <div>
                 <label className="label">{t('ticket.foliot_id')}</label>
                 <input className="input text-xs" value={form.foliot_id || ''} onChange={e => setForm(f => ({...f, foliot_id: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label">{t('ticket.ref_so')}</label>
+                <input className="input text-xs" value={form.ref_so || ''} onChange={e => setForm(f => ({...f, ref_so: e.target.value}))} placeholder="REF SO..." />
               </div>
               <div>
                 <label className="label">{t('ticket.plant')}</label>
@@ -560,7 +644,13 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
         )}
 
         {/* Photos */}
-        <div className="border-t border-gray-100 dark:border-gray-800 pt-2 mt-2">
+        <div
+          className={`border-t border-gray-100 dark:border-gray-800 pt-2 mt-2 rounded-b-lg transition-colors ${isDragging && canEditLine ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/50 dark:bg-blue-900/20' : ''}`}
+          onDragOver={canEditLine ? (e) => { e.preventDefault(); setIsDragging(true) } : undefined}
+          onDragEnter={canEditLine ? (e) => { e.preventDefault(); setIsDragging(true) } : undefined}
+          onDragLeave={canEditLine ? (e) => { e.preventDefault(); if (e.currentTarget === e.target) setIsDragging(false) } : undefined}
+          onDrop={canEditLine ? handleDrop : undefined}
+        >
           {imgPhotos.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {imgPhotos.map(p => (
@@ -616,16 +706,89 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
           ))}
 
           {canEditLine && (
-            <label className="btn-ghost text-xs py-1 px-2 cursor-pointer">
-              <i className="ti ti-upload text-xs" aria-hidden="true" /> {(photos || []).length === 0 ? t('ticket.add_media') : t('common.add')}
-              <input ref={fileRef} type="file" accept="image/*,.heic,.heif,video/*,.pdf" multiple className="hidden"
-                onChange={e => Array.from(e.target.files).forEach(f => {
-                  if (isVideoFile(f) && f.size > MAX_VIDEO_BYTES) { toast.error(`${f.name} — ${t('ticket.video_too_large', { mb: MAX_VIDEO_MB })}`); return }
-                  uploadMut.mutate(f)
-                })} />
-            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="btn-ghost text-xs py-1 px-2 cursor-pointer">
+                <i className="ti ti-upload text-xs" aria-hidden="true" /> {(photos || []).length === 0 ? t('ticket.add_media') : t('common.add')}
+                <input ref={fileRef} type="file" accept="image/*,.heic,.heif,video/*,.pdf" multiple className="hidden"
+                  onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
+              </label>
+              <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                <i className="ti ti-drag-drop text-xs" aria-hidden="true" /> {t('ticket.or_drag_drop')}
+              </span>
+            </div>
           )}
         </div>
+
+        {/* Coût (Service Desk) + classification (Réunion qualité) — par ligne */}
+        {(showLineCost || showLineClass) && (
+          <div className="border-t border-gray-100 dark:border-gray-800 pt-3 mt-3 flex flex-col gap-3">
+            {showLineCost && (
+              <div>
+                <div className="text-[11px] font-medium text-gray-400 mb-1 flex items-center gap-1">
+                  <i className="ti ti-notes text-blue-500" aria-hidden="true" /> {t('ticket.step2')}
+                </div>
+                <label className="label">{t('ticket.cost')}</label>
+                <input type="number" min="0" value={clf.cost_approx}
+                  onChange={e => { setClf(c => ({ ...c, cost_approx: e.target.value })); setClfDirty(true) }}
+                  disabled={!canEditProp} placeholder="$0.00"
+                  className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+              </div>
+            )}
+            {showLineClass && (
+              <div>
+                <div className="text-[11px] font-medium text-gray-400 mb-1 flex items-center gap-1">
+                  <i className="ti ti-clipboard-check text-blue-500" aria-hidden="true" /> {t('ticket.step3')}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="label">{t('ticket.categories')}</label>
+                      <select value={clf.categories} disabled={!canEditProp}
+                        onChange={e => { setClf(c => ({ ...c, categories: e.target.value })); setClfDirty(true) }}
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                        <option value="">—</option>
+                        {clf.categories && !CATEGORIES.includes(clf.categories) && <option value={clf.categories}>{clf.categories}</option>}
+                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.department')}</label>
+                      <select value={clf.department} disabled={!canEditProp}
+                        onChange={e => { setClf(c => ({ ...c, department: e.target.value })); setClfDirty(true) }}
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                        <option value="">—</option>
+                        {clf.department && !DEPARTMENTS.includes(clf.department) && <option value={clf.department}>{clf.department}</option>}
+                        {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.root_cause')}</label>
+                    <select value={clf.root_cause} disabled={!canEditProp}
+                      onChange={e => { setClf(c => ({ ...c, root_cause: e.target.value })); setClfDirty(true) }}
+                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
+                      <option value="">—</option>
+                      {clf.root_cause && !ROOT_CAUSES.includes(clf.root_cause) && <option value={clf.root_cause}>{clf.root_cause}</option>}
+                      {ROOT_CAUSES.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">{t('ticket.corrective_action')}</label>
+                    <textarea rows={2} value={clf.corrective_action} disabled={!canEditProp}
+                      onChange={e => { setClf(c => ({ ...c, corrective_action: e.target.value })); setClfDirty(true) }}
+                      placeholder={t('ticket.corrective_placeholder')}
+                      className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {canEditProp && clfDirty && (
+              <div className="flex justify-end">
+                <button onClick={saveClassification} className="btn-primary text-xs">{t('common.save')}</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {annotating && (
@@ -662,7 +825,7 @@ export default function TicketDetail() {
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
-  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
+  const [newLine,     setNewLine]     = useState({ quality_issue:'', description:'', line_item:'', foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
 
   // Edição dos campos de informação
   const [editingInfo, setEditingInfo] = useState(false)
@@ -740,6 +903,7 @@ export default function TicketDetail() {
         description:   newLine.description   || null,
         line_item:     newLine.line_item     || null,
         foliot_id:     newLine.foliot_id     || null,
+        ref_so:        newLine.ref_so        || null,
         plant:         newLine.plant         || null,
         affected_qty:  newLine.affected_qty  ? Number(newLine.affected_qty) : null,
         total_qty:     newLine.total_qty     ? Number(newLine.total_qty)    : null,
@@ -751,7 +915,7 @@ export default function TicketDetail() {
     onSuccess: () => {
       refetchLines()
       setAddingLine(false)
-      setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
+      setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
       toast.success(t('ticket.add_line'))
     },
     onError: () => toast.error(t('common.error')),
@@ -781,14 +945,67 @@ export default function TicketDetail() {
   const handleSaveInfo = () => {
     updateMut.mutate({
       ...infoDraft,
-      delivery_date:    infoDraft.delivery_date || null,
-      installer_needed: infoDraft.installer_needed === '' ? null : infoDraft.installer_needed === 'yes',
-      urgency:          infoDraft.urgency || null,
-      comment:          infoDraft.comment || null,
+      delivery_date:      infoDraft.delivery_date || null,
+      wish_delivery_date: infoDraft.wish_delivery_date || null,
+      installer_needed:   infoDraft.installer_needed === '' ? null : infoDraft.installer_needed === 'yes',
+      urgency:            infoDraft.urgency || null,
+      comment:            infoDraft.comment || null,
     }, {
       onSuccess: () => setEditingInfo(false)
     })
   }
+
+  // ── Garde « modifications non enregistrées » ────────────────────────────
+  // Réinitialise les champs SD/QM aux valeurs persistées (abandon des modifs).
+  const resetFields = (tk) => {
+    setRootCause(tk.root_cause || '')
+    setCorrective(tk.corrective_action || '')
+    setSdNotes(tk.service_desk_notes || '')
+    setScNumber(tk.sc_number || '')
+    setCategories(tk.categories || '')
+    setDepartment(tk.department || '')
+    setCostApprox(tk.cost_approx != null ? String(tk.cost_approx) : '')
+    setCostFinal(tk.cost_final != null ? String(tk.cost_final) : '')
+    setEditingInfo(false)
+  }
+
+  const fieldsDirty = initialized && !!ticket && (
+    (ticket.root_cause         || '') !== rootCause  ||
+    (ticket.corrective_action  || '') !== corrective ||
+    (ticket.service_desk_notes || '') !== sdNotes    ||
+    (ticket.sc_number          || '') !== scNumber   ||
+    (ticket.categories         || '') !== categories ||
+    (ticket.department         || '') !== department ||
+    (ticket.cost_approx != null ? String(ticket.cost_approx) : '') !== costApprox ||
+    (ticket.cost_final  != null ? String(ticket.cost_final)  : '') !== costFinal
+  )
+  const isDirty = fieldsDirty || editingInfo
+
+  // Confirme avant une action qui ferait perdre les modifications non enregistrées.
+  const confirmDiscard = () => !isDirty || window.confirm(t('ticket.discard_confirm'))
+
+  // Changement de statut : confirme, puis abandonne les modifs locales (retour
+  // aux valeurs enregistrées) avant d'appliquer le nouveau statut.
+  const changeStatus = (payload) => {
+    if (!canEdit) return
+    if (!confirmDiscard()) return
+    if (ticket) resetFields(ticket)
+    updateMut.mutate(payload)
+  }
+
+  // Navigation (bouton Retour) : confirme avant de quitter.
+  const goBack = () => {
+    if (!confirmDiscard()) return
+    fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)
+  }
+
+  // Avertit aussi lors d'un rechargement / fermeture d'onglet.
+  useEffect(() => {
+    if (!isDirty) return
+    const handler = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
 
   if (isLoading) return <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   if (!ticket) return null
@@ -805,7 +1022,7 @@ export default function TicketDetail() {
         subtitle={`${ticket.occurrence_no ? `#${ticket.occurrence_no} · ` : ''}SC# ${ticket.sc_number || '—'} · ${formatDate(ticket.issue_reception_date)}`}
         actions={
           <div className="flex gap-2">
-            <button className="btn-ghost" onClick={() => fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)}>
+            <button className="btn-ghost" onClick={goBack}>
               <i className="ti ti-arrow-left" aria-hidden="true" /> {t('ticket.back')}
             </button>
             {canEdit && (
@@ -839,7 +1056,7 @@ export default function TicketDetail() {
               <div className="px-4 py-3 flex gap-2 flex-wrap">
                 {STATUS_OPTS.map(s => (
                   <button key={s}
-                    onClick={() => canEdit && updateMut.mutate({ status: s })}
+                    onClick={() => changeStatus({ status: s })}
                     disabled={!canEdit}
                     className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-0"
                     style={{
@@ -860,24 +1077,24 @@ export default function TicketDetail() {
                 <div className="px-4 pb-3 flex flex-col gap-2">
                   {/* Avançar */}
                   {ticket.status === 'not_started' && (
-                    <button onClick={() => updateMut.mutate({ status: 'service_desk' })} className="btn-primary text-xs w-full justify-center">
+                    <button onClick={() => changeStatus({ status: 'service_desk' })} className="btn-primary text-xs w-full justify-center">
                       <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_sd')}
                     </button>
                   )}
                   {ticket.status === 'service_desk' && (
-                    <button onClick={() => updateMut.mutate({ status: 'quality_meeting', sd_completed_at: new Date().toISOString() })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
+                    <button onClick={() => changeStatus({ status: 'quality_meeting', sd_completed_at: new Date().toISOString() })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
                       <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_qm')}
                     </button>
                   )}
                   {ticket.status === 'quality_meeting' && (
-                    <button onClick={() => updateMut.mutate({ status: 'completed' })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
+                    <button onClick={() => changeStatus({ status: 'completed' })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
                       <i className="ti ti-circle-check text-xs" aria-hidden="true" /> {t('ticket.mark_completed')}
                     </button>
                   )}
                   {/* Recuar status */}
                   {prev && ticket.status !== 'cancelled' && (
                     <button
-                      onClick={() => updateMut.mutate({ status: prev })}
+                      onClick={() => changeStatus({ status: prev })}
                       disabled={updateMut.isPending}
                       className="btn-ghost text-xs w-full justify-center"
                       style={{ border: '1px solid ' + (isDark ? '#374151' : '#e5e7eb') }}
@@ -898,13 +1115,11 @@ export default function TicketDetail() {
                     <button className="btn-ghost text-xs py-0.5 px-2" onClick={() => {
                       setInfoDraft({
                         project_name: ticket.project_name || '',
-                        ship_to: ticket.ship_to || '',
-                        sold_to: ticket.sold_to || '',
                         brand:   ticket.brand   || '',
-                        ref_so:  ticket.ref_so  || '',
                         sc_number: ticket.sc_number || '',
                         issue_reception_date: ticket.issue_reception_date || '',
                         delivery_date: ticket.delivery_date || '',
+                        wish_delivery_date: ticket.wish_delivery_date || '',
                         installer_needed: ticket.installer_needed === true ? 'yes' : ticket.installer_needed === false ? 'no' : '',
                         urgency: ticket.urgency || '',
                         comment: ticket.comment || '',
@@ -921,10 +1136,7 @@ export default function TicketDetail() {
                   <div className="space-y-2">
                     {[
                       ['project_name', t('ticket.project_name')],
-                      ['ship_to',  t('ticket.ship_to')],
-                      ['sold_to',  t('ticket.sold_to')],
                       ['brand',    t('ticket.brand')],
-                      ['ref_so',   t('ticket.ref_so')],
                       ['sc_number',t('ticket.sc_number')],
                     ].map(([key, label]) => (
                       <div key={key}>
@@ -939,6 +1151,10 @@ export default function TicketDetail() {
                     <div>
                       <label className="label">{t('ticket.delivery_date')}</label>
                       <input className="input text-xs" type="date" value={infoDraft.delivery_date?.slice(0,10) || ''} onChange={e => setInfoDraft(d => ({ ...d, delivery_date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="label">{t('ticket.wish_delivery_date')}</label>
+                      <input className="input text-xs" type="date" value={infoDraft.wish_delivery_date?.slice(0,10) || ''} onChange={e => setInfoDraft(d => ({ ...d, wish_delivery_date: e.target.value }))} />
                     </div>
                     <div>
                       <label className="label">{t('ticket.installer_needed')}</label>
@@ -970,13 +1186,11 @@ export default function TicketDetail() {
                       [t('ticket.occurrence_no'),  ticket.occurrence_no ? `#${ticket.occurrence_no}` : null],
                       [t('ticket.project_name'),   ticket.project_name],
                       [t('ticket.created_by'),     creator?.full_name],
-                      [t('ticket.ship_to'),        ticket.ship_to],
-                      [t('ticket.sold_to'),         ticket.sold_to],
                       [t('ticket.brand'),           ticket.brand],
-                      [t('ticket.ref_so'),          ticket.ref_so],
                       [t('ticket.sc_number'),       ticket.sc_number],
                       [t('ticket.reception_date'),  formatDate(ticket.issue_reception_date)],
                       [t('ticket.delivery_date'),   ticket.delivery_date ? formatDate(ticket.delivery_date) : null],
+                      [t('ticket.wish_delivery_date'), ticket.wish_delivery_date ? formatDate(ticket.wish_delivery_date) : null],
                       [t('ticket.installer_needed'), ticket.installer_needed === true ? t('common.yes') : ticket.installer_needed === false ? t('common.no') : null],
                       [t('ticket.urgency'),         URGENCY_LBL[ticket.urgency] || null],
                       [t('ticket.comment'),         ticket.comment],
