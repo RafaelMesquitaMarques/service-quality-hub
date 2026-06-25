@@ -101,7 +101,7 @@ function App() {
               <ProtectedRoute perm="canManagePlants"><PlantsPage /></ProtectedRoute>
             } />
             <Route path="referentials" element={
-              <ProtectedRoute perm="canManagePlants"><ReferentialsPage /></ProtectedRoute>
+              <ProtectedRoute perm="canAdmin"><ReferentialsPage /></ProtectedRoute>
             } />
           </Route>
 

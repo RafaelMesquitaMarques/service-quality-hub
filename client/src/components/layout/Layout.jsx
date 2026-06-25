@@ -129,7 +129,7 @@ export default function Layout() {
   const bottomItems = [
     ...(canImportExcel    ? [{ to: '/import',  icon: 'ti-file-import',       label: t('nav.import') }] : []),
     ...(canManagePlants   ? [{ to: '/plants',  icon: 'ti-building-factory',  label: 'Usines' }]        : []),
-    ...(canManagePlants   ? [{ to: '/referentials', icon: 'ti-address-book', label: t('nav.referentials') }] : []),
+    ...(canAdmin          ? [{ to: '/referentials', icon: 'ti-address-book', label: t('nav.referentials') }] : []),
     ...(canAdmin          ? [{ to: '/admin',   icon: 'ti-users',             label: t('nav.admin') }]  : []),
   ]
 
