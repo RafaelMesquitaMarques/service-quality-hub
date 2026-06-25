@@ -19,6 +19,7 @@ const ROLE_COLORS = {
 const MOBILE_URL = 'https://service-quality-hub.vercel.app/mobile/login'
 
 function MobileQRButton() {
+  const { t } = useTranslation()
   const [showQR, setShowQR] = useState(false)
   const openMobile = () => window.open(MOBILE_URL, '_blank', 'noopener,noreferrer')
 
@@ -31,11 +32,11 @@ function MobileQRButton() {
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit', fontFamily: 'inherit' }}
         >
           <i className="ti ti-device-mobile text-base" />
-          Version mobile
+          {t('nav.mobile_version')}
         </button>
         <button
           onClick={() => setShowQR(v => !v)}
-          title="Afficher le QR code"
+          title={t('nav.mobile_show_qr')}
           className="text-white/40 hover:text-white transition-colors"
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}
         >
@@ -60,7 +61,7 @@ function MobileQRButton() {
             }}
           >
             <div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>
-              📱 Version mobile
+              📱 {t('nav.mobile_version')}
             </div>
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(MOBILE_URL)}&color=185FA5`}
@@ -70,7 +71,7 @@ function MobileQRButton() {
               style={{ borderRadius: 8 }}
             />
             <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', lineHeight: 1.5 }}>
-              Scannez avec votre téléphone pour accéder à l'interface mobile
+              {t('nav.mobile_scan_hint')}
             </div>
             <button
               onClick={openMobile}
@@ -91,7 +92,7 @@ function MobileQRButton() {
                 color: '#374151', cursor: 'pointer', width: '100%',
               }}
             >
-              Fermer
+              {t('common.close')}
             </button>
           </div>
         </div>
@@ -128,7 +129,7 @@ export default function Layout() {
 
   const bottomItems = [
     ...(canImportExcel    ? [{ to: '/import',  icon: 'ti-file-import',       label: t('nav.import') }] : []),
-    ...(canManagePlants   ? [{ to: '/plants',  icon: 'ti-building-factory',  label: 'Usines' }]        : []),
+    ...(canManagePlants   ? [{ to: '/plants',  icon: 'ti-building-factory',  label: t('nav.plants') }]        : []),
     ...(canAdmin          ? [{ to: '/referentials', icon: 'ti-address-book', label: t('nav.referentials') }] : []),
     ...(canAdmin          ? [{ to: '/admin',   icon: 'ti-users',             label: t('nav.admin') }]  : []),
   ]

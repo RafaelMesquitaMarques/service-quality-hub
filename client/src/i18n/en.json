@@ -5,7 +5,11 @@
     "weekly_review": "Weekly Review",
     "import": "Import Excel",
     "referentials": "Clients & Brands",
-    "admin": "Admin"
+    "admin": "Admin",
+    "plants": "Plants",
+    "mobile_version": "Mobile version",
+    "mobile_show_qr": "Show QR code",
+    "mobile_scan_hint": "Scan with your phone to access the mobile interface"
   },
   "status": {
     "not_started": "Not started",
@@ -116,7 +120,19 @@
     "annot_undo": "Undo last",
     "annot_delete": "Delete selection (Delete)",
     "annot_measure_prompt": "Measurement drawn — enter the value:",
-    "annotated": "annotated"
+    "annotated": "annotated",
+    "zoom_in": "Zoom in",
+    "zoom_out": "Zoom out",
+    "zoom_reset": "Reset",
+    "revert_to": "Back to",
+    "search_placeholder": "Search all columns...",
+    "all_fy": "All FY",
+    "deleted_toast": "Occurrence deleted",
+    "delete_occurrence_title": "Delete occurrence",
+    "delete_occurrence_confirm": "Delete occurrence SC# {{sc}}?\n\nThis action is irreversible.",
+    "video": "Video",
+    "file": "File",
+    "readonly_no_create": "⚠️ Read-only access — you don't have permission to create occurrences."
   },
   "dashboard": {
     "open_tickets": "Open occurrences",
@@ -304,6 +320,7 @@
     "showing": "Showing",
     "of": "of",
     "logout": "Logout",
+    "close": "Close",
     "add": "Add",
     "confirm": "Confirm",
     "step": "Step",

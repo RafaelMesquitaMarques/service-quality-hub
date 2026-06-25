@@ -5,7 +5,11 @@
     "weekly_review": "Revue hebdomadaire",
     "import": "Importer Excel",
     "referentials": "Clients & Marques",
-    "admin": "Administration"
+    "admin": "Administration",
+    "plants": "Usines",
+    "mobile_version": "Version mobile",
+    "mobile_show_qr": "Afficher le QR code",
+    "mobile_scan_hint": "Scannez avec votre téléphone pour accéder à l'interface mobile"
   },
   "status": {
     "not_started": "Non démarré",
@@ -116,7 +120,19 @@
     "annot_undo": "Annuler le dernier",
     "annot_delete": "Supprimer la sélection (Delete)",
     "annot_measure_prompt": "Mesure tracée — entrez la valeur:",
-    "annotated": "annoté"
+    "annotated": "annoté",
+    "zoom_in": "Zoom avant",
+    "zoom_out": "Zoom arrière",
+    "zoom_reset": "Réinitialiser",
+    "revert_to": "Retour à",
+    "search_placeholder": "Rechercher dans toutes les colonnes...",
+    "all_fy": "Tous les FY",
+    "deleted_toast": "Occurrence supprimée",
+    "delete_occurrence_title": "Supprimer l'occurrence",
+    "delete_occurrence_confirm": "Supprimer l'occurrence SC# {{sc}} ?\n\nCette action est irréversible.",
+    "video": "Vidéo",
+    "file": "Fichier",
+    "readonly_no_create": "⚠️ Accès lecture seule — vous n'avez pas la permission de créer des occurrences."
   },
   "dashboard": {
     "open_tickets": "Occurrences ouvertes",
@@ -304,6 +320,7 @@
     "showing": "Affichage",
     "of": "sur",
     "logout": "Déconnexion",
+    "close": "Fermer",
     "add": "Ajouter",
     "confirm": "Confirmer",
     "step": "Étape",

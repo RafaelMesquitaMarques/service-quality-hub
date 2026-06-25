@@ -11,13 +11,6 @@ import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO
 import toast from 'react-hot-toast'
 
 const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
-const STATUS_LBL  = {
-  not_started:     'Not started',
-  service_desk:    'Service Desk',
-  quality_meeting: 'Quality Meeting',
-  completed:       'Completed',
-  cancelled:       'Cancelled',
-}
 const STATUS_CLR_LIGHT = {
   not_started:     { bg:'#f3f4f6', color:'#6b7280' },
   service_desk:    { bg:'#E6F1FB', color:'#0C447C' },
@@ -43,13 +36,13 @@ const URGENCIES   = ['overnight','urgent','normal']
 const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
 const COLORS  = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
 const TOOLS   = [
-  { id:'select',  icon:'ti-cursor-text',    label:'Sélection' },
-  { id:'pen',     icon:'ti-pencil',         label:'Stylo' },
-  { id:'arrow',   icon:'ti-arrow-up-right', label:'Flèche' },
-  { id:'rect',    icon:'ti-square',         label:'Rectangle' },
-  { id:'circle',  icon:'ti-circle',         label:'Cercle' },
-  { id:'text',    icon:'ti-letter-t',       label:'Texte' },
-  { id:'measure', icon:'ti-ruler',          label:'Mesure' },
+  { id:'select',  icon:'ti-cursor-text',    key:'ticket.annot_select' },
+  { id:'pen',     icon:'ti-pencil',         key:'ticket.annot_pen' },
+  { id:'arrow',   icon:'ti-arrow-up-right', key:'ticket.annot_arrow' },
+  { id:'rect',    icon:'ti-square',         key:'ticket.annot_rect' },
+  { id:'circle',  icon:'ti-circle',         key:'ticket.annot_circle' },
+  { id:'text',    icon:'ti-letter-t',       key:'ticket.annot_text' },
+  { id:'measure', icon:'ti-ruler',          key:'ticket.annot_measure' },
 ]
 
 // Status pipeline para avançar/recuar
@@ -94,6 +87,7 @@ function LineField({ label, value, highlight }) {
 
 // ── Lightbox (visualisation agrandie avec zoom) ────────────────────────────
 function Lightbox({ url, onClose }) {
+  const { t } = useTranslation()
   const [scale, setScale] = useState(1)
   const [pos,   setPos]   = useState({ x: 0, y: 0 })
   const drag = useRef(null)
@@ -124,10 +118,10 @@ function Lightbox({ url, onClose }) {
       style={{ background: 'rgba(0,0,0,0.92)' }}
       onClick={onClose} onWheel={onWheel} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
       <div className="absolute top-4 right-4 flex gap-2 z-10" onClick={e => e.stopPropagation()}>
-        <button className={btn} style={btnStyle} onClick={() => zoomBy(-0.5)} title="Dézoomer"><i className="ti ti-minus" /></button>
-        <button className={btn} style={btnStyle} onClick={() => zoomBy(0.5)}  title="Zoomer"><i className="ti ti-plus" /></button>
-        <button className={btn} style={btnStyle} onClick={reset}              title="Réinitialiser"><i className="ti ti-aspect-ratio" /></button>
-        <button className={btn} style={btnStyle} onClick={onClose}            title="Fermer">✕</button>
+        <button className={btn} style={btnStyle} onClick={() => zoomBy(-0.5)} title={t('ticket.zoom_out')}><i className="ti ti-minus" /></button>
+        <button className={btn} style={btnStyle} onClick={() => zoomBy(0.5)}  title={t('ticket.zoom_in')}><i className="ti ti-plus" /></button>
+        <button className={btn} style={btnStyle} onClick={reset}              title={t('ticket.zoom_reset')}><i className="ti ti-aspect-ratio" /></button>
+        <button className={btn} style={btnStyle} onClick={onClose}            title={t('common.close')}>✕</button>
       </div>
       <img src={url} draggable={false} alt=""
         onClick={e => e.stopPropagation()}
@@ -149,6 +143,7 @@ function Lightbox({ url, onClose }) {
 
 // ── Photo Annotator ────────────────────────────────────────────────────────
 function PhotoAnnotator({ photo, onSave, onClose }) {
+  const { t } = useTranslation()
   const canvasRef  = useRef(null)
   const fabricRef  = useRef(null)
   const [tool,     setTool]     = useState('select')
@@ -313,12 +308,12 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
     <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" style={{ maxWidth:620 }}>
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 dark:border-gray-700">
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Annotation</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('ticket.annotation')}</span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer text-lg">✕</button>
         </div>
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-1 flex-wrap bg-gray-50 dark:bg-[#0D1117]">
           {TOOLS.map(tk => (
-            <button key={tk.id} onClick={() => setTool(tk.id)} title={tk.label} aria-label={tk.label}
+            <button key={tk.id} onClick={() => setTool(tk.id)} title={t(tk.key)} aria-label={t(tk.key)}
               className="w-7 h-7 rounded flex items-center justify-center border cursor-pointer transition-all"
               style={{ border: tool===tk.id ? `1.5px solid ${color}` : '0.5px solid var(--color-border-tertiary)', background: tool===tk.id ? color+'22' : 'var(--color-background-primary)', color: tool===tk.id ? color : 'var(--color-text-secondary)' }}>
               <i className={`ti ${tk.icon}`} style={{ fontSize:13 }} aria-hidden="true" />
@@ -331,17 +326,17 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
           <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
           <input type="range" min="1" max="8" value={thick} onChange={e => setThick(Number(e.target.value))} style={{ width:60 }} />
           <div style={{ width:1,height:20,background:'var(--color-border-tertiary)',margin:'0 3px' }} />
-          <button onClick={handleUndo} title="Annuler le dernier" aria-label="Annuler le dernier" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+          <button onClick={handleUndo} title={t('ticket.annot_undo')} aria-label={t('ticket.annot_undo')} className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
             <i className="ti ti-arrow-back-up" style={{ fontSize:13,color:'var(--color-text-secondary)' }} aria-hidden="true" />
           </button>
-          <button onClick={handleDeleteSelected} title="Supprimer la sélection (Delete)" aria-label="Supprimer la sélection" className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
+          <button onClick={handleDeleteSelected} title={t('ticket.annot_delete')} aria-label={t('ticket.annot_delete')} className="w-7 h-7 rounded flex items-center justify-center border border-gray-200 dark:border-gray-700 cursor-pointer bg-transparent">
             <i className="ti ti-trash" style={{ fontSize:13, color:'#ef4444' }} aria-hidden="true" />
           </button>
         </div>
         {measuring && (
           <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center gap-3">
             <i className="ti ti-ruler text-amber-600 text-sm" aria-hidden="true" />
-            <span className="text-xs text-amber-700 dark:text-amber-300">Mesure tracée — entrez la valeur:</span>
+            <span className="text-xs text-amber-700 dark:text-amber-300">{t('ticket.annot_measure_prompt')}</span>
             <input type="text" value={measureVal} onChange={e => setMeasureVal(e.target.value)}
               className="border border-amber-300 rounded px-2 py-1 text-xs w-20 outline-none dark:bg-[#161B22] dark:text-gray-100"
               placeholder="ex: 35" autoFocus onKeyDown={e => e.key==='Enter' && handleSaveMeasure()} />
@@ -353,8 +348,8 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
           <canvas ref={canvasRef} />
         </div>
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100 dark:border-gray-800">
-          <button onClick={onClose} className="btn-ghost text-xs">Annuler</button>
-          <button onClick={handleSave} className="btn-primary text-xs">Sauvegarder</button>
+          <button onClick={onClose} className="btn-ghost text-xs">{t('common.cancel')}</button>
+          <button onClick={handleSave} className="btn-primary text-xs">{t('common.save')}</button>
         </div>
       </div>
     </div>
@@ -665,7 +660,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                       </button>
                     )}
                     {canEditLine && (
-                      <button onClick={e => { e.stopPropagation(); deletePhotoMut.mutate({ photoId: p.id, path: p.path }) }} title="Supprimer"
+                      <button onClick={e => { e.stopPropagation(); deletePhotoMut.mutate({ photoId: p.id, path: p.path }) }} title={t('common.delete')}
                         className="w-5 h-5 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center border-0 cursor-pointer">
                         <i className="ti ti-x" style={{ fontSize:10 }} aria-hidden="true" />
                       </button>
@@ -684,7 +679,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 <div key={p.id} className="relative group">
                   <video src={p.url} controls playsInline className="w-44 rounded border border-gray-200 dark:border-gray-700 bg-black" />
                   {canEditLine && (
-                    <button onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })} title="Supprimer"
+                    <button onClick={() => deletePhotoMut.mutate({ photoId: p.id, path: p.path })} title={t('common.delete')}
                       className="absolute top-1 right-1 w-5 h-5 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center border-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
                       <i className="ti ti-x" style={{ fontSize:10 }} aria-hidden="true" />
                     </button>
@@ -1051,7 +1046,7 @@ export default function TicketDetail() {
             {/* Status + workflow */}
             <div className="card">
               <SectionHeader icon="ti-circle-check" title={t('ticket.status')}
-                right={<span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background:sc.bg, color:sc.color }}>{STATUS_LBL[ticket.status]}</span>}
+                right={<span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background:sc.bg, color:sc.color }}>{t(`status.${ticket.status}`)}</span>}
               />
               <div className="px-4 py-3 flex gap-2 flex-wrap">
                 {STATUS_OPTS.map(s => (
@@ -1067,7 +1062,7 @@ export default function TicketDetail() {
                       fontSize:   10,
                       opacity:    !canEdit && ticket.status !== s ? 0.5 : 1,
                     }}>
-                    {STATUS_LBL[s]}
+                    {t(`status.${s}`)}
                   </button>
                 ))}
               </div>
@@ -1100,7 +1095,7 @@ export default function TicketDetail() {
                       style={{ border: '1px solid ' + (isDark ? '#374151' : '#e5e7eb') }}
                     >
                       <i className="ti ti-chevron-left text-xs" aria-hidden="true" />
-                      {t('ticket.revert_to') || 'Retour à'} «{STATUS_LBL[prev]}»
+                      {t('ticket.revert_to')} {t(`status.${prev}`)}
                     </button>
                   )}
                 </div>

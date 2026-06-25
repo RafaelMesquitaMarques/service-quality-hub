@@ -191,11 +191,11 @@ const handleFiles = async (files) => {
           </button>
           <button onClick={() => videoRef.current?.click()} style={s.addPhotoBtn}>
             <span style={{ fontSize: 22 }}>🎥</span>
-            <span style={{ fontSize: 10, color: '#6B7280' }}>Vidéo</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>{t('ticket.video')}</span>
           </button>
           <button onClick={() => fileRef.current?.click()} style={s.addPhotoBtn}>
             <span style={{ fontSize: 22 }}>🖼️</span>
-            <span style={{ fontSize: 10, color: '#6B7280' }}>Fichier</span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>{t('ticket.file')}</span>
           </button>
         </div>
         <input
@@ -413,7 +413,7 @@ export default function MobileNewOccurrence() {
 
 {!isEditor && (
   <div style={s.viewerBanner}>
-    ⚠️ Accès lecture seule — vous n'avez pas la permission de créer des occurrences.
+    {t('ticket.readonly_no_create')}
   </div>
 )}
 
@@ -454,7 +454,7 @@ export default function MobileNewOccurrence() {
               <textarea
                 value={form.comment}
                 onChange={e => setField('comment', e.target.value)}
-                placeholder="Commentaire..."
+                placeholder={t('ticket.comment_placeholder')}
                 style={{ ...s.input, minHeight: 70, resize: 'vertical' }}
               />
             </Field>

@@ -144,7 +144,7 @@ export default function TicketsPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Occurrence supprimée')
+      toast.success(t('ticket.deleted_toast'))
       qc.invalidateQueries(['tickets'])
     },
     onError: (err) => toast.error(err?.message || 'Erreur'),
@@ -228,7 +228,7 @@ export default function TicketsPage() {
           <i className="ti ti-search text-gray-400 text-base" aria-hidden="true" />
           <input
             className="outline-none text-sm w-full placeholder:text-gray-400 bg-transparent text-gray-900 dark:text-gray-100"
-            placeholder="Rechercher dans toutes les colonnes..."
+            placeholder={t('ticket.search_placeholder')}
             value={search}
             onChange={e => setSearch(e.target.value)} />
           {search && (
@@ -242,7 +242,7 @@ export default function TicketsPage() {
           className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none"
           value={fiscalYear}
           onChange={e => setFiscalYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
-          {FISCAL_YEARS.map(fy => <option key={fy} value={fy}>{fy === 'all' ? 'Tous les FY' : `FY${fy}`}</option>)}
+          {FISCAL_YEARS.map(fy => <option key={fy} value={fy}>{fy === 'all' ? t('ticket.all_fy') : `FY${fy}`}</option>)}
         </select>
 
         {hasActiveFilters && (
@@ -330,11 +330,11 @@ export default function TicketsPage() {
                           onClick={(e) => {
                             e.stopPropagation()
                             e.preventDefault()
-                            const msg = `Supprimer l'occurrence SC# ${ticket.sc_number || ticket.id} ?\n\nCette action est irréversible.`
+                            const msg = t('ticket.delete_occurrence_confirm', { sc: ticket.sc_number || ticket.id })
                             if (window.confirm(msg)) deleteMutation.mutate(ticket.id)
                           }}
                           disabled={deleteMutation.isPending}
-                          title="Supprimer l'occurrence"
+                          title={t('ticket.delete_occurrence_title')}
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-xs py-1 px-2 rounded border cursor-pointer inline-flex items-center"
                           style={{ border:'1px solid #fecaca', background:'#fff5f5', color:'#ef4444' }}
                         >
