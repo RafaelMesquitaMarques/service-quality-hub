@@ -159,7 +159,17 @@
     "plants_count": "plants",
     "tolerance": "Tolerance",
     "above_limit": "⚠ Above limit",
-    "within_limit": "✓ Within limit"
+    "within_limit": "✓ Within limit",
+    "filters": "Filters",
+    "clear": "Clear",
+    "showing_of": "{{n}} of {{total}} occurrences",
+    "status_distribution": "Status distribution",
+    "occurrences": "Occurrences",
+    "sc_cost_ytd": "SC Cost % YTD",
+    "total_cost_label": "Total cost",
+    "fiscal_year": "Fiscal year",
+    "no_data": "No data for the selected filters",
+    "revenue_note": "Revenue data available for FY{{fy}} only"
   },
   "meeting": {
     "title": "Weekly Review",

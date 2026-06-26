@@ -159,7 +159,17 @@
     "plants_count": "usines",
     "tolerance": "Tolérance",
     "above_limit": "⚠ Au-dessus limite",
-    "within_limit": "✓ En dessous limite"
+    "within_limit": "✓ En dessous limite",
+    "filters": "Filtres",
+    "clear": "Effacer",
+    "showing_of": "{{n}} sur {{total}} occurrences",
+    "status_distribution": "Répartition par statut",
+    "occurrences": "Occurrences",
+    "sc_cost_ytd": "Coût SC % cumul",
+    "total_cost_label": "Coût total",
+    "fiscal_year": "Année fiscale",
+    "no_data": "Aucune donnée pour les filtres sélectionnés",
+    "revenue_note": "Données de revenus disponibles pour FY{{fy}} seulement"
   },
   "meeting": {
     "title": "Revue hebdomadaire",
