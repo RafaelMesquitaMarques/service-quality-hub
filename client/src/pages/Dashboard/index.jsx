@@ -252,7 +252,7 @@ export default function Dashboard() {
           <div className="card p-4">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">
               Cost by plant — FY{CURRENT_FISCAL_YEAR}
-              <span className="ml-2 text-xs font-normal text-gray-400">({plantCostData.length} usines)</span>
+              <span className="ml-2 text-xs font-normal text-gray-400">({plantCostData.length} {t('dashboard.plants_count')})</span>
             </div>
             <ResponsiveContainer width="100%" height={plantHeight}>
               <BarChart data={plantCostData} layout="vertical" margin={{ left: 60 }}>

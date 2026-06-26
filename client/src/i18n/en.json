@@ -132,6 +132,7 @@
     "delete_occurrence_confirm": "Delete occurrence SC# {{sc}}?\n\nThis action is irreversible.",
     "video": "Video",
     "file": "File",
+    "new_badge": "New",
     "readonly_no_create": "⚠️ Read-only access — you don't have permission to create occurrences."
   },
   "dashboard": {
@@ -155,6 +156,7 @@
     "overview_subtitle": "Quality & cost overview",
     "departments": "departments",
     "categories": "categories",
+    "plants_count": "plants",
     "tolerance": "Tolerance",
     "above_limit": "⚠ Above limit",
     "within_limit": "✓ Within limit"
@@ -302,6 +304,7 @@
     "preview_rows": "Preview — first {{count}} rows",
     "state_col": "Status",
     "imported_success": "{{count}} occurrences imported successfully",
+    "empty_file": "Empty file",
     "custom_formats": "+ custom formats",
     "drag": "Drag file here or click to select",
     "drag_sub": "Excel .xlsx or .xls — SAP export or custom format",

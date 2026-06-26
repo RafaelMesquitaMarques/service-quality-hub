@@ -188,7 +188,7 @@ export default function ImportPage() {
       const wb   = XLSX.read(buf, { type:'array', cellDates: false })
       const ws   = wb.Sheets[wb.SheetNames[0]]
       const data = XLSX.utils.sheet_to_json(ws, { raw: true, defval: '' })
-      if (!data.length) { toast.error('Fichier vide'); return }
+      if (!data.length) { toast.error(t('import.empty_file')); return }
 
       const cols = Object.keys(data[0])
       setRawCols(cols)

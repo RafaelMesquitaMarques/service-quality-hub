@@ -132,6 +132,7 @@
     "delete_occurrence_confirm": "Supprimer l'occurrence SC# {{sc}} ?\n\nCette action est irréversible.",
     "video": "Vidéo",
     "file": "Fichier",
+    "new_badge": "Nouvelle",
     "readonly_no_create": "⚠️ Accès lecture seule — vous n'avez pas la permission de créer des occurrences."
   },
   "dashboard": {
@@ -155,6 +156,7 @@
     "overview_subtitle": "Vue d'ensemble qualité & coûts",
     "departments": "départements",
     "categories": "catégories",
+    "plants_count": "usines",
     "tolerance": "Tolérance",
     "above_limit": "⚠ Au-dessus limite",
     "within_limit": "✓ En dessous limite"
@@ -302,6 +304,7 @@
     "preview_rows": "Aperçu — {{count}} premières lignes",
     "state_col": "État",
     "imported_success": "{{count}} occurrences importées avec succès",
+    "empty_file": "Fichier vide",
     "custom_formats": "+ formats personnalisés",
     "drag": "Glisser le fichier ici ou cliquer pour sélectionner",
     "drag_sub": "Excel .xlsx ou .xls — export SAP ou format personnalisé",

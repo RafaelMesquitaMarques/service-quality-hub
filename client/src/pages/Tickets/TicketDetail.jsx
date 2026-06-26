@@ -1121,7 +1121,7 @@ export default function TicketDetail() {
                       })
                       setEditingInfo(true)
                     }}>
-                      <i className="ti ti-edit text-xs" aria-hidden="true" /> {t('common.edit') || 'Modifier'}
+                      <i className="ti ti-edit text-xs" aria-hidden="true" /> {t('common.edit')}
                     </button>
                   ) : null
                 }
@@ -1313,7 +1313,7 @@ export default function TicketDetail() {
               <div className="px-4 py-3">
                 {addingLine && canEdit && (
                   <div className="border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-3 bg-blue-50/30 dark:bg-blue-900/10">
-                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">{t('ticket.line_n')} {(lines || []).length + 1} — Nouvelle</div>
+                    <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">{t('ticket.line_n')} {(lines || []).length + 1} — {t('ticket.new_badge')}</div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="col-span-2">
                         <label className="label">{t('ticket.issue')} *</label>
