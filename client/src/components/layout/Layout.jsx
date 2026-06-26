@@ -134,7 +134,7 @@ export default function Layout() {
     ...(canAdmin          ? [{ to: '/admin',   icon: 'ti-users',             label: t('nav.admin') }]  : []),
   ]
 
-  const navBg = dark ? '#0D1117' : '#1A3A5C'
+  const navBg = dark ? '#0D1117' : '#14532D'
 
   return (
     <>
