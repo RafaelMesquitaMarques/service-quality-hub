@@ -213,8 +213,10 @@ export default function Layout() {
               </div>
             </div>
             <div className="flex gap-2 mt-1">
-              <button onClick={toggleLang} className="flex-1 text-xs text-white/50 hover:text-white transition-colors text-left">
-                {i18n.language === 'fr' ? 'EN →' : 'FR →'}
+              <button onClick={toggleLang} title={i18n.language === 'fr' ? 'English' : 'Français'}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-white bg-white/15 hover:bg-white/25 border border-white/30 rounded px-2 py-1 transition-colors">
+                <i className="ti ti-language text-sm" aria-hidden="true" />
+                {i18n.language === 'fr' ? 'EN' : 'FR'}
               </button>
               <button onClick={toggle} className="text-xs text-white/50 hover:text-white px-2 py-1 border border-white/20 rounded">
                 <i className={`ti ${dark ? 'ti-sun' : 'ti-moon'} text-sm`} />
