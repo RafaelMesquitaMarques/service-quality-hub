@@ -470,11 +470,12 @@ export default function Dashboard() {
         <ChartCard icon="ti-tag" color="#7C3AED"
           title={t('dashboard.tickets_by_brand')} subtitle={t('dashboard.tickets_by_brand_subtitle')}>
           {brandTrendData.length ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={brandTrendData} margin={{ top: 5 }}>
+            <ResponsiveContainer width="100%" height={270}>
+              <BarChart data={brandTrendData} margin={{ top: 28 }}>
                 <CartesianGrid vertical={false} stroke={gridColor} />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false}
+                  domain={[0, dataMax => Math.ceil(dataMax * 1.05)]} />
                 {tip()}
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                 {brands.map((brand, i) => (
