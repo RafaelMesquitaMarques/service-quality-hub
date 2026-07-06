@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid,
+  ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
 import { ticketApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
@@ -21,6 +21,8 @@ const MONTHLY_REVENUE = {
 
 const TOLERANCE_PCT = 0.003
 const BRAND_COLORS  = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA']
+const DEPT_COLORS   = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA',
+  '#0EA5E9', '#F59E0B', '#10B981', '#EF4444', '#6366F1', '#14B8A6', '#F97316', '#EC4899', '#22C55E', '#A855F7']
 const STATUS_ORDER  = ['not_started', 'service_desk', 'quality_meeting', 'wip', 'completed', 'cancelled']
 const STATUS_COLORS = {
   not_started:     '#94A3B8',
@@ -33,6 +35,10 @@ const STATUS_COLORS = {
 
 const money  = v => `$${Math.round(Number(v) || 0).toLocaleString()}`
 const moneyK = v => `$${Math.round((Number(v) || 0) / 1000)}k`
+const signedMoney = v => {
+  const n = Math.round(Number(v) || 0)
+  return `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
+}
 
 // ── Custom tooltip (theme-aware) ───────────────────────────────
 function ChartTooltip({ active, payload, label, dark, fmt }) {
@@ -256,26 +262,57 @@ export default function Dashboard() {
   }))
 
   const byCount = (map) => Object.entries(map).sort((a, b) => b[1] - a[1])
-  const deptCostMap = {}, plantCostMap = {}, catMap = {}, clientMap = {}
+  const clientKey = s => (s.length > 28 ? s.slice(0, 28) + '…' : s)
+  const deptCostMap = {}, plantCostMap = {}, catMap = {}, clientMap = {}, clientCostMap = {}
   tickets.forEach(tk => {
     const cost = getTicketCost(tk)
     if (tk.department && cost > 0) deptCostMap[tk.department]   = (deptCostMap[tk.department] || 0) + cost
     if (tk.plant && cost > 0)      plantCostMap[tk.plant]       = (plantCostMap[tk.plant] || 0) + cost
     if (tk.categories)             catMap[tk.categories]        = (catMap[tk.categories] || 0) + 1
     if (tk.ship_to) {
-      const key = tk.ship_to.length > 28 ? tk.ship_to.slice(0, 28) + '…' : tk.ship_to
+      const key = clientKey(tk.ship_to)
       clientMap[key] = (clientMap[key] || 0) + 1
+      if (cost > 0) clientCostMap[key] = (clientCostMap[key] || 0) + cost
     }
   })
   const deptCostData  = byCount(deptCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
   const plantCostData = byCount(plantCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
   const catData       = byCount(catMap).map(([name, count]) => ({ name, count }))
   const topClientsData = byCount(clientMap).slice(0, 10).map(([name, count]) => ({ name, count }))
+  const topClientsCostData = byCount(clientCostMap).slice(0, 10).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
+
+  // Cost by department — current fiscal year vs previous (respects active filters)
+  const prevDeptCostMap = {}
+  prevTickets.forEach(tk => {
+    const cost = getTicketCost(tk)
+    if (tk.department && cost > 0) prevDeptCostMap[tk.department] = (prevDeptCostMap[tk.department] || 0) + cost
+  })
+  const deptCompareData = [...new Set([...Object.keys(deptCostMap), ...Object.keys(prevDeptCostMap)])]
+    .map(name => {
+      const cur = Math.round(deptCostMap[name] || 0)
+      const prev = Math.round(prevDeptCostMap[name] || 0)
+      const gap = cur - prev
+      const pct = prev > 0 ? Math.round(gap / prev * 100) : null
+      return { name, cur, prev, gap, pct }
+    })
+    .sort((a, b) => b.cur - a.cur)
+  const deptCompareTotals = deptCompareData.reduce((acc, d) => {
+    acc.cur += d.cur; acc.prev += d.prev; return acc
+  }, { cur: 0, prev: 0 })
+  deptCompareTotals.gap = deptCompareTotals.cur - deptCompareTotals.prev
+  deptCompareTotals.pct = deptCompareTotals.prev > 0
+    ? Math.round(deptCompareTotals.gap / deptCompareTotals.prev * 100) : null
 
   const brands = brandOptions
   const brandTrendData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
     const row = { name: nameShort }
-    brands.forEach(b => { row[b] = tickets.filter(t => t.fiscal_month === fiscal && t.brand === b).length || null })
+    let total = 0
+    brands.forEach(b => {
+      const n = tickets.filter(t => t.fiscal_month === fiscal && t.brand === b).length
+      row[b] = n || null
+      total += n
+    })
+    row.total = total || null
     return row
   }).filter(row => brands.some(b => row[b]))
 
@@ -442,7 +479,12 @@ export default function Dashboard() {
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                 {brands.map((brand, i) => (
                   <Bar key={brand} dataKey={brand} stackId="a" fill={BRAND_COLORS[i % BRAND_COLORS.length]} maxBarSize={46}
-                    radius={i === brands.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                    radius={i === brands.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}>
+                    {i === brands.length - 1 && (
+                      <LabelList dataKey="total" position="top" offset={8}
+                        fill={axisColor} fontSize={11} fontWeight={700} />
+                    )}
+                  </Bar>
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -494,29 +536,30 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Category + Top clients */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard icon="ti-category" color="#2563EB"
-            title={t('dashboard.by_category')}
-            right={<span className="text-xs text-gray-400">{catData.length} {t('dashboard.categories')}</span>}>
-            {catData.length ? (
-              <ResponsiveContainer width="100%" height={catHeight}>
-                <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
-                  <defs>
-                    <linearGradient id="gradBlue" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#2563EB" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid horizontal={false} stroke={gridColor} />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={110} />
-                  {tip()}
-                  <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <NoData />}
-          </ChartCard>
+        {/* Category */}
+        <ChartCard icon="ti-category" color="#2563EB"
+          title={t('dashboard.by_category')}
+          right={<span className="text-xs text-gray-400">{catData.length} {t('dashboard.categories')}</span>}>
+          {catData.length ? (
+            <ResponsiveContainer width="100%" height={catHeight}>
+              <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
+                <defs>
+                  <linearGradient id="gradBlue" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#2563EB" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid horizontal={false} stroke={gridColor} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={110} />
+                {tip()}
+                <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <NoData />}
+        </ChartCard>
 
+        {/* Top clients — by occurrences + by cost */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ChartCard icon="ti-users" color="#0891B2" title={t('dashboard.top_clients')}>
             {topClientsData.length ? (
               <ResponsiveContainer width="100%" height={Math.max(220, topClientsData.length * 34)}>
@@ -535,6 +578,86 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : <NoData />}
+          </ChartCard>
+
+          <ChartCard icon="ti-currency-dollar" color="#059669"
+            title={t('dashboard.top_clients_cost')} subtitle={t('dashboard.top_clients_cost_subtitle')}>
+            {topClientsCostData.length ? (
+              <ResponsiveContainer width="100%" height={Math.max(220, topClientsCostData.length * 34)}>
+                <BarChart data={topClientsCostData} layout="vertical" margin={{ left: 140, right: 48 }}>
+                  <defs>
+                    <linearGradient id="gradEmerald" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#34D399" /><stop offset="100%" stopColor="#059669" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid horizontal={false} stroke={gridColor} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={moneyK} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={140} />
+                  {tip(money)}
+                  <Bar dataKey="cost" name={t('ticket.cost')} fill="url(#gradEmerald)" radius={[0, 5, 5, 0]} maxBarSize={24}>
+                    <LabelList dataKey="cost" position="right" offset={6} fontSize={10} fill={axisColor} formatter={moneyK} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <NoData />}
+          </ChartCard>
+        </div>
+
+        {/* Cost by department — pie (Novacap-style) + FY vs FY comparison */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard icon="ti-chart-pie" color="#F59E0B"
+            title={t('dashboard.by_department')}
+            subtitle={`FY${filters.fy} · ${money(deptCompareTotals.cur)}`}>
+            {deptCostData.length ? (
+              <ResponsiveContainer width="100%" height={Math.max(280, deptCostData.length * 22)}>
+                <PieChart>
+                  <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
+                    outerRadius="80%" paddingAngle={1} stroke="none">
+                    {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
+                  </Pie>
+                  {tip(money)}
+                  <Legend iconType="circle" layout="vertical" align="right" verticalAlign="middle"
+                    wrapperStyle={{ fontSize: 11, maxWidth: '45%' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <NoData />}
+          </ChartCard>
+
+          <ChartCard icon="ti-table" color="#F59E0B"
+            title={t('dashboard.dept_comparison')} subtitle={`FY${filters.fy} ${t('dashboard.ytd')} vs FY${filters.fy - 1} ${t('dashboard.ytd')}`}>
+          {deptCompareData.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700 text-xs text-gray-400 uppercase tracking-wide">
+                    <th className="text-left font-medium py-2 pr-4">{t('ticket.department')}</th>
+                    <th className="text-right font-medium py-2 px-4">{`FY${filters.fy} ${t('dashboard.ytd')}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{`FY${filters.fy - 1} ${t('dashboard.ytd')}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{t('dashboard.gap')}</th>
+                    <th className="text-right font-medium py-2 pl-4">+/-%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deptCompareData.map(d => (
+                    <tr key={d.name} className="border-b border-gray-100 dark:border-gray-800 text-gray-900 dark:text-gray-100">
+                      <td className="text-left py-2 pr-4">{d.name}</td>
+                      <td className="text-right py-2 px-4 font-mono">{money(d.cur)}</td>
+                      <td className="text-right py-2 px-4 font-mono text-gray-500 dark:text-gray-400">{money(d.prev)}</td>
+                      <td className="text-right py-2 px-4 font-mono">{signedMoney(d.gap)}</td>
+                      <td className="text-right py-2 pl-4 font-bold">{d.pct != null ? `${d.pct >= 0 ? '+' : '−'}${Math.abs(d.pct)}%` : '—'}</td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 font-semibold">
+                    <td className="text-left py-2 pr-4">{t('dashboard.total')}</td>
+                    <td className="text-right py-2 px-4 font-mono">{money(deptCompareTotals.cur)}</td>
+                    <td className="text-right py-2 px-4 font-mono">{money(deptCompareTotals.prev)}</td>
+                    <td className="text-right py-2 px-4 font-mono">{signedMoney(deptCompareTotals.gap)}</td>
+                    <td className="text-right py-2 pl-4 font-bold">{deptCompareTotals.pct != null ? `${deptCompareTotals.pct >= 0 ? '+' : '−'}${Math.abs(deptCompareTotals.pct)}%` : '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : <NoData />}
           </ChartCard>
         </div>
 
