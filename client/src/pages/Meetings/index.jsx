@@ -6,6 +6,7 @@ import { supabase } from '../../services/supabase'
 import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
+import { DEPARTMENTS } from '../../constants/taxonomy'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
@@ -21,11 +22,6 @@ const STATUS_STYLE_LIGHT = {
   late:        { bg:'#fcebeb', color:'#791f1f' },
 }
 
-const DEPTS = [
-  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
-  'Engineering','Client','Vietnam','Install','Planning','NCW',
-  'Shipping','VC','Project Mgnt','EOI',
-]
 
 function formatDate(d) {
   if (!d) return ''
@@ -76,7 +72,7 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={dept} onChange={e => setDept(e.target.value)}>
             <option value="">{t('meeting.all_depts')}</option>
-            {DEPTS.map(d => <option key={d}>{d}</option>)}
+            {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
           </select>
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={status} onChange={e => setStatus(e.target.value)}>

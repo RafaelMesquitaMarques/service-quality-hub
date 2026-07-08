@@ -2,13 +2,9 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { adminApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
+import { DEPARTMENTS } from '../../constants/taxonomy'
 import toast from 'react-hot-toast'
 
-const DEPARTMENTS = [
-  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
-  'Engineering','Client','Vietnam','Install','Planning','NCW',
-  'Shipping','VC','Project Mgnt','EOI',
-]
 const ROLES = [
   { value:'admin',        label:'Administrateur' },
   { value:'manager',      label:'Manager' },

@@ -8,6 +8,7 @@ import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useThemeStore } from '../../store/themeStore'
 import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
+import { CATEGORIES, DEPARTMENTS } from '../../constants/taxonomy'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
@@ -25,12 +26,6 @@ const STATUS_CLR_DARK = {
   completed:       { bg:'#14532d', color:'#86efac' },
   cancelled:       { bg:'#4a1b0c', color:'#fca5a5' },
 }
-const DEPARTMENTS = [
-  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
-  'Engineering','Client','Vietnam','Install','Planning','NCW',
-  'Shipping','VC','Project Mgnt','EOI',
-]
-const CATEGORIES = ['Damaged','Cleaning','Electrical','Fitting/Adjustment','Hardware','Metal','Missing Component','Missing Unit','Scratches','Stone','Upholstery','Wood','Packaging','Bad production']
 const ROOT_CAUSES = ['Fabrication','Matériau','Conception/design','Assemblage','Transport/manutention','Fournisseur','Installation','Commande/spécification','Autre']
 const URGENCIES   = ['overnight','urgent','normal']
 const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
