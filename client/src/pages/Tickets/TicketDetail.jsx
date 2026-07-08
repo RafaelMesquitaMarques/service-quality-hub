@@ -30,7 +30,7 @@ const DEPARTMENTS = [
   'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
   'Project Mgnt','EOI','Vietnam','Planning',
 ]
-const CATEGORIES = ['Damage','Missing parts','Wrong item','Assembly issue','Finish defect','Packaging','Measurement','Other']
+const CATEGORIES = ['Damaged','Cleaning','Electrical','Fitting/Adjustment','Hardware','Metal','Missing Component','Missing Unit','Scratches','Stone','Upholstery','Wood','Packaging','Bad production']
 const ROOT_CAUSES = ['Fabrication','Matériau','Conception/design','Assemblage','Transport/manutention','Fournisseur','Installation','Commande/spécification','Autre']
 const URGENCIES   = ['overnight','urgent','normal']
 const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
