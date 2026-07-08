@@ -26,9 +26,9 @@ const STATUS_CLR_DARK = {
   cancelled:       { bg:'#4a1b0c', color:'#fca5a5' },
 }
 const DEPARTMENTS = [
-  'Client','Shipping','Supplier','Production','Logistics','Install',
-  'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
-  'Project Mgnt','EOI','Vietnam','Planning',
+  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
+  'Engineering','Client','Vietnam','Install','Planning','NCW',
+  'Shipping','VC','Project Mgnt','EOI',
 ]
 const CATEGORIES = ['Damaged','Cleaning','Electrical','Fitting/Adjustment','Hardware','Metal','Missing Component','Missing Unit','Scratches','Stone','Upholstery','Wood','Packaging','Bad production']
 const ROOT_CAUSES = ['Fabrication','Matériau','Conception/design','Assemblage','Transport/manutention','Fournisseur','Installation','Commande/spécification','Autre']

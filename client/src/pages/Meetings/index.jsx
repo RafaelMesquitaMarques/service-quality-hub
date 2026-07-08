@@ -22,9 +22,9 @@ const STATUS_STYLE_LIGHT = {
 }
 
 const DEPTS = [
-  'Client','Shipping','Supplier','Production','Logistics','Install',
-  'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
-  'Project Mgnt','EOI','Vietnam','Planning',
+  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
+  'Engineering','Client','Vietnam','Install','Planning','NCW',
+  'Shipping','VC','Project Mgnt','EOI',
 ]
 
 function formatDate(d) {

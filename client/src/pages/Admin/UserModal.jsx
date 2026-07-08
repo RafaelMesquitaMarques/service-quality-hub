@@ -5,9 +5,9 @@ import { supabase } from '../../services/supabase'
 import toast from 'react-hot-toast'
 
 const DEPARTMENTS = [
-  'Client','Shipping','Supplier','Production','Logistics','Install',
-  'Ext. Sales','Int. Sales','NCW','Product Dev.','Engineering','VC',
-  'Project Mgnt','EOI','Vietnam','Planning',
+  'Production','Int. Sales','Ext. Sales','Purchasing','Supplier','Product Dev.',
+  'Engineering','Client','Vietnam','Install','Planning','NCW',
+  'Shipping','VC','Project Mgnt','EOI',
 ]
 const ROLES = [
   { value:'admin',        label:'Administrateur' },
