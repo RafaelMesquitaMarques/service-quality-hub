@@ -33,27 +33,38 @@ export const FISCAL_MONTH_ORDER = [
 // ─── Ticket API ─────────────────────────────────────────────────────────────
 export const ticketApi = {
   list: async (params = {}) => {
-    let query = supabase
-      .from('tickets_with_cost')
-      .select('*')
-      .order('issue_reception_date', { ascending: false })
+    // PostgREST plafonne à 1000 lignes par requête : on pagine avec .range()
+    // jusqu'à tout récupérer (sinon la liste s'arrête à 1000). Tri secondaire
+    // sur id pour une pagination déterministe (issue_reception_date n'est pas unique).
+    const buildQuery = () => {
+      let query = supabase
+        .from('tickets_with_cost')
+        .select('*')
+        .order('issue_reception_date', { ascending: false })
+        .order('id', { ascending: true })
 
-    const fy = params.fiscal_year !== undefined ? params.fiscal_year : CURRENT_FISCAL_YEAR
-    if (fy !== 'all' && fy !== null) {
-      query = query.eq('fiscal_year', fy)
+      const fy = params.fiscal_year !== undefined ? params.fiscal_year : CURRENT_FISCAL_YEAR
+      if (fy !== 'all' && fy !== null) query = query.eq('fiscal_year', fy)
+
+      if (params.status)     query = query.eq('status', params.status)
+      if (params.plant)      query = query.eq('plant', params.plant)
+      if (params.brand)      query = query.eq('brand', params.brand)
+      if (params.department) query = query.eq('department', params.department)
+      if (params.search)     query = query.ilike('quality_issue', '%' + params.search + '%')
+      if (params.date_from)  query = query.gte('issue_reception_date', params.date_from)
+      if (params.date_to)    query = query.lte('issue_reception_date', params.date_to)
+      return query
     }
 
-    if (params.status)     query = query.eq('status', params.status)
-    if (params.plant)      query = query.eq('plant', params.plant)
-    if (params.brand)      query = query.eq('brand', params.brand)
-    if (params.department) query = query.eq('department', params.department)
-    if (params.search)     query = query.ilike('quality_issue', '%' + params.search + '%')
-    if (params.date_from)  query = query.gte('issue_reception_date', params.date_from)
-    if (params.date_to)    query = query.lte('issue_reception_date', params.date_to)
-
-    const { data, error } = await query
-    if (error) throw error
-    return { data: { tickets: data, total: data.length } }
+    const PAGE = 1000
+    const tickets = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await buildQuery().range(from, from + PAGE - 1)
+      if (error) throw error
+      tickets.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
+    return { data: { tickets, total: tickets.length } }
   },
 
   get: async (id) => {
