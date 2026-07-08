@@ -165,6 +165,7 @@
     "departments": "departments",
     "categories": "categories",
     "plants_count": "plants",
+    "unclassified": "(Unclassified)",
     "tolerance": "Tolerance",
     "above_limit": "⚠ Above limit",
     "within_limit": "✓ Within limit",

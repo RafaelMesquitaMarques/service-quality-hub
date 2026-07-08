@@ -250,8 +250,13 @@ export default function Dashboard() {
       // la liste (getCost). Sans ça, les occurrences dont le coût est au niveau
       // occurrence (lignes à 0) comptaient pour $0 et le total s'effondrait.
       if (lineSum > 0) {
+        // Une ligne non classée hérite de la classification de l'occurrence
+        // (sinon son coût tomberait dans « non défini » alors que l'occurrence
+        // a bien un département) — sans ça, le détail ne totalise pas le KPI.
         ls.forEach(l => units.push({ cost: Number(l.cost_approx || 0),
-          department: l.department || null, plant: l.plant || null, categories: l.categories || null, ...parent }))
+          department: l.department || tk.department || null,
+          plant: l.plant || tk.plant || null,
+          categories: l.categories || tk.categories || null, ...parent }))
       } else {
         units.push({ cost: Number(tk.cost_approx || 0),
           department: tk.department || null, plant: tk.plant || null, categories: tk.categories || null, ...parent })
@@ -334,11 +339,16 @@ export default function Dashboard() {
   const byCount = (map) => Object.entries(map).sort((a, b) => b[1] - a[1])
   const clientKey = s => (s.length > 28 ? s.slice(0, 28) + '…' : s)
   // Coûts par dépt / usine / client : agrégés depuis les unités de coût (par ligne).
+  // Le coût sans département/usine va dans un bucket « non défini » pour que le
+  // détail totalise EXACTEMENT le KPI (rien n'est perdu). Client garde ship_to.
+  const UNCLASSIFIED = t('dashboard.unclassified')
   const deptCostMap = {}, plantCostMap = {}, clientCostMap = {}
   costUnits.forEach(u => {
-    if (u.department && u.cost > 0) deptCostMap[u.department] = (deptCostMap[u.department] || 0) + u.cost
-    if (u.plant && u.cost > 0)      plantCostMap[u.plant]     = (plantCostMap[u.plant] || 0) + u.cost
-    if (u.ship_to && u.cost > 0)    clientCostMap[clientKey(u.ship_to)] = (clientCostMap[clientKey(u.ship_to)] || 0) + u.cost
+    if (u.cost > 0) {
+      deptCostMap[u.department || UNCLASSIFIED]  = (deptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
+      plantCostMap[u.plant || UNCLASSIFIED]      = (plantCostMap[u.plant || UNCLASSIFIED] || 0) + u.cost
+      if (u.ship_to) clientCostMap[clientKey(u.ship_to)] = (clientCostMap[clientKey(u.ship_to)] || 0) + u.cost
+    }
   })
   // Comptes (catégorie, nb par client) : restent au niveau occurrence.
   const catMap = {}, clientMap = {}
@@ -355,7 +365,7 @@ export default function Dashboard() {
   // Cost by department — current fiscal year vs previous (respects active filters)
   const prevDeptCostMap = {}
   prevUnits.forEach(u => {
-    if (u.department && u.cost > 0) prevDeptCostMap[u.department] = (prevDeptCostMap[u.department] || 0) + u.cost
+    if (u.cost > 0) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
   })
   const deptCompareData = [...new Set([...Object.keys(deptCostMap), ...Object.keys(prevDeptCostMap)])]
     .map(name => {

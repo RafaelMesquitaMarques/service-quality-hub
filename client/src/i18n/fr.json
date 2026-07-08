@@ -165,6 +165,7 @@
     "departments": "départements",
     "categories": "catégories",
     "plants_count": "usines",
+    "unclassified": "(Non défini)",
     "tolerance": "Tolérance",
     "above_limit": "⚠ Au-dessus limite",
     "within_limit": "✓ En dessous limite",
