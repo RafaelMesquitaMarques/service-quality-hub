@@ -246,12 +246,17 @@ export default function Dashboard() {
   const sparkCost   = FISCAL_MONTH_ORDER.map(m => Math.round(monthCost(m.fiscal)))
   const sparkDone   = FISCAL_MONTH_ORDER.map(m => monthDone(m.fiscal))
 
+  // SC cost as % of revenue — current FY (dark) vs previous FY (pale), side by side.
+  // Client is excluded from the numerator; the same monthly revenue baseline is used
+  // as the denominator for both years (no separate prior-year revenue is tracked).
+  const scMonthCost = (rows, fiscal) => rows
+    .filter(t => t.fiscal_month === fiscal && t.department !== 'Client')
+    .reduce((sum, t) => sum + getTicketCost(t), 0)
   const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, name, nameShort }) => {
-    const scCostMonth = tickets.filter(t => t.fiscal_month === fiscal && t.department !== 'Client')
-      .reduce((sum, t) => sum + getTicketCost(t), 0)
     const revenue = revenueAvailable ? (MONTHLY_REVENUE[name] || 0) : 0
-    const pct     = revenue > 0 ? scCostMonth / revenue * 100 : null
-    return { name: nameShort, pct: pct !== null ? +pct.toFixed(3) : null }
+    const pct     = revenue > 0 ? +(scMonthCost(tickets, fiscal) / revenue * 100).toFixed(3) : null
+    const prevPct = revenue > 0 ? +(scMonthCost(prevTickets, fiscal) / revenue * 100).toFixed(3) : null
+    return { name: nameShort, pct, prevPct }
   }).filter(d => d.pct !== null)
   const sparkScPct = scPctData.map(d => d.pct)
 
@@ -323,6 +328,8 @@ export default function Dashboard() {
   // chart helpers
   const axisColor = dark ? '#94A3B8' : '#64748B'
   const gridColor = dark ? '#1F2937' : '#EEF2F7'
+  const palePrev  = dark ? '#334155' : '#CBD5E1'
+  const pctLabel  = v => (v ? `${Number(v).toFixed(2)}%` : '')
   const tip   = (fmt) => <Tooltip cursor={{ fill: dark ? '#ffffff08' : '#00000006' }} content={(p) => <ChartTooltip {...p} dark={dark} fmt={fmt} />} />
   const NoData = () => (
     <div className="flex flex-col items-center justify-center text-gray-300 dark:text-gray-600" style={{ height: 180 }}>
@@ -394,7 +401,7 @@ export default function Dashboard() {
               title={t('dashboard.sc_cost_chart')} subtitle={t('dashboard.sc_cost_subtitle')}>
               {scPctData.length ? (
                 <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={scPctData} margin={{ top: 10 }}>
+                  <BarChart data={scPctData} margin={{ top: 24 }} barCategoryGap="22%">
                     <defs>
                       <linearGradient id="gradSc" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.95} />
@@ -407,8 +414,13 @@ export default function Dashboard() {
                     {tip(v => `${Number(v).toFixed(3)}%`)}
                     <ReferenceLine y={TOLERANCE_PCT * 100} stroke="#EF4444" strokeDasharray="4 4"
                       label={{ value: '0.3%', position: 'right', fontSize: 10, fill: '#EF4444' }} />
-                    <Bar dataKey="pct" name="SC Cost %" radius={[5, 5, 0, 0]} maxBarSize={46}>
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="prevPct" name={`FY${filters.fy - 1}`} fill={palePrev} radius={[5, 5, 0, 0]} maxBarSize={40}>
+                      <LabelList dataKey="prevPct" position="top" offset={6} fontSize={9} fill={axisColor} formatter={pctLabel} />
+                    </Bar>
+                    <Bar dataKey="pct" name={`FY${filters.fy}`} radius={[5, 5, 0, 0]} maxBarSize={40}>
                       {scPctData.map((entry, i) => <Cell key={i} fill={entry.pct > 0.3 ? '#DC2626' : 'url(#gradSc)'} />)}
+                      <LabelList dataKey="pct" position="top" offset={6} fontSize={9} fontWeight={700} fill={axisColor} formatter={pctLabel} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
