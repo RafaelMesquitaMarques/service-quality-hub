@@ -242,9 +242,14 @@ export default function Dashboard() {
   const buildUnits = (occs, byOcc) => {
     const units = []
     occs.forEach(tk => {
-      const ls = byOcc[tk.id]
+      const ls = byOcc[tk.id] || []
+      const lineSum = ls.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
       const parent = { fiscal_month: tk.fiscal_month, brand: tk.brand, status: tk.status, ship_to: tk.ship_to, occId: tk.id }
-      if (ls && ls.length) {
+      // Détail par ligne SEULEMENT si les lignes portent un coût (> 0), sinon repli
+      // sur le coût + dépt/usine/catégorie au niveau occurrence — exactement comme
+      // la liste (getCost). Sans ça, les occurrences dont le coût est au niveau
+      // occurrence (lignes à 0) comptaient pour $0 et le total s'effondrait.
+      if (lineSum > 0) {
         ls.forEach(l => units.push({ cost: Number(l.cost_approx || 0),
           department: l.department || null, plant: l.plant || null, categories: l.categories || null, ...parent }))
       } else {
