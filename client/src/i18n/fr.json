@@ -157,6 +157,7 @@
     "gap": "ÉCART",
     "ytd": "cumul",
     "total": "Total",
+    "export_excel": "Exporter vers Excel",
     "open": "ouvertes",
     "completed": "complétées",
     "overview_subtitle": "Vue d'ensemble qualité & coûts",

@@ -157,6 +157,7 @@
     "gap": "GAP",
     "ytd": "YTD",
     "total": "Total",
+    "export_excel": "Export to Excel",
     "open": "open",
     "completed": "completed",
     "overview_subtitle": "Quality & cost overview",

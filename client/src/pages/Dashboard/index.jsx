@@ -6,6 +6,7 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
+import * as XLSX from 'xlsx'
 import { ticketApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
@@ -330,6 +331,74 @@ export default function Dashboard() {
   const gridColor = dark ? '#1F2937' : '#EEF2F7'
   const palePrev  = dark ? '#334155' : '#CBD5E1'
   const pctLabel  = v => (v ? `${Number(v).toFixed(2)}%` : '')
+
+  // ── Dept-cost pie: always-on labels with collision-avoided leader lines ──
+  // Geometry is fixed so the label y-positions can be de-collided up front, then
+  // stacked down each side (Excel-style) instead of piling up near 12 o'clock.
+  const PIE_H = 520, PIE_R = 175, PIE_MARGIN_Y = 10
+  const PIE_CY = PIE_MARGIN_Y + (PIE_H - 2 * PIE_MARGIN_Y) / 2
+  const pieInk = dark ? '#e6edf3' : '#111827'
+  const pieLabelLayout = (() => {
+    const RAD = Math.PI / 180
+    const total = deptCostData.reduce((s, d) => s + d.cost, 0) || 1
+    let acc = 0
+    const items = deptCostData.map(d => {
+      const a = -(90 - (acc + d.cost / total / 2) * 360) * RAD   // slice mid-angle (start 12 o'clock, clockwise)
+      acc += d.cost / total
+      const cos = Math.cos(a), sin = Math.sin(a)
+      return { name: d.name, value: d.cost, cos, sin, side: cos >= 0 ? 1 : -1,
+        idealY: PIE_CY + (PIE_R + 18) * sin, y: 0 }
+    })
+    const GAP = 15, MIN_Y = 12, MAX_Y = PIE_H - 12
+    ;[-1, 1].forEach(side => {
+      const arr = items.filter(it => it.side === side).sort((a, b) => a.idealY - b.idealY)
+      let prev = -Infinity
+      arr.forEach(it => { it.y = Math.max(it.idealY, prev + GAP); prev = it.y })       // push apart downward
+      const over = arr.length ? arr[arr.length - 1].y - MAX_Y : 0
+      if (over > 0) arr.forEach(it => { it.y -= over })                                // pull back if past bottom
+      if (arr.length && arr[0].y < MIN_Y) { const d = MIN_Y - arr[0].y; arr.forEach(it => { it.y += d }) }
+    })
+    return Object.fromEntries(items.map(it => [it.name, it]))
+  })()
+  const renderPieLabel = ({ cx, cy, outerRadius, name }) => {
+    const it = pieLabelLayout[name]
+    if (!it) return null
+    const sx = cx + outerRadius * it.cos
+    const sy = cy + outerRadius * it.sin
+    const mx = cx + it.side * (outerRadius + 16)
+    const tx = cx + it.side * (outerRadius + 40)
+    return (
+      <g>
+        <polyline points={`${sx},${sy} ${mx},${it.y} ${tx},${it.y}`} stroke={axisColor} strokeWidth={1} fill="none" />
+        <text x={tx + it.side * 4} y={it.y} textAnchor={it.side > 0 ? 'start' : 'end'} dominantBaseline="central"
+          fontSize={11} fill={pieInk}>
+          {`${name}  ${money(it.value)}`}
+        </text>
+      </g>
+    )
+  }
+
+  // Export the department cost breakdown (current + prior FY) to an .xlsx file
+  const exportDeptCosts = () => {
+    const rows = deptCompareData.map(d => ({
+      [t('ticket.department')]:            d.name,
+      [`FY${filters.fy} ${t('dashboard.ytd')}`]:     d.cur,
+      [`FY${filters.fy - 1} ${t('dashboard.ytd')}`]: d.prev,
+      [t('dashboard.gap')]:                d.gap,
+      '+/-%':                              d.pct,
+    }))
+    rows.push({
+      [t('ticket.department')]:            t('dashboard.total'),
+      [`FY${filters.fy} ${t('dashboard.ytd')}`]:     deptCompareTotals.cur,
+      [`FY${filters.fy - 1} ${t('dashboard.ytd')}`]: deptCompareTotals.prev,
+      [t('dashboard.gap')]:                deptCompareTotals.gap,
+      '+/-%':                              deptCompareTotals.pct,
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, `Dept cost FY${filters.fy}`)
+    XLSX.writeFile(wb, `dept-cost-FY${filters.fy}.xlsx`)
+  }
   const tip   = (fmt) => <Tooltip cursor={{ fill: dark ? '#ffffff08' : '#00000006' }} content={(p) => <ChartTooltip {...p} dark={dark} fmt={fmt} />} />
   const NoData = () => (
     <div className="flex flex-col items-center justify-center text-gray-300 dark:text-gray-600" style={{ height: 180 }}>
@@ -616,26 +685,33 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Cost by department — pie (Novacap-style) + FY vs FY comparison */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard icon="ti-chart-pie" color="#F59E0B"
-            title={t('dashboard.by_department')}
-            subtitle={`FY${filters.fy} · ${money(deptCompareTotals.cur)}`}>
-            {deptCostData.length ? (
-              <ResponsiveContainer width="100%" height={Math.max(280, deptCostData.length * 22)}>
-                <PieChart>
-                  <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
-                    outerRadius="80%" paddingAngle={1} stroke="none">
-                    {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
-                  </Pie>
-                  {tip(money)}
-                  <Legend iconType="circle" layout="vertical" align="right" verticalAlign="middle"
-                    wrapperStyle={{ fontSize: 11, maxWidth: '45%' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <NoData />}
-          </ChartCard>
+        {/* Cost by department — pie (Novacap-style) with always-on value labels */}
+        <ChartCard icon="ti-chart-pie" color="#F59E0B"
+          title={t('dashboard.by_department')}
+          subtitle={`FY${filters.fy} · ${money(deptCompareTotals.cur)}`}
+          right={deptCostData.length ? (
+            <button onClick={exportDeptCosts}
+              className="btn-ghost text-xs py-1 px-2.5 inline-flex items-center gap-1">
+              <i className="ti ti-file-spreadsheet text-sm" aria-hidden="true" /> {t('dashboard.export_excel')}
+            </button>
+          ) : null}>
+          {deptCostData.length ? (
+            <ResponsiveContainer width="100%" height={PIE_H}>
+              <PieChart margin={{ top: PIE_MARGIN_Y, right: 130, bottom: PIE_MARGIN_Y, left: 130 }}>
+                <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
+                  outerRadius={PIE_R} paddingAngle={0} startAngle={90} endAngle={-270}
+                  stroke={dark ? '#0D1117' : '#ffffff'} strokeWidth={1}
+                  labelLine={false} label={renderPieLabel} isAnimationActive={false}>
+                  {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
+                </Pie>
+                {tip(money)}
+              </PieChart>
+            </ResponsiveContainer>
+          ) : <NoData />}
+        </ChartCard>
 
+        {/* Dept FY vs FY comparison table */}
+        <div className="grid grid-cols-1 gap-4">
           <ChartCard icon="ti-table" color="#F59E0B"
             title={t('dashboard.dept_comparison')} subtitle={`FY${filters.fy} ${t('dashboard.ytd')} vs FY${filters.fy - 1} ${t('dashboard.ytd')}`}>
           {deptCompareData.length ? (
