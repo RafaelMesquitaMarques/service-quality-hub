@@ -214,6 +214,8 @@
     "add_tickets_title": "Add occurrences to the meeting",
     "search_tickets": "Search SC#, client, issue...",
     "all_depts": "All departments",
+    "by_department": "By department",
+    "problem_lines": "Problem lines",
     "all_statuses": "All statuses",
     "no_tickets_found": "No occurrence found",
     "close": "Close",

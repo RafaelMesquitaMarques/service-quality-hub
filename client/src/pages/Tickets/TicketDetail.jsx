@@ -871,6 +871,8 @@ export default function TicketDetail() {
     queryClient.invalidateQueries({ queryKey: ['tickets'] })
     queryClient.invalidateQueries({ queryKey: ['line-costs'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-lines'] })
+    queryClient.invalidateQueries({ queryKey: ['line-costs-meeting'] })
+    queryClient.invalidateQueries({ queryKey: ['meeting-lines'] })
   }
 
   const { data: globalPhotos, refetch: refetchGlobalPhotos } = useQuery({

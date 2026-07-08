@@ -127,6 +127,7 @@ export default function MeetingsPage() {
   const [showTicketPicker, setShowTicketPicker] = useState(false)
   const [showNewMeeting,   setShowNewMeeting]   = useState(false)
   const [newMeetingDate,   setNewMeetingDate]   = useState('')
+  const [meetingDept,      setMeetingDept]      = useState('')  // filtre par département (niveau ligne)
 
   const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
@@ -151,6 +152,9 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       if (m) { setSelId(m.id); setNotes(m.notes || '') }
     }
   }, [meetings])
+
+  // Repartir de « tous les départements » quand on change de réunion
+  useEffect(() => { setMeetingDept('') }, [selId])
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
@@ -212,7 +216,33 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     return tk?.cost_approx ? Number(tk.cost_approx) : 0
   }
 
-  const totalCost = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
+  // Lignes (occurrence_lines) des occurrences de la réunion — pour la vue/filtre
+  // par département (chaque ligne a son propre département + coût).
+  const { data: meetingLines } = useQuery({
+    queryKey: ['meeting-lines', selId, tickets.map(t => t?.id).filter(Boolean).join(',')],
+    queryFn: async () => {
+      const ids = tickets.map(t => t?.id).filter(Boolean)
+      if (!ids.length) return []
+      const { data, error } = await supabase.from('occurrence_lines')
+        .select('id, occurrence_id, quality_issue, cost_approx, department, plant')
+        .in('occurrence_id', ids)
+      if (error) return []
+      return data || []
+    },
+    enabled: tickets.length > 0,
+  })
+
+  const ticketById  = Object.fromEntries(tickets.map(tk => [tk?.id, tk]))
+  const allLines    = meetingLines || []
+  const deptOptions = [...new Set(allLines.map(l => l.department).filter(Boolean))].sort()
+  const deptFilter  = deptOptions.includes(meetingDept) ? meetingDept : ''  // ignore si absent
+  const filteredLines = deptFilter ? allLines.filter(l => l.department === deptFilter) : allLines
+
+  const totalCost   = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
+  const deptLineCost = filteredLines.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
+  // KPIs : reflètent le département sélectionné (sinon toute la réunion)
+  const displayedCost  = deptFilter ? deptLineCost : totalCost
+  const displayedCount = deptFilter ? filteredLines.length : tickets.length
   const openAct   = actList.filter(a => a.status !== 'done').length
   const doneAct   = actList.filter(a => a.status === 'done').length
 
@@ -309,18 +339,23 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     if (!selMeeting) return
     const esc  = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const row  = (cells) => cells.map(esc).join(',')
+    // Respecte le filtre par département : exporte les lignes du dépt, sinon les occurrences.
+    const ticketRows = deptFilter
+      ? filteredLines.map(l => row([ticketById[l.occurrence_id]?.sc_number, l.quality_issue || ticketById[l.occurrence_id]?.quality_issue, l.department, Math.round(Number(l.cost_approx || 0))]))
+      : tickets.map(tk => row([tk?.sc_number, tk?.quality_issue, tk?.department, Math.round(getTicketCost(tk))]))
     const lines = [
-      row([t('meeting.title'), formatDate(selMeeting.meeting_date)]),
+      row([t('meeting.title'), formatDate(selMeeting.meeting_date), deptFilter || t('meeting.all_depts')]),
       '',
       row(['SC#', t('ticket.issue'), t('ticket.department'), t('ticket.cost')]),
-      ...tickets.map(tk => row([tk?.sc_number, tk?.quality_issue, tk?.department, Math.round(getTicketCost(tk))])),
+      ...ticketRows,
       '',
       row([t('meeting.action_label'), t('meeting.owner'), t('meeting.due_date'), t('ticket.status')]),
       ...actList.map(a => row([a.text, a.owner, a.due, a.status])),
     ]
     const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }))
     const el  = document.createElement('a')
-    el.href = url; el.download = `meeting-${selMeeting.meeting_date}.csv`; el.click()
+    const deptSuffix = deptFilter ? `-${deptFilter.replace(/[^a-z0-9]+/gi, '_')}` : ''
+    el.href = url; el.download = `meeting-${selMeeting.meeting_date}${deptSuffix}.csv`; el.click()
   }
 
   return (
@@ -385,17 +420,31 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
           ) : (
             <>
               <div className="card p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
                     <i className="ti ti-chart-bar text-blue-500" aria-hidden="true" />
                     {t('meeting.kpis')} — {weekLabel(selMeeting?.meeting_date)}
                   </div>
-                  <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative inline-flex items-center">
+                      <i className="ti ti-building text-sm text-gray-400 absolute left-2.5 pointer-events-none" aria-hidden="true" />
+                      <select value={deptFilter} onChange={e => setMeetingDept(e.target.value)}
+                        className={`appearance-none text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors
+                          ${deptFilter
+                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
+                        <option value="">{t('meeting.all_depts')}</option>
+                        {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                      <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
+                    </div>
+                    <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {[
-                    { v: tickets.length, l: t('meeting.tickets_discussed'), c:'#3b82f6' },
-                    { v: `$${Math.round(totalCost).toLocaleString()}`, l: t('meeting.sc_cost_week'), c:'#ef4444' },
+                    { v: displayedCount, l: deptFilter ? t('meeting.problem_lines') : t('meeting.tickets_discussed'), c:'#3b82f6' },
+                    { v: `$${Math.round(displayedCost).toLocaleString()}`, l: t('meeting.sc_cost_week'), c:'#ef4444' },
                     { v: openAct, l: t('meeting.open_actions'), c:'#f59e0b' },
                     { v: doneAct, l: t('meeting.completed_actions'), c:'#22c55e' },
                   ].map(({ v, l, c }) => (
@@ -439,8 +488,12 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
                   <div className="flex items-center gap-2">
                     <i className="ti ti-clipboard-list text-blue-500 text-sm" aria-hidden="true" />
-                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100">{t('meeting.tickets_section')}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tickets.length} {t('meeting.selected')}</span>
+                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                      {deptFilter ? `${t('meeting.problem_lines')} · ${deptFilter}` : t('meeting.tickets_section')}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
+                      {deptFilter ? filteredLines.length : `${tickets.length} ${t('meeting.selected')}`}
+                    </span>
                   </div>
                   <button onClick={() => setShowTicketPicker(true)} className="btn-primary py-1 px-2.5 text-xs">
                     <i className="ti ti-plus text-xs" aria-hidden="true" /> {t('meeting.add_ticket')}
@@ -449,6 +502,32 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                 <div className="px-4 py-1">
                   {tickets.length === 0 ? (
                     <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_tickets')}</div>
+                  ) : deptFilter ? (
+                    /* Vue par département — lignes (problèmes) du département sélectionné */
+                    filteredLines.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_tickets')}</div>
+                    ) : (
+                      <>
+                        <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
+                          <div>SC#</div><div>{t('ticket.issue')}</div><div className="text-right">{t('ticket.cost')}</div>
+                        </div>
+                        {filteredLines.map(l => {
+                          const parent = ticketById[l.occurrence_id]
+                          return (
+                            <div key={l.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
+                              <div className="font-mono text-gray-400">{parent?.sc_number || '—'}</div>
+                              <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
+                                onClick={() => navigate(`/tickets/${l.occurrence_id}?from=meeting&meetingId=${selId}`)}>
+                                {l.quality_issue || parent?.quality_issue}
+                              </div>
+                              <div className="font-mono text-gray-400 text-right">
+                                {Number(l.cost_approx) > 0 ? `$${Math.round(Number(l.cost_approx)).toLocaleString()}` : '—'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </>
+                    )
                   ) : (
                     <>
                       <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 80px 64px 28px' }}>
