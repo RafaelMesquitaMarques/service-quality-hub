@@ -7,7 +7,9 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
-    "install:all": "npm install && cd client && npm install && cd ../server && npm install"
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "quality:import": "node server/scripts/import-quality.js",
+    "quality:import:test": "node server/scripts/import-quality.test.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
