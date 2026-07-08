@@ -857,6 +857,22 @@ export default function TicketDetail() {
     enabled: !!id,
   })
 
+  // Coût de l'occurrence = somme des coûts des lignes (source de vérité).
+  // Repli sur le coût au niveau occurrence pour les enregistrements sans lignes
+  // (import / héritage), exactement comme la liste (getCost).
+  const lineCostSum   = (lines || []).reduce((s, l) => s + Number(l.cost_approx || 0), 0)
+  const occurrenceCost = lineCostSum > 0 ? lineCostSum : Number(ticket?.cost_approx || 0)
+
+  // Après une modification de coût/ligne, rafraîchir le détail ET les vues qui
+  // agrègent les coûts par ligne : la liste (['tickets']) + son total de lignes
+  // (['line-costs']) + le dashboard (['tickets','dashboard', …]).
+  const refreshCostViews = () => {
+    refetchLines()
+    queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    queryClient.invalidateQueries({ queryKey: ['line-costs'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-lines'] })
+  }
+
   const { data: globalPhotos, refetch: refetchGlobalPhotos } = useQuery({
     queryKey: ['ticket-photos-global', id],
     queryFn: async () => {
@@ -885,7 +901,7 @@ export default function TicketDetail() {
 
   const updateMut = useMutation({
     mutationFn: (payload) => ticketApi.update(id, payload),
-    onSuccess: () => { queryClient.invalidateQueries(['ticket', id]); toast.success(t('common.save')) },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket', id] }); refreshCostViews(); toast.success(t('common.save')) },
     onError: () => toast.error(t('common.error')),
   })
 
@@ -908,7 +924,7 @@ export default function TicketDetail() {
       if (error) throw error
     },
     onSuccess: () => {
-      refetchLines()
+      refreshCostViews()
       setAddingLine(false)
       setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
       toast.success(t('ticket.add_line'))
@@ -921,7 +937,7 @@ export default function TicketDetail() {
       const { error } = await supabase.from('occurrence_lines').delete().eq('id', lineId)
       if (error) throw error
     },
-    onSuccess: () => refetchLines(),
+    onSuccess: () => refreshCostViews(),
     onError: () => toast.error(t('common.error')),
   })
 
@@ -1214,9 +1230,10 @@ export default function TicketDetail() {
                     </div>
                     <div>
                       <label className="label">{t('ticket.cost')}</label>
-                      <input type="number" min="0" value={costApprox} onChange={e => setCostApprox(e.target.value)}
-                        disabled={!canEdit} placeholder="$0.00"
-                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                      <div className="input text-xs flex items-center bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed">
+                        {`$${Math.round(occurrenceCost).toLocaleString()}`}
+                      </div>
+                      {lineCostSum > 0 && <p className="text-[11px] text-gray-400 mt-1">{t('ticket.cost_from_lines')}</p>}
                     </div>
                   </div>
                   <div>
@@ -1364,7 +1381,7 @@ export default function TicketDetail() {
                 )}
                 {(lines || []).map(line => (
                   <LineCard key={line.id} line={line} occurrenceId={id}
-                    onUpdate={refetchLines} onDelete={(lineId) => deleteLineMut.mutate(lineId)}
+                    onUpdate={refreshCostViews} onDelete={(lineId) => deleteLineMut.mutate(lineId)}
                     plants={plants} status={ticket.status} t={t} canEdit={canEdit} onView={setLightbox} />
                 ))}
                 {(lines || []).length === 0 && !addingLine && (

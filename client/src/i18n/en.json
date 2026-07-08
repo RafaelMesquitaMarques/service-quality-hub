@@ -40,6 +40,7 @@
     "status": "Status",
     "categories": "Category",
     "cost": "Cost approx.",
+    "cost_from_lines": "= sum of line costs",
     "cost_final": "Final cost",
     "supplier_credit": "Supplier credit",
     "affected_qty": "Affected qty",

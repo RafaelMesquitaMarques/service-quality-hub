@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
 import * as XLSX from 'xlsx'
-import { ticketApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchOccurrenceLines, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
 
@@ -182,6 +182,25 @@ export default function Dashboard() {
     keepPreviousData: true,
   })
 
+  // Per-line rows for the current & previous fiscal year — costs are aggregated
+  // from these (occurrence_lines), not the occurrence-level fields.
+  const curIds  = (currentYearTickets || []).map(t => t.id)
+  const prevIds = (prevYearTickets    || []).map(t => t.id)
+  const { data: curLinesRaw } = useQuery({
+    queryKey: ['dashboard-lines', curIds],
+    queryFn: () => fetchOccurrenceLines(curIds),
+    enabled: curIds.length > 0,
+    staleTime: 10 * 60 * 1000,
+    keepPreviousData: true,
+  })
+  const { data: prevLinesRaw } = useQuery({
+    queryKey: ['dashboard-lines', prevIds],
+    queryFn: () => fetchOccurrenceLines(prevIds),
+    enabled: prevIds.length > 0,
+    staleTime: 10 * 60 * 1000,
+    keepPreviousData: true,
+  })
+
   if (loadingCurrent && !currentYearTickets) return (
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
@@ -206,17 +225,57 @@ export default function Dashboard() {
   const prevTickets = rawPrev.filter(match)
   const activeCount = ['department', 'brand', 'plant', 'status'].filter(k => filters[k] !== 'all').length
 
-  const getTicketCost = (tk) => Number(tk.real_cost || tk.cost_approx || 0)
   const revenueAvailable = filters.fy === CURRENT_FISCAL_YEAR
 
+  // ── Cost units (per line) ──────────────────────────────────
+  // Le coût vient des lignes (occurrence_lines). Chaque ligne devient une
+  // « unité de coût » portant sa valeur/dépt/usine/catégorie + les attributs de
+  // l'occurrence parente (mois fiscal, marque, statut, client). Repli sur le
+  // coût au niveau occurrence pour les occurrences sans ligne (comme la liste).
+  const groupByOcc = (rows) => {
+    const m = {}
+    ;(rows || []).forEach(l => { (m[l.occurrence_id] = m[l.occurrence_id] || []).push(l) })
+    return m
+  }
+  const curByOcc  = groupByOcc(curLinesRaw)
+  const prevByOcc = groupByOcc(prevLinesRaw)
+  const buildUnits = (occs, byOcc) => {
+    const units = []
+    occs.forEach(tk => {
+      const ls = byOcc[tk.id]
+      const parent = { fiscal_month: tk.fiscal_month, brand: tk.brand, status: tk.status, ship_to: tk.ship_to, occId: tk.id }
+      if (ls && ls.length) {
+        ls.forEach(l => units.push({ cost: Number(l.cost_approx || 0),
+          department: l.department || null, plant: l.plant || null, categories: l.categories || null, ...parent }))
+      } else {
+        units.push({ cost: Number(tk.cost_approx || 0),
+          department: tk.department || null, plant: tk.plant || null, categories: tk.categories || null, ...parent })
+      }
+    })
+    return units
+  }
+  // Coût : dépt/usine filtrés au niveau LIGNE ; marque/statut au niveau occurrence.
+  const unitMatch = (u) =>
+    (filters.department === 'all' || u.department === filters.department) &&
+    (filters.brand      === 'all' || u.brand      === filters.brand) &&
+    (filters.plant      === 'all' || u.plant      === filters.plant) &&
+    (filters.status     === 'all' || u.status     === filters.status)
+  const costUnits = buildUnits(rawTickets, curByOcc).filter(unitMatch)
+  const prevUnits = buildUnits(rawPrev,    prevByOcc).filter(unitMatch)
+
+  // Coût par occurrence (tableau « récentes ») = somme de ses lignes, repli sur le header.
+  const occLineCost = {}
+  ;(curLinesRaw || []).forEach(l => { occLineCost[l.occurrence_id] = (occLineCost[l.occurrence_id] || 0) + Number(l.cost_approx || 0) })
+  const getTicketCost = (tk) => (occLineCost[tk.id] > 0 ? occLineCost[tk.id] : Number(tk.cost_approx || 0))
+
   // ── KPIs ───────────────────────────────────────────────────
-  const totalCost = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
-  const scCost    = tickets.filter(tk => tk.department !== 'Client').reduce((s, tk) => s + getTicketCost(tk), 0)
+  const totalCost = costUnits.reduce((s, u) => s + u.cost, 0)
+  const scCost    = costUnits.filter(u => u.department !== 'Client').reduce((s, u) => s + u.cost, 0)
   const open      = tickets.filter(tk => !['completed', 'cancelled'].includes(tk.status)).length
   const completed = tickets.filter(tk => tk.status === 'completed').length
   const completionPct = tickets.length > 0 ? Math.round(completed / tickets.length * 100) : 0
 
-  const prevTotalCost = prevTickets.reduce((s, tk) => s + getTicketCost(tk), 0)
+  const prevTotalCost = prevUnits.reduce((s, u) => s + u.cost, 0)
   const prevCompletionPct = prevTickets.length > 0
     ? Math.round(prevTickets.filter(tk => tk.status === 'completed').length / prevTickets.length * 100) : 0
 
@@ -240,7 +299,7 @@ export default function Dashboard() {
 
   // ── Per-month series (charts + sparklines) ─────────────────
   const monthCount = fiscal => tickets.filter(t => t.fiscal_month === fiscal).length
-  const monthCost  = fiscal => tickets.filter(t => t.fiscal_month === fiscal).reduce((s, t) => s + getTicketCost(t), 0)
+  const monthCost  = fiscal => costUnits.filter(u => u.fiscal_month === fiscal).reduce((s, u) => s + u.cost, 0)
   const monthDone  = fiscal => tickets.filter(t => t.fiscal_month === fiscal && t.status === 'completed').length
 
   const sparkCounts = FISCAL_MONTH_ORDER.map(m => monthCount(m.fiscal))
@@ -250,13 +309,13 @@ export default function Dashboard() {
   // SC cost as % of revenue — current FY (dark) vs previous FY (pale), side by side.
   // Client is excluded from the numerator; the same monthly revenue baseline is used
   // as the denominator for both years (no separate prior-year revenue is tracked).
-  const scMonthCost = (rows, fiscal) => rows
-    .filter(t => t.fiscal_month === fiscal && t.department !== 'Client')
-    .reduce((sum, t) => sum + getTicketCost(t), 0)
+  const scMonthCost = (units, fiscal) => units
+    .filter(u => u.fiscal_month === fiscal && u.department !== 'Client')
+    .reduce((sum, u) => sum + u.cost, 0)
   const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, name, nameShort }) => {
     const revenue = revenueAvailable ? (MONTHLY_REVENUE[name] || 0) : 0
-    const pct     = revenue > 0 ? +(scMonthCost(tickets, fiscal) / revenue * 100).toFixed(3) : null
-    const prevPct = revenue > 0 ? +(scMonthCost(prevTickets, fiscal) / revenue * 100).toFixed(3) : null
+    const pct     = revenue > 0 ? +(scMonthCost(costUnits, fiscal) / revenue * 100).toFixed(3) : null
+    const prevPct = revenue > 0 ? +(scMonthCost(prevUnits, fiscal) / revenue * 100).toFixed(3) : null
     return { name: nameShort, pct, prevPct }
   }).filter(d => d.pct !== null)
   const sparkScPct = scPctData.map(d => d.pct)
@@ -269,17 +328,18 @@ export default function Dashboard() {
 
   const byCount = (map) => Object.entries(map).sort((a, b) => b[1] - a[1])
   const clientKey = s => (s.length > 28 ? s.slice(0, 28) + '…' : s)
-  const deptCostMap = {}, plantCostMap = {}, catMap = {}, clientMap = {}, clientCostMap = {}
+  // Coûts par dépt / usine / client : agrégés depuis les unités de coût (par ligne).
+  const deptCostMap = {}, plantCostMap = {}, clientCostMap = {}
+  costUnits.forEach(u => {
+    if (u.department && u.cost > 0) deptCostMap[u.department] = (deptCostMap[u.department] || 0) + u.cost
+    if (u.plant && u.cost > 0)      plantCostMap[u.plant]     = (plantCostMap[u.plant] || 0) + u.cost
+    if (u.ship_to && u.cost > 0)    clientCostMap[clientKey(u.ship_to)] = (clientCostMap[clientKey(u.ship_to)] || 0) + u.cost
+  })
+  // Comptes (catégorie, nb par client) : restent au niveau occurrence.
+  const catMap = {}, clientMap = {}
   tickets.forEach(tk => {
-    const cost = getTicketCost(tk)
-    if (tk.department && cost > 0) deptCostMap[tk.department]   = (deptCostMap[tk.department] || 0) + cost
-    if (tk.plant && cost > 0)      plantCostMap[tk.plant]       = (plantCostMap[tk.plant] || 0) + cost
-    if (tk.categories)             catMap[tk.categories]        = (catMap[tk.categories] || 0) + 1
-    if (tk.ship_to) {
-      const key = clientKey(tk.ship_to)
-      clientMap[key] = (clientMap[key] || 0) + 1
-      if (cost > 0) clientCostMap[key] = (clientCostMap[key] || 0) + cost
-    }
+    if (tk.categories) catMap[tk.categories] = (catMap[tk.categories] || 0) + 1
+    if (tk.ship_to)    clientMap[clientKey(tk.ship_to)] = (clientMap[clientKey(tk.ship_to)] || 0) + 1
   })
   const deptCostData  = byCount(deptCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
   const plantCostData = byCount(plantCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
@@ -289,9 +349,8 @@ export default function Dashboard() {
 
   // Cost by department — current fiscal year vs previous (respects active filters)
   const prevDeptCostMap = {}
-  prevTickets.forEach(tk => {
-    const cost = getTicketCost(tk)
-    if (tk.department && cost > 0) prevDeptCostMap[tk.department] = (prevDeptCostMap[tk.department] || 0) + cost
+  prevUnits.forEach(u => {
+    if (u.department && u.cost > 0) prevDeptCostMap[u.department] = (prevDeptCostMap[u.department] || 0) + u.cost
   })
   const deptCompareData = [...new Set([...Object.keys(deptCostMap), ...Object.keys(prevDeptCostMap)])]
     .map(name => {
