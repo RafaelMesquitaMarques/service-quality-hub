@@ -127,6 +127,15 @@ const COLUMN_MAP = {
   'sold to': 'sold_to',
 }
 
+// tickets varchar limits — over-length values are clamped so an insert never
+// fails on length. Key fields (sc_number/ref_so/item/material_number) are well
+// within these in the data, so clamping them is a no-op → idempotency preserved.
+const COL_LIMIT = {
+  sc_number: 50, ref_so: 50, item: 50, material_number: 100, sold_to: 200,
+  ship_to: 200, department: 50, brand: 50, plant: 20, categories: 100, corrective_action_no: 50,
+}
+function clamp(v, n) { return v == null ? v : (String(v).length > n ? String(v).slice(0, n) : v) }
+
 // Raw Excel row object (header→value) → normalized ticket record for insert.
 function mapRow(rawRow) {
   const r = {}
@@ -138,7 +147,7 @@ function mapRow(rawRow) {
   const reception = excelSerialToISO(r.issue_reception_date)
   const yyyymm = reception ? reception.slice(0, 7) : null
 
-  return {
+  const rec = {
     meeting_date: meeting,
     issue_reception_date: reception,
     date_yyyy_mm: yyyymm,
@@ -168,6 +177,8 @@ function mapRow(rawRow) {
     supplier_credit: toNumber(r.supplier_credit),
     legacy_link: toStr(r.legacy_link),
   }
+  for (const [f, n] of Object.entries(COL_LIMIT)) rec[f] = clamp(rec[f], n)
+  return rec
 }
 
 // Composite keys (strongest first). Each returned only when all its parts exist.
@@ -347,17 +358,35 @@ async function main() {
   const payload = report.toInsert.map(x => x.rec)
   let inserted = 0
   const errors = []
+  const insertedIds = []
   const BATCH = 100
   for (let i = 0; i < payload.length; i += BATCH) {
     const batch = payload.slice(i, i + BATCH)
     const { data, error } = await supabase.from('tickets').insert(batch).select('id')
     if (error) {
-      errors.push({ batchStart: report.toInsert[i]?.rowNo, size: batch.length, message: error.message })
-      console.error(`  ✗ batch @row ${report.toInsert[i]?.rowNo}: ${error.message}`)
+      // A batch is all-or-nothing in Postgres; retry row-by-row so one bad row
+      // doesn't block the rest, and we can report the exact offending row.
+      console.error(`  ! batch @row ${report.toInsert[i]?.rowNo} failed (${error.message}); retrying row-by-row…`)
+      for (let j = 0; j < batch.length; j++) {
+        const { data: d1, error: e1 } = await supabase.from('tickets').insert(batch[j]).select('id')
+        if (e1) {
+          errors.push({ rowNo: report.toInsert[i + j]?.rowNo, message: e1.message })
+          console.error(`    ✗ row #${report.toInsert[i + j]?.rowNo}: ${e1.message}`)
+        } else {
+          inserted++
+          ;(d1 || []).forEach(r => r && r.id && insertedIds.push(r.id))
+        }
+      }
     } else {
       inserted += (data || batch).length
+      ;(data || []).forEach(r => r && r.id && insertedIds.push(r.id))
     }
   }
+  // Persist inserted IDs for a precise rollback (delete exactly these rows).
+  const idFile = path.join(process.cwd(), `import-inserted-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
+  fs.writeFileSync(idFile, JSON.stringify({ insertedIds, count: inserted, errors }, null, 2))
+  console.log(`\nInserted IDs saved to ${idFile}`)
+  console.log(`Rollback if needed: DELETE FROM tickets WHERE id IN (…ids from that file…);`)
   console.log('\n================ COMMIT REPORT ================')
   console.log('Inserted        :', inserted)
   console.log('Skipped existing :', report.existingSkipped)
