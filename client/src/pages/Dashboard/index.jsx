@@ -427,7 +427,7 @@ export default function Dashboard() {
   // ── Dept-cost pie: always-on labels with collision-avoided leader lines ──
   // Geometry is fixed so the label y-positions can be de-collided up front, then
   // stacked down each side (Excel-style) instead of piling up near 12 o'clock.
-  const PIE_H = 660, PIE_R = 230, PIE_MARGIN_Y = 12
+  const PIE_H = 520, PIE_R = 140, PIE_MARGIN_Y = 12
   const PIE_CY = PIE_MARGIN_Y + (PIE_H - 2 * PIE_MARGIN_Y) / 2
   const pieInk = dark ? '#e6edf3' : '#111827'
   const pieLabelLayout = (() => {
@@ -638,7 +638,8 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Events by month (bars, side by side, with labels) */}
+        {/* Events by month + Brand trend — 2 per row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard icon="ti-calendar-stats" color="#2563EB"
           title={t('dashboard.events_chart')} subtitle={`FY${filters.fy} vs FY${filters.fy - 1}`}>
           <ResponsiveContainer width="100%" height={260}>
@@ -683,6 +684,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           ) : <NoData />}
         </ChartCard>
+        </div>
 
         {/* Dept + Plant cost */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -729,28 +731,6 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Category */}
-        <ChartCard icon="ti-category" color="#2563EB"
-          title={t('dashboard.by_category')}
-          right={<span className="text-xs text-gray-400">{catData.length} {t('dashboard.categories')}</span>}>
-          {catData.length ? (
-            <ResponsiveContainer width="100%" height={catHeight}>
-              <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
-                <defs>
-                  <linearGradient id="gradBlue" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#2563EB" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid horizontal={false} stroke={gridColor} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={110} />
-                {tip()}
-                <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <NoData />}
-        </ChartCard>
-
         {/* Top clients — by occurrences + by cost */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ChartCard icon="ti-users" color="#0891B2" title={t('dashboard.top_clients')}>
@@ -796,8 +776,30 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Cost by department — pie (Novacap-style) with always-on value labels */}
-        <ChartCard icon="ti-chart-pie" color="#F59E0B"
+        {/* By category + Cost by department pie — 2 per row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <ChartCard icon="ti-category" color="#2563EB"
+            title={t('dashboard.by_category')}
+            right={<span className="text-xs text-gray-400">{catData.length} {t('dashboard.categories')}</span>}>
+            {catData.length ? (
+              <ResponsiveContainer width="100%" height={catHeight}>
+                <BarChart data={catData} layout="vertical" margin={{ left: 110 }}>
+                  <defs>
+                    <linearGradient id="gradBlue" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#60A5FA" /><stop offset="100%" stopColor="#2563EB" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid horizontal={false} stroke={gridColor} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={110} />
+                  {tip()}
+                  <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <NoData />}
+          </ChartCard>
+
+          <ChartCard icon="ti-chart-pie" color="#F59E0B"
           title={t('dashboard.by_department')}
           subtitle={`FY${filters.fy} · ${money(deptCompareTotals.cur)}`}
           right={deptCostData.length ? (
@@ -809,7 +811,7 @@ export default function Dashboard() {
           {deptCostData.length ? (
             <div ref={deptPieRef}>
               <ResponsiveContainer width="100%" height={PIE_H}>
-                <PieChart margin={{ top: PIE_MARGIN_Y, right: 150, bottom: PIE_MARGIN_Y, left: 150 }}>
+                <PieChart margin={{ top: PIE_MARGIN_Y, right: 120, bottom: PIE_MARGIN_Y, left: 120 }}>
                   <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
                     outerRadius={PIE_R} paddingAngle={0} startAngle={90} endAngle={-270}
                     stroke={dark ? '#0D1117' : '#ffffff'} strokeWidth={1}
@@ -821,7 +823,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
           ) : <NoData />}
-        </ChartCard>
+          </ChartCard>
+        </div>
 
         {/* Dept FY vs FY comparison table */}
         <div className="grid grid-cols-1 gap-4">
