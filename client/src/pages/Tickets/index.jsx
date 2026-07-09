@@ -70,6 +70,41 @@ function ColumnFilter({ label, values, selected, onChange, onClear, renderValue 
   )
 }
 
+// ── Text « contains » filter (pour les colonnes libres, ex. Problème qualité) ─
+function TextColumnFilter({ label, value, onChange, placeholder }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  const isActive = !!value.trim()
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+        {label}
+        <i className={`ti ${isActive ? 'ti-filter-filled text-blue-500' : 'ti-selector'} text-xs`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-white dark:bg-[#161B22] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 w-64 p-2">
+          <div className="flex items-center gap-1.5 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 bg-white dark:bg-[#0D1117]">
+            <i className="ti ti-search text-gray-400 text-sm" aria-hidden="true" />
+            <input autoFocus className="outline-none text-xs w-full bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+              placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} />
+            {isActive && (
+              <button onClick={() => onChange('')} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer p-0">
+                <i className="ti ti-x text-sm" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function TicketsPage() {
   const { t }    = useTranslation()
@@ -90,6 +125,7 @@ export default function TicketsPage() {
   const [fDate,   setFDate]     = useState(new Set())
   const [fCreator, setFCreator] = useState(new Set())
   const [costSort, setCostSort] = useState(null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
+  const [fQuality, setFQuality] = useState('')    // filtre « contient » sur le problème qualité
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
@@ -163,6 +199,7 @@ export default function TicketsPage() {
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
+    if (fQuality.trim()) { const q = fQuality.toLowerCase(); result = result.filter(tk => tk.quality_issue?.toLowerCase().includes(q)) }
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
     if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department || NO_DEPT))
@@ -172,7 +209,7 @@ export default function TicketsPage() {
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
+  }, [allTickets, search, fQuality, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   // Ajoute « (Non défini) » en tête du filtre Département s'il existe des occurrences sans département.
@@ -196,12 +233,12 @@ export default function TicketsPage() {
   const tickets = sorted.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < sorted.length
 
-  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
+  useEffect(() => setPage(1), [search, fQuality, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
 
-  const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
+  const hasActiveFilters = search || fQuality || fStatus.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
   const clearAll = () => {
-    setSearch(''); setFStatus(new Set()); setFBrand(new Set())
+    setSearch(''); setFQuality(''); setFStatus(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFProject(new Set())
     setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
   }
@@ -287,7 +324,7 @@ export default function TicketsPage() {
                   <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={setFDate} onClear={() => setFDate(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.issue')}</span>
+                  <TextColumnFilter label={t('ticket.issue')} value={fQuality} onChange={setFQuality} placeholder={t('ticket.filter_issue_ph')} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={setFProject} onClear={() => setFProject(new Set())} />

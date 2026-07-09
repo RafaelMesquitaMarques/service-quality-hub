@@ -128,6 +128,7 @@
     "revert_to": "Retour à",
     "search_placeholder": "Rechercher dans toutes les colonnes...",
     "clear_filters": "Effacer tous les filtres",
+    "filter_issue_ph": "Filtrer par problème qualité...",
     "all_fy": "Tous les FY",
     "deleted_toast": "Occurrence supprimée",
     "delete_occurrence_title": "Supprimer l'occurrence",
