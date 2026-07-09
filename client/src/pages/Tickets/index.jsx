@@ -13,7 +13,8 @@ const FISCAL_YEARS = ['all', 2026, 2025, 2024]
 const PAGE_SIZE    = 100
 
 // ── Column Filter Dropdown ─────────────────────────────────────────────────
-function ColumnFilter({ label, values, selected, onChange, onClear }) {
+function ColumnFilter({ label, values, selected, onChange, onClear, renderValue }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -42,7 +43,7 @@ function ColumnFilter({ label, values, selected, onChange, onClear }) {
             {isActive && (
               <button onClick={() => { onClear(); setOpen(false) }}
                 className="text-xs text-red-500 hover:text-red-700 bg-transparent border-0 cursor-pointer">
-                Effacer
+                {t('dashboard.clear')}
               </button>
             )}
           </div>
@@ -59,7 +60,7 @@ function ColumnFilter({ label, values, selected, onChange, onClear }) {
                   }}
                   className="cursor-pointer"
                 />
-                <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{v || '—'}</span>
+                <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{renderValue ? renderValue(v) : (v || '—')}</span>
               </label>
             ))}
           </div>
@@ -88,6 +89,7 @@ export default function TicketsPage() {
   const [fSC,     setFSC]       = useState(new Set())
   const [fDate,   setFDate]     = useState(new Set())
   const [fCreator, setFCreator] = useState(new Set())
+  const [costSort, setCostSort] = useState(null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
@@ -180,12 +182,21 @@ export default function TicketsPage() {
     [allTickets, profileMap]
   )
 
+  // Tri par coût pour repérer les « worst offenders » (coût le plus élevé en tête)
+  const sorted = useMemo(() => {
+    if (!costSort) return filtered
+    return [...filtered].sort((a, b) => {
+      const ca = getCost(a) || 0, cb = getCost(b) || 0
+      return costSort === 'desc' ? cb - ca : ca - cb
+    })
+  }, [filtered, costSort, lineCosts])
+
   const [page, setPage] = useState(1)
   const start   = (page - 1) * PAGE_SIZE
-  const tickets = filtered.slice(start, start + PAGE_SIZE)
-  const hasMore = start + PAGE_SIZE < filtered.length
+  const tickets = sorted.slice(start, start + PAGE_SIZE)
+  const hasMore = start + PAGE_SIZE < sorted.length
 
-  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear])
+  useEffect(() => setPage(1), [search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
 
   const hasActiveFilters = search || fStatus.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
@@ -251,7 +262,7 @@ export default function TicketsPage() {
         {hasActiveFilters && (
           <button onClick={clearAll}
             className="text-xs text-red-500 border border-red-200 dark:border-red-900 rounded-lg px-3 py-1.5 bg-transparent cursor-pointer hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1">
-            <i className="ti ti-x text-xs" aria-hidden="true" /> Effacer tous les filtres
+            <i className="ti ti-x text-xs" aria-hidden="true" /> {t('ticket.clear_filters')}
           </button>
         )}
       </div>
@@ -288,10 +299,16 @@ export default function TicketsPage() {
                   <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())} />
+                  <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())}
+                    renderValue={v => t(`status.${v}`)} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{t('ticket.cost')}</span>
+                  <button
+                    onClick={() => setCostSort(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
+                    className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                    {t('ticket.cost')}
+                    <i className={`ti ${costSort === 'desc' ? 'ti-sort-descending text-blue-500' : costSort === 'asc' ? 'ti-sort-ascending text-blue-500' : 'ti-selector'} text-xs`} aria-hidden="true" />
+                  </button>
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={setFCreator} onClear={() => setFCreator(new Set())} />

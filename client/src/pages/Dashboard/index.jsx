@@ -212,13 +212,20 @@ export default function Dashboard() {
 
   // Filter option lists (from the unfiltered year so they never disappear)
   const uniq = (arr, key) => [...new Set(arr.map(t => t[key]).filter(Boolean))].sort()
-  const deptOptions   = uniq(rawTickets, 'department')
+  // « (Non défini) » : filtre pour isoler le coût/les occurrences sans département
+  // (correspond à la part « (Non défini) » du camembert). Un coût est non défini
+  // quand ni la ligne ni l'occurrence n'a de département → ⟺ occurrence sans dépt.
+  const NO_DEPT = t('dashboard.unclassified')
+  const deptOptions   = rawTickets.some(tk => !tk.department)
+    ? [NO_DEPT, ...uniq(rawTickets, 'department')] : uniq(rawTickets, 'department')
   const brandOptions  = uniq(rawTickets, 'brand')
   const plantOptions  = uniq(rawTickets, 'plant')
   const statusOptions = STATUS_ORDER.filter(s => rawTickets.some(t => t.status === s))
+  const deptMatch = (dep) => filters.department === 'all' || dep === filters.department
+    || (filters.department === NO_DEPT && !dep)
 
   const match = (tk) =>
-    (filters.department === 'all' || tk.department === filters.department) &&
+    deptMatch(tk.department) &&
     (filters.brand      === 'all' || tk.brand      === filters.brand) &&
     (filters.plant      === 'all' || tk.plant      === filters.plant) &&
     (filters.status     === 'all' || tk.status     === filters.status)
@@ -268,7 +275,7 @@ export default function Dashboard() {
   }
   // Coût : dépt/usine filtrés au niveau LIGNE ; marque/statut au niveau occurrence.
   const unitMatch = (u) =>
-    (filters.department === 'all' || u.department === filters.department) &&
+    deptMatch(u.department) &&
     (filters.brand      === 'all' || u.brand      === filters.brand) &&
     (filters.plant      === 'all' || u.plant      === filters.plant) &&
     (filters.status     === 'all' || u.status     === filters.status)

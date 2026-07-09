@@ -127,6 +127,7 @@
     "zoom_reset": "Réinitialiser",
     "revert_to": "Retour à",
     "search_placeholder": "Rechercher dans toutes les colonnes...",
+    "clear_filters": "Effacer tous les filtres",
     "all_fy": "Tous les FY",
     "deleted_toast": "Occurrence supprimée",
     "delete_occurrence_title": "Supprimer l'occurrence",
