@@ -360,8 +360,13 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   const fileRef = useRef(null)
 
   // Coût + classification au niveau de la ligne (édités inline, hors du mode édition descriptif)
+  const costFields = (l) => ({
+    cost_furniture: l.cost_furniture != null ? String(l.cost_furniture) : '',
+    cost_freight:   l.cost_freight   != null ? String(l.cost_freight)   : '',
+    cost_install:   l.cost_install   != null ? String(l.cost_install)   : '',
+  })
   const [clf, setClf] = useState({
-    cost_approx:       line.cost_approx != null ? String(line.cost_approx) : '',
+    ...costFields(line),
     categories:        line.categories || '',
     department:        line.department || '',
     root_cause:        line.root_cause || '',
@@ -374,14 +379,14 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   // `line` ne change qu'après un save réussi.
   useEffect(() => {
     setClf({
-      cost_approx:       line.cost_approx != null ? String(line.cost_approx) : '',
+      ...costFields(line),
       categories:        line.categories || '',
       department:        line.department || '',
       root_cause:        line.root_cause || '',
       corrective_action: line.corrective_action || '',
     })
     setClfDirty(false)
-  }, [line.id, line.cost_approx, line.categories, line.department, line.root_cause, line.corrective_action])
+  }, [line.id, line.cost_furniture, line.cost_freight, line.cost_install, line.categories, line.department, line.root_cause, line.corrective_action])
 
   const { data: photos, refetch: refetchPhotos } = useQuery({
     queryKey: ['line-photos', line.id],
@@ -502,8 +507,14 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   }
 
   const saveClassification = async () => {
+    const parts = [clf.cost_furniture, clf.cost_freight, clf.cost_install]
+    const anyCost = parts.some(v => v !== '' && v != null)
+    const costSum = parts.reduce((s, v) => s + (Number(v) || 0), 0)
     const { error } = await supabase.from('occurrence_lines').update({
-      cost_approx:       clf.cost_approx === '' ? null : Number(clf.cost_approx),
+      cost_furniture:    clf.cost_furniture === '' ? null : Number(clf.cost_furniture),
+      cost_freight:      clf.cost_freight === '' ? null : Number(clf.cost_freight),
+      cost_install:      clf.cost_install === '' ? null : Number(clf.cost_install),
+      cost_approx:       anyCost ? costSum : null,   // total = somme des 3 postes
       categories:        clf.categories || null,
       department:        clf.department || null,
       root_cause:        clf.root_cause || null,
@@ -523,6 +534,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   // Édition gérée par le rôle (canEditProp), comme les sections au niveau occurrence.
   const showLineCost  = ['service_desk','quality_meeting','completed'].includes(status)
   const showLineClass = ['quality_meeting','completed'].includes(status)
+  const clfCostSum = ['cost_furniture','cost_freight','cost_install'].reduce((s, k) => s + (Number(clf[k]) || 0), 0)
 
   const isVid       = p => p.media_type === 'video' || isVideoUrl(p.url)
   const videoPhotos = (photos || []).filter(p =>  isVid(p))
@@ -717,11 +729,25 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 <div className="text-[11px] font-medium text-gray-400 mb-1 flex items-center gap-1">
                   <i className="ti ti-notes text-blue-500" aria-hidden="true" /> {t('ticket.step2')}
                 </div>
-                <label className="label">{t('ticket.cost')}</label>
-                <input type="number" min="0" value={clf.cost_approx}
-                  onChange={e => { setClf(c => ({ ...c, cost_approx: e.target.value })); setClfDirty(true) }}
-                  disabled={!canEditProp} placeholder="$0.00"
-                  className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                <div className="flex flex-col gap-2">
+                  {[
+                    ['cost_furniture', t('ticket.cost_furniture')],
+                    ['cost_freight',   t('ticket.cost_freight')],
+                    ['cost_install',   t('ticket.cost_install')],
+                  ].map(([key, label]) => (
+                    <div key={key}>
+                      <label className="label">{label}</label>
+                      <input type="number" min="0" value={clf[key]}
+                        onChange={e => { setClf(c => ({ ...c, [key]: e.target.value })); setClfDirty(true) }}
+                        disabled={!canEditProp} placeholder="$0.00"
+                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-100 dark:border-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300">
+                    <span>{t('ticket.cost')}</span>
+                    <span className="font-mono">{`$${Math.round(clfCostSum).toLocaleString()}`}</span>
+                  </div>
+                </div>
               </div>
             )}
             {showLineClass && (
