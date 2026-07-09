@@ -140,6 +140,30 @@ export async function fetchOccurrenceLines(occurrenceIds) {
   return rows
 }
 
+// ─── Revenus mensuels (par année fiscale) ────────────────────────────────────
+export const revenueApi = {
+  // Toutes les lignes (la table est minuscule : ~12 lignes par année).
+  all: async () => {
+    const { data, error } = await supabase
+      .from('monthly_revenue')
+      .select('fiscal_year, fiscal_month, revenue')
+    if (error) { console.warn('monthly_revenue indisponible:', error.message); return [] }
+    return data || []
+  },
+  // entries: [{ fiscal_month, revenue }]
+  upsertYear: async (fiscalYear, entries) => {
+    const rows = entries.map(e => ({
+      fiscal_year: fiscalYear, fiscal_month: e.fiscal_month,
+      revenue: Number(e.revenue) || 0, updated_at: new Date().toISOString(),
+    }))
+    const { error } = await supabase
+      .from('monthly_revenue')
+      .upsert(rows, { onConflict: 'fiscal_year,fiscal_month' })
+    if (error) throw error
+    return true
+  },
+}
+
 // ─── Admin API ───────────────────────────────────────────────────────────────
 export const adminApi = {
   users: async () => {

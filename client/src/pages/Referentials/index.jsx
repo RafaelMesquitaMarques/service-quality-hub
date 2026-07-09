@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../services/supabase'
+import { revenueApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import toast from 'react-hot-toast'
@@ -199,6 +200,72 @@ function EntityManager({ config }) {
   )
 }
 
+// ── Revenus mensuels par année fiscale ─────────────────────────────────────
+const REVENUE_YEARS = [CURRENT_FISCAL_YEAR + 1, CURRENT_FISCAL_YEAR, CURRENT_FISCAL_YEAR - 1, CURRENT_FISCAL_YEAR - 2]
+
+function RevenueManager() {
+  const { t } = useTranslation()
+  const qc = useQueryClient()
+  const [fy, setFy]       = useState(CURRENT_FISCAL_YEAR)
+  const [draft, setDraft] = useState({})
+
+  const { data: allRev, isLoading } = useQuery({ queryKey: ['monthly-revenue'], queryFn: revenueApi.all })
+
+  // (Ré)initialise les champs quand l'année ou les données changent.
+  useEffect(() => {
+    const m = {}
+    ;(allRev || []).filter(r => r.fiscal_year === fy).forEach(r => { m[r.fiscal_month] = String(Number(r.revenue)) })
+    setDraft(m)
+  }, [allRev, fy])
+
+  const saveMut = useMutation({
+    mutationFn: () => revenueApi.upsertYear(fy, FISCAL_MONTH_ORDER.map(mo => ({
+      fiscal_month: mo.fiscal,
+      revenue: draft[mo.fiscal] === '' || draft[mo.fiscal] == null ? 0 : Number(draft[mo.fiscal]),
+    }))),
+    onSuccess: () => { qc.invalidateQueries(['monthly-revenue']); toast.success(t('common.save')) },
+    onError:   () => toast.error(t('common.error')),
+  })
+
+  const total = FISCAL_MONTH_ORDER.reduce((s, mo) => s + (Number(draft[mo.fiscal]) || 0), 0)
+  const money = v => '$' + Math.round(Number(v) || 0).toLocaleString()
+
+  return (
+    <div className="card p-5 max-w-xl">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-500 dark:text-gray-400">{t('referentials.fiscal_year')}</label>
+          <select className="input text-sm" style={{ width: 'auto' }} value={fy} onChange={e => setFy(Number(e.target.value))}>
+            {REVENUE_YEARS.map(y => <option key={y} value={y}>FY{y}</option>)}
+          </select>
+        </div>
+        <button className="btn-primary text-sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+          <i className="ti ti-device-floppy" aria-hidden="true" /> {saveMut.isPending ? t('common.loading') : t('common.save')}
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">{t('referentials.revenues_hint')}</p>
+      {isLoading ? <div className="flex justify-center p-6"><Spinner /></div> : (
+        <div className="space-y-2">
+          {FISCAL_MONTH_ORDER.map(mo => (
+            <div key={mo.fiscal} className="grid items-center gap-3" style={{ gridTemplateColumns: '96px 1fr' }}>
+              <span className="text-sm text-gray-600 dark:text-gray-300">{mo.name}</span>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">$</span>
+                <input type="number" min="0" step="1000" placeholder="0" className="input text-sm pl-6"
+                  value={draft[mo.fiscal] ?? ''}
+                  onChange={e => setDraft(d => ({ ...d, [mo.fiscal]: e.target.value }))} />
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-between pt-3 mt-1 border-t border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <span>{t('dashboard.total')}</span><span className="font-mono">{money(total)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function ReferentialsPage() {
   const { t } = useTranslation()
@@ -236,7 +303,7 @@ export default function ReferentialsPage() {
     },
   }
 
-  const tabs = [['clients', t('referentials.clients')], ['brands', t('referentials.brands')]]
+  const tabs = [['clients', t('referentials.clients')], ['brands', t('referentials.brands')], ['revenues', t('referentials.revenues')]]
 
   return (
     <>
@@ -253,7 +320,7 @@ export default function ReferentialsPage() {
           ))}
         </div>
 
-        <EntityManager key={tab} config={configs[tab]} />
+        {tab === 'revenues' ? <RevenueManager /> : <EntityManager key={tab} config={configs[tab]} />}
       </div>
     </>
   )

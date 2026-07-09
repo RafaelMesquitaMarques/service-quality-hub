@@ -6,20 +6,14 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
-import { ticketApi, fetchOccurrenceLines, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchOccurrenceLines, revenueApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
 import { buildXlsxWithImage } from '../../utils/xlsxImage'
 import toast from 'react-hot-toast'
 
-const MONTHLY_REVENUE = {
-  December:  9998777,
-  January:   11129308,
-  February:  10260000,
-  March:     13754000,
-  April:     14690997,
-  May:       11000000,
-}
+// Les revenus mensuels sont désormais éditables (table monthly_revenue), via
+// Référentiels › Revenus. Voir revenueApi + la requête ['monthly-revenue'].
 
 const TOLERANCE_PCT = 0.003
 const BRAND_COLORS  = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA']
@@ -203,6 +197,13 @@ export default function Dashboard() {
     keepPreviousData: true,
   })
 
+  // Revenus mensuels (éditables via Référentiels › Revenus).
+  const { data: revenueRows } = useQuery({
+    queryKey: ['monthly-revenue'],
+    queryFn: revenueApi.all,
+    staleTime: 10 * 60 * 1000,
+  })
+
   if (loadingCurrent && !currentYearTickets) return (
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
@@ -234,7 +235,12 @@ export default function Dashboard() {
   const prevTickets = rawPrev.filter(match)
   const activeCount = ['department', 'brand', 'plant', 'status'].filter(k => filters[k] !== 'all').length
 
-  const revenueAvailable = filters.fy === CURRENT_FISCAL_YEAR
+  // Revenus par mois fiscal, pour l'année courante et la précédente.
+  const revByFY = {}
+  ;(revenueRows || []).forEach(r => { (revByFY[r.fiscal_year] = revByFY[r.fiscal_year] || {})[r.fiscal_month] = Number(r.revenue) || 0 })
+  const revenueByFM     = revByFY[filters.fy]     || {}
+  const prevRevenueByFM = revByFY[filters.fy - 1] || {}
+  const revenueAvailable = Object.values(revenueByFM).some(v => v > 0)
 
   // ── Cost units (per line) ──────────────────────────────────
   // Le coût vient des lignes (occurrence_lines). Chaque ligne devient une
@@ -312,7 +318,7 @@ export default function Dashboard() {
         positive: completionPct - prevCompletionPct >= 0 }
     : null
 
-  const ytdRevenue     = revenueAvailable ? Object.values(MONTHLY_REVENUE).reduce((s, v) => s + v, 0) : 0
+  const ytdRevenue     = Object.values(revenueByFM).reduce((s, v) => s + v, 0)
   const ytdPct         = ytdRevenue > 0 ? scCost / ytdRevenue * 100 : null
   const aboveTolerance = ytdPct != null && ytdPct > 0.3
 
@@ -326,15 +332,18 @@ export default function Dashboard() {
   const sparkDone   = FISCAL_MONTH_ORDER.map(m => monthDone(m.fiscal))
 
   // SC cost as % of revenue — current FY (dark) vs previous FY (pale), side by side.
-  // Client is excluded from the numerator; the same monthly revenue baseline is used
-  // as the denominator for both years (no separate prior-year revenue is tracked).
+  // Client is excluded from the numerator. Revenue is per fiscal month (table
+  // monthly_revenue). A month shows only if it has a revenue > 0 → renseigner un
+  // mois le fait apparaître. La barre pâle (année N-1) utilise le revenu de N-1
+  // s'il existe, sinon celui de l'année courante en repli.
   const scMonthCost = (units, fiscal) => units
     .filter(u => u.fiscal_month === fiscal && u.department !== 'Client')
     .reduce((sum, u) => sum + u.cost, 0)
-  const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, name, nameShort }) => {
-    const revenue = revenueAvailable ? (MONTHLY_REVENUE[name] || 0) : 0
+  const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
+    const revenue     = revenueByFM[fiscal] || 0
+    const prevRevenue = prevRevenueByFM[fiscal] || revenue
     const pct     = revenue > 0 ? +(scMonthCost(costUnits, fiscal) / revenue * 100).toFixed(3) : null
-    const prevPct = revenue > 0 ? +(scMonthCost(prevUnits, fiscal) / revenue * 100).toFixed(3) : null
+    const prevPct = prevRevenue > 0 ? +(scMonthCost(prevUnits, fiscal) / prevRevenue * 100).toFixed(3) : null
     return { name: nameShort, pct, prevPct }
   }).filter(d => d.pct !== null)
   const sparkScPct = scPctData.map(d => d.pct)
