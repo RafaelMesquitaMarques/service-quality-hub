@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -6,10 +6,11 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
-import * as XLSX from 'xlsx'
 import { ticketApi, fetchOccurrenceLines, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
+import { buildXlsxWithImage } from '../../utils/xlsxImage'
+import toast from 'react-hot-toast'
 
 const MONTHLY_REVENUE = {
   December:  9998777,
@@ -162,6 +163,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { dark } = useThemeStore()
 
+  const deptPieRef = useRef(null)
   const [filters, setFilters] = useState({
     fy: CURRENT_FISCAL_YEAR, department: 'all', brand: 'all', plant: 'all', status: 'all',
   })
@@ -409,7 +411,7 @@ export default function Dashboard() {
   // ── Dept-cost pie: always-on labels with collision-avoided leader lines ──
   // Geometry is fixed so the label y-positions can be de-collided up front, then
   // stacked down each side (Excel-style) instead of piling up near 12 o'clock.
-  const PIE_H = 520, PIE_R = 175, PIE_MARGIN_Y = 10
+  const PIE_H = 660, PIE_R = 230, PIE_MARGIN_Y = 12
   const PIE_CY = PIE_MARGIN_Y + (PIE_H - 2 * PIE_MARGIN_Y) / 2
   const pieInk = dark ? '#e6edf3' : '#111827'
   const pieLabelLayout = (() => {
@@ -452,26 +454,53 @@ export default function Dashboard() {
     )
   }
 
-  // Export the department cost breakdown (current + prior FY) to an .xlsx file
-  const exportDeptCosts = () => {
-    const rows = deptCompareData.map(d => ({
-      [t('ticket.department')]:            d.name,
-      [`FY${filters.fy} ${t('dashboard.ytd')}`]:     d.cur,
-      [`FY${filters.fy - 1} ${t('dashboard.ytd')}`]: d.prev,
-      [t('dashboard.gap')]:                d.gap,
-      '+/-%':                              d.pct,
-    }))
-    rows.push({
-      [t('ticket.department')]:            t('dashboard.total'),
-      [`FY${filters.fy} ${t('dashboard.ytd')}`]:     deptCompareTotals.cur,
-      [`FY${filters.fy - 1} ${t('dashboard.ytd')}`]: deptCompareTotals.prev,
-      [t('dashboard.gap')]:                deptCompareTotals.gap,
-      '+/-%':                              deptCompareTotals.pct,
-    })
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, `Dept cost FY${filters.fy}`)
-    XLSX.writeFile(wb, `dept-cost-FY${filters.fy}.xlsx`)
+  // Export the department pie AS AN IMAGE embedded in an .xlsx (not a table).
+  // The chart SVG is rasterized to PNG, then embedded via exceljs (SheetJS can't
+  // embed images). exceljs is dynamically imported so it never affects the main
+  // bundle/build and only loads when the button is clicked.
+  const exportDeptCosts = async () => {
+    try {
+      const svgEl = deptPieRef.current?.querySelector('svg')
+      if (!svgEl) { toast.error(t('common.error')); return }
+      const rect = svgEl.getBoundingClientRect()
+      const w = Math.max(1, Math.round(rect.width)), h = Math.max(1, Math.round(rect.height))
+      const clone = svgEl.cloneNode(true)
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+      clone.setAttribute('width', w); clone.setAttribute('height', h)
+      const svgStr = new XMLSerializer().serializeToString(clone)
+      const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr)
+
+      const scale = 2 // hi-res so the chart stays crisp in Excel
+      const pngBase64 = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = w * scale; canvas.height = h * scale
+          const ctx = canvas.getContext('2d')
+          ctx.scale(scale, scale)
+          ctx.fillStyle = dark ? '#0D1117' : '#ffffff'
+          ctx.fillRect(0, 0, w, h)
+          ctx.drawImage(img, 0, 0, w, h)
+          resolve(canvas.toDataURL('image/png').split(',')[1])
+        }
+        img.onerror = reject
+        img.src = svgUrl
+      })
+
+      const bytes = buildXlsxWithImage({
+        sheetName: `Dept FY${filters.fy}`,
+        title: `Coût par département — FY${filters.fy} — ${money(deptCompareTotals.cur)}`,
+        pngBase64, imgWidth: w, imgHeight: h,
+      })
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const a = document.createElement('a')
+      a.href = url; a.download = `cout-par-departement-FY${filters.fy}.xlsx`; a.click()
+      URL.revokeObjectURL(url)
+      toast.success(t('common.save'))
+    } catch (e) {
+      console.error(e)
+      toast.error(t('common.error'))
+    }
   }
   const tip   = (fmt) => <Tooltip cursor={{ fill: dark ? '#ffffff08' : '#00000006' }} content={(p) => <ChartTooltip {...p} dark={dark} fmt={fmt} />} />
   const NoData = () => (
@@ -770,17 +799,19 @@ export default function Dashboard() {
             </button>
           ) : null}>
           {deptCostData.length ? (
-            <ResponsiveContainer width="100%" height={PIE_H}>
-              <PieChart margin={{ top: PIE_MARGIN_Y, right: 130, bottom: PIE_MARGIN_Y, left: 130 }}>
-                <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
-                  outerRadius={PIE_R} paddingAngle={0} startAngle={90} endAngle={-270}
-                  stroke={dark ? '#0D1117' : '#ffffff'} strokeWidth={1}
-                  labelLine={false} label={renderPieLabel} isAnimationActive={false}>
-                  {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
-                </Pie>
-                {tip(money)}
-              </PieChart>
-            </ResponsiveContainer>
+            <div ref={deptPieRef}>
+              <ResponsiveContainer width="100%" height={PIE_H}>
+                <PieChart margin={{ top: PIE_MARGIN_Y, right: 150, bottom: PIE_MARGIN_Y, left: 150 }}>
+                  <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
+                    outerRadius={PIE_R} paddingAngle={0} startAngle={90} endAngle={-270}
+                    stroke={dark ? '#0D1117' : '#ffffff'} strokeWidth={1}
+                    labelLine={false} label={renderPieLabel} isAnimationActive={false}>
+                    {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
+                  </Pie>
+                  {tip(money)}
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           ) : <NoData />}
         </ChartCard>
 
