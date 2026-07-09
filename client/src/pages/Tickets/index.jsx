@@ -115,6 +115,7 @@ export default function TicketsPage() {
   }, [profiles])
 
   const getCreator = (tk) => profileMap[tk.created_by] || null
+  const NO_DEPT = t('dashboard.unclassified')  // « (Non défini) » — occurrences sans département
 
   const { data: lineCosts } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id)],
@@ -162,16 +163,18 @@ export default function TicketsPage() {
     }
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
-    if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department))
+    if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department || NO_DEPT))
     if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
     if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap])
+  }, [allTickets, search, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
+  // Ajoute « (Non défini) » en tête du filtre Département s'il existe des occurrences sans département.
+  const deptFilterValues = allTickets.some(tk => !tk.department) ? [NO_DEPT, ...uniq('department')] : uniq('department')
   const creatorNames = useMemo(
     () => [...new Set(allTickets.map(tk => getCreator(tk)).filter(Boolean))].sort(),
     [allTickets, profileMap]
@@ -282,7 +285,7 @@ export default function TicketsPage() {
                   <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={setFBrand} onClear={() => setFBrand(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.department')} values={uniq('department')} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
+                  <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())} />
