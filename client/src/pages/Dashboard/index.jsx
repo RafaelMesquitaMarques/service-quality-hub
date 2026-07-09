@@ -638,31 +638,23 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Events by month (area) */}
+        {/* Events by month (bars, side by side, with labels) */}
         <ChartCard icon="ti-calendar-stats" color="#2563EB"
           title={t('dashboard.events_chart')} subtitle={`FY${filters.fy} vs FY${filters.fy - 1}`}>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={eventsByMonthData} margin={{ top: 5 }}>
-              <defs>
-                <linearGradient id="gradCur" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#2563EB" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradPrev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#94A3B8" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#94A3B8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={eventsByMonthData} margin={{ top: 22 }} barCategoryGap="20%">
               <CartesianGrid vertical={false} stroke={gridColor} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
               {tip()}
               <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              <Area type="monotone" dataKey="prev" name={`FY${filters.fy - 1}`} stroke="#94A3B8" strokeWidth={2}
-                fill="url(#gradPrev)" connectNulls dot={false} />
-              <Area type="monotone" dataKey="current" name={`FY${filters.fy}`} stroke="#2563EB" strokeWidth={2.5}
-                fill="url(#gradCur)" connectNulls dot={{ r: 3, fill: '#2563EB' }} activeDot={{ r: 5 }} />
-            </AreaChart>
+              <Bar dataKey="prev" name={`FY${filters.fy - 1}`} fill={palePrev} radius={[4, 4, 0, 0]} maxBarSize={30}>
+                <LabelList dataKey="prev" position="top" offset={6} fontSize={9} fill={axisColor} formatter={v => v || ''} />
+              </Bar>
+              <Bar dataKey="current" name={`FY${filters.fy}`} fill="#2563EB" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                <LabelList dataKey="current" position="top" offset={6} fontSize={9} fontWeight={700} fill={axisColor} formatter={v => v || ''} />
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </ChartCard>
 
