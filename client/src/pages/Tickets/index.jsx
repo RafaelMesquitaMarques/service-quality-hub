@@ -12,6 +12,14 @@ import toast from 'react-hot-toast'
 const FISCAL_YEARS = ['all', 2026, 2025, 2024]
 const PAGE_SIZE    = 100
 
+// Urgence (champ « Statut » de la fiche) — overnight / urgent / normal
+const URGENCY_LBL   = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
+const URGENCY_STYLE = {
+  urgent:    'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400',
+  overnight: 'text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400',
+  normal:    'text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400',
+}
+
 // ── Column Filter Dropdown ─────────────────────────────────────────────────
 function ColumnFilter({ label, values, selected, onChange, onClear, renderValue }) {
   const { t } = useTranslation()
@@ -117,6 +125,7 @@ export default function TicketsPage() {
   const [search,     setSearch]     = useState('')
 
   const [fStatus, setFStatus]   = useState(new Set())
+  const [fUrgency, setFUrgency] = useState(new Set())
   const [fBrand,  setFBrand]    = useState(new Set())
   const [fDept,   setFDept]     = useState(new Set())
   const [fPlant,  setFPlant]    = useState(new Set())
@@ -201,6 +210,7 @@ export default function TicketsPage() {
     }
     if (fQuality.trim()) { const q = fQuality.toLowerCase(); result = result.filter(tk => tk.quality_issue?.toLowerCase().includes(q)) }
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
+    if (fUrgency.size > 0) result = result.filter(tk => fUrgency.has(tk.urgency))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
     if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department || NO_DEPT))
     if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
@@ -209,7 +219,7 @@ export default function TicketsPage() {
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fQuality, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
+  }, [allTickets, search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   // Ajoute « (Non défini) » en tête du filtre Département s'il existe des occurrences sans département.
@@ -233,19 +243,19 @@ export default function TicketsPage() {
   const tickets = sorted.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < sorted.length
 
-  useEffect(() => setPage(1), [search, fQuality, fStatus, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
+  useEffect(() => setPage(1), [search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
 
-  const hasActiveFilters = search || fQuality || fStatus.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
+  const hasActiveFilters = search || fQuality || fStatus.size || fUrgency.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
   const clearAll = () => {
-    setSearch(''); setFQuality(''); setFStatus(new Set()); setFBrand(new Set())
+    setSearch(''); setFQuality(''); setFStatus(new Set()); setFUrgency(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFProject(new Set())
     setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
   }
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'status', 'cost_approx', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'status', 'urgency', 'cost_approx', 'created_by_name']
       const rows    = filtered
         .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
@@ -340,6 +350,10 @@ export default function TicketsPage() {
                     renderValue={v => t(`status.${v}`)} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <ColumnFilter label={t('ticket.urgency_col')} values={uniq('urgency')} selected={fUrgency} onChange={setFUrgency} onClear={() => setFUrgency(new Set())}
+                    renderValue={v => URGENCY_LBL[v] || v} />
+                </th>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <button
                     onClick={() => setCostSort(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
                     className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
@@ -376,6 +390,11 @@ export default function TicketsPage() {
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5"><StatusBadge status={ticket.status} /></td>
+                    <td className="px-4 py-2.5">
+                      {ticket.urgency
+                        ? <span className={`text-xs px-2 py-0.5 rounded-full ${URGENCY_STYLE[ticket.urgency] || 'text-gray-500 bg-gray-100 dark:bg-gray-800'}`}>{URGENCY_LBL[ticket.urgency] || ticket.urgency}</span>
+                        : <span className="text-xs text-gray-400">—</span>}
+                    </td>
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
                       {cost ? `$${Math.round(cost).toLocaleString()}` : '—'}
                     </td>

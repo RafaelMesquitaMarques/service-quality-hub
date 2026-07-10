@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -35,7 +35,7 @@ function weekLabel(d) {
   return `Week ${mm}-${dd}`
 }
 
-function TicketPicker({ tickets, selected, onAdd, onClose }) {
+function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
   const { t } = useTranslation()
   const [search, setSearch]   = useState('')
   const [dept,   setDept]     = useState('')
@@ -92,16 +92,33 @@ function TicketPicker({ tickets, selected, onAdd, onClose }) {
         <div className="max-h-80 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="py-6 text-center text-xs text-gray-400">{t('meeting.no_tickets_found')}</div>
-          ) : filtered.map(tk => (
-            <div key={tk.id} className="grid gap-2 px-5 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px minmax(0,1fr) 80px 80px 64px 80px' }}>
+          ) : filtered.map(tk => {
+            const inMeetings = (meetingMap?.[tk.id] || []).filter(Boolean)
+            const already    = inMeetings.length > 0
+            const meetingDates = inMeetings.map(formatDate).join(', ')
+            return (
+            <div key={tk.id} className="grid gap-2 px-5 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px minmax(0,1fr) 120px 80px 64px 72px' }}>
               <div className="font-mono text-gray-400">{tk.sc_number || '—'}</div>
-              <div className="truncate text-gray-900 dark:text-gray-100">{tk.quality_issue}</div>
-              <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tk.department}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate text-gray-900 dark:text-gray-100">{tk.quality_issue}</span>
+                {already && (
+                  <span className="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px] font-medium whitespace-nowrap"
+                    title={meetingDates}>
+                    <i className="ti ti-calendar-check text-[10px]" aria-hidden="true" /> {t('meeting.already_in_meeting')}
+                  </span>
+                )}
+              </div>
+              <div className="truncate text-gray-500 dark:text-gray-400">{tk.project_name || '—'}</div>
               <div className="text-gray-400">{tk.issue_reception_date?.slice(0,10) || '—'}</div>
               <div className="font-mono text-gray-400 text-right">{tk.cost_approx ? `$${Math.round(Number(tk.cost_approx)).toLocaleString()}` : '—'}</div>
-              <button onClick={() => onAdd(tk.id)} className="btn-primary py-1 px-2 text-xs">{t('meeting.add')}</button>
+              <button
+                onClick={() => {
+                  if (already && !window.confirm(t('meeting.confirm_add_duplicate', { dates: meetingDates }))) return
+                  onAdd(tk.id)
+                }}
+                className="btn-primary py-1 px-2 text-xs">{t('meeting.add')}</button>
             </div>
-          ))}
+          )})}
         </div>
         <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
           <span className="text-xs text-gray-400">{selectedIds.size} {t('meeting.selected')}</span>
@@ -195,6 +212,31 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     enabled: showTicketPicker,
     staleTime: 0,
   })
+
+  // Occurrences déjà rattachées à une (autre) réunion — pour le badge + la
+  // confirmation « déjà en réunion » dans le sélecteur.
+  const { data: meetingLinks } = useQuery({
+    queryKey: ['all-meeting-tickets'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('meeting_tickets')
+        .select('ticket_id, meeting_id, meetings(meeting_date)')
+      if (error) return []
+      return data || []
+    },
+    enabled: showTicketPicker,
+    staleTime: 60 * 1000,
+  })
+
+  const meetingMap = useMemo(() => {
+    const m = {}
+    for (const link of (meetingLinks || [])) {
+      if (link.meeting_id === selId) continue        // ignore la réunion courante
+      if (!m[link.ticket_id]) m[link.ticket_id] = []
+      m[link.ticket_id].push(link.meetings?.meeting_date)
+    }
+    return m
+  }, [meetingLinks, selId])
 
   const tickets   = meetingTickets || []
   const actList   = actions        || []
@@ -526,17 +568,17 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                     )
                   ) : (
                     <>
-                      <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 80px 64px 28px' }}>
-                        <div>SC#</div><div>{t('ticket.issue')}</div><div>Dept.</div><div className="text-right">{t('ticket.cost')}</div><div></div>
+                      <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 140px 64px 28px' }}>
+                        <div>SC#</div><div>{t('ticket.issue')}</div><div>{t('ticket.project_name')}</div><div className="text-right">{t('ticket.cost')}</div><div></div>
                       </div>
                       {tickets.map(tk => (
-                        <div key={tk?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 80px 64px 28px' }}>
+                        <div key={tk?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 140px 64px 28px' }}>
                           <div className="font-mono text-gray-400">{tk?.sc_number || '—'}</div>
                           <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
                             onClick={() => navigate(`/tickets/${tk?.id}?from=meeting&meetingId=${selId}`)}>
                             {tk?.quality_issue}
                           </div>
-                          <div className="text-center px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">{tk?.department}</div>
+                          <div className="truncate text-gray-500 dark:text-gray-400">{tk?.project_name || '—'}</div>
                           <div className="font-mono text-gray-400 text-right">
                             {getTicketCost(tk) > 0 ? `$${Math.round(getTicketCost(tk)).toLocaleString()}` : '—'}
                           </div>
@@ -630,7 +672,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       </div>
 
       {showTicketPicker && (
-        <TicketPicker tickets={allTickets || []} selected={tickets} onAdd={(id) => addTicketMut.mutate(id)} onClose={() => setShowTicketPicker(false)} />
+        <TicketPicker tickets={allTickets || []} selected={tickets} meetingMap={meetingMap} onAdd={(id) => addTicketMut.mutate(id)} onClose={() => setShowTicketPicker(false)} />
       )}
 
       {showNewMeeting && (

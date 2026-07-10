@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ticketApi } from '../../services/api'
+import { ticketApi, logLineHistory, logLineEvent } from '../../services/api'
 import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -56,6 +56,10 @@ function prevStatus(s) {
 function formatDate(d) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric' })
+}
+function formatDateTime(d) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
 }
 
 function SectionHeader({ icon, title, right }) {
@@ -353,6 +357,7 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
 
 // ── Line Card (display + edit) ─────────────────────────────────────────────
 function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp, onView }) {
+  const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ ...line })
   const [annotating, setAnnotating] = useState(null)
@@ -488,7 +493,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   }
 
   const saveLine = async () => {
-    const { error } = await supabase.from('occurrence_lines').update({
+    const payload = {
       quality_issue: form.quality_issue,
       description:   form.description || null,
       line_item:     form.line_item,
@@ -498,9 +503,12 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
       affected_qty:  form.affected_qty ? Number(form.affected_qty) : null,
       total_qty:     form.total_qty    ? Number(form.total_qty)    : null,
       completion_type: form.completion_type || null,
-      updated_at:    new Date().toISOString(),
-    }).eq('id', line.id)
+    }
+    const { error } = await supabase.from('occurrence_lines')
+      .update({ ...payload, updated_at: new Date().toISOString() }).eq('id', line.id)
     if (error) { toast.error(t('common.error')); return }
+    await logLineHistory(occurrenceId, line, payload, form.quality_issue || line.quality_issue)
+    queryClient.invalidateQueries({ queryKey: ['ticket-history', occurrenceId] })
     toast.success(t('common.save'))
     onUpdate()
     setEditing(false)
@@ -510,7 +518,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     const parts = [clf.cost_furniture, clf.cost_freight, clf.cost_install]
     const anyCost = parts.some(v => v !== '' && v != null)
     const costSum = parts.reduce((s, v) => s + (Number(v) || 0), 0)
-    const { error } = await supabase.from('occurrence_lines').update({
+    const payload = {
       cost_furniture:    clf.cost_furniture === '' ? null : Number(clf.cost_furniture),
       cost_freight:      clf.cost_freight === '' ? null : Number(clf.cost_freight),
       cost_install:      clf.cost_install === '' ? null : Number(clf.cost_install),
@@ -519,9 +527,12 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
       department:        clf.department || null,
       root_cause:        clf.root_cause || null,
       corrective_action: clf.corrective_action || null,
-      updated_at:        new Date().toISOString(),
-    }).eq('id', line.id)
+    }
+    const { error } = await supabase.from('occurrence_lines')
+      .update({ ...payload, updated_at: new Date().toISOString() }).eq('id', line.id)
     if (error) { toast.error(t('common.error')); return }
+    await logLineHistory(occurrenceId, line, payload, line.quality_issue)
+    queryClient.invalidateQueries({ queryKey: ['ticket-history', occurrenceId] })
     toast.success(t('common.save'))
     onUpdate()
     setClfDirty(false)
@@ -922,9 +933,24 @@ export default function TicketDetail() {
     enabled: !!ticket?.created_by,
   })
 
+  // Piste d'audit — journal des modifications de l'occurrence
+  const { data: history } = useQuery({
+    queryKey: ['ticket-history', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ticket_history')
+        .select('*, changed_by_profile:user_profiles(full_name)')
+        .eq('ticket_id', id)
+        .order('changed_at', { ascending: false })
+      if (error) return []
+      return data || []
+    },
+    enabled: !!id,
+  })
+
   const updateMut = useMutation({
     mutationFn: (payload) => ticketApi.update(id, payload),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket', id] }); refreshCostViews(); toast.success(t('common.save')) },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket', id] }); queryClient.invalidateQueries({ queryKey: ['ticket-history', id] }); refreshCostViews(); toast.success(t('common.save')) },
     onError: () => toast.error(t('common.error')),
   })
 
@@ -945,9 +971,11 @@ export default function TicketDetail() {
         sort_order:    maxOrder + 1,
       })
       if (error) throw error
+      await logLineEvent(id, 'line_added', newLine.quality_issue || null)
     },
     onSuccess: () => {
       refreshCostViews()
+      queryClient.invalidateQueries({ queryKey: ['ticket-history', id] })
       setAddingLine(false)
       setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
       toast.success(t('ticket.add_line'))
@@ -957,10 +985,12 @@ export default function TicketDetail() {
 
   const deleteLineMut = useMutation({
     mutationFn: async (lineId) => {
+      const removed = (lines || []).find(l => l.id === lineId)
       const { error } = await supabase.from('occurrence_lines').delete().eq('id', lineId)
       if (error) throw error
+      await logLineEvent(id, 'line_removed', removed?.quality_issue || null)
     },
-    onSuccess: () => refreshCostViews(),
+    onSuccess: () => { refreshCostViews(); queryClient.invalidateQueries({ queryKey: ['ticket-history', id] }) },
     onError: () => toast.error(t('common.error')),
   })
 
@@ -1048,6 +1078,44 @@ export default function TicketDetail() {
 
   const prev = prevStatus(ticket.status)
   const next = nextStatus(ticket.status)
+
+  // ── Piste d'audit : libellés de champs & formatage des valeurs ────────────
+  const FIELD_LABELS = {
+    project_name: t('ticket.project_name'),        brand: t('ticket.brand'),
+    sc_number: t('ticket.sc_number'),              issue_reception_date: t('ticket.reception_date'),
+    delivery_date: t('ticket.delivery_date'),      wish_delivery_date: t('ticket.wish_delivery_date'),
+    installer_needed: t('ticket.installer_needed'), urgency: t('ticket.urgency'),
+    comment: t('ticket.comment'),                  root_cause: t('ticket.root_cause'),
+    corrective_action: t('ticket.corrective_action'), service_desk_notes: t('ticket.step2'),
+    categories: t('ticket.categories'),            department: t('ticket.department'),
+    cost_approx: t('ticket.cost'),                 cost_final: t('ticket.cost_final'),
+    status: t('ticket.status'),                    quality_issue: t('ticket.issue'),
+    // champs de ligne (occurrence_lines)
+    description: t('ticket.description'),           line_item: t('ticket.line_item'),
+    foliot_id: t('ticket.foliot_id'),              plant: t('ticket.plant'),
+    ref_so: t('ticket.ref_so'),                    affected_qty: t('ticket.affected_qty'),
+    total_qty: t('ticket.total_qty'),              completion_type: t('ticket.completion_type'),
+    cost_furniture: t('ticket.cost_furniture'),    cost_freight: t('ticket.cost_freight'),
+    cost_install: t('ticket.cost_install'),
+    // événements
+    line_added: t('ticket.line_added'),            line_removed: t('ticket.line_removed'),
+  }
+  const isLineField = (f) => typeof f === 'string' && f.startsWith('line:')
+  const fieldLabel = (f) => {
+    if (isLineField(f)) { const base = f.slice(5); return `${t('ticket.line_n')} · ${FIELD_LABELS[base] || base}` }
+    return FIELD_LABELS[f] || f
+  }
+  const MONEY_FIELDS = ['cost_approx','cost_final','cost_furniture','cost_freight','cost_install']
+  const histValue = (field, val) => {
+    const f = isLineField(field) ? field.slice(5) : field
+    if (val === null || val === undefined || val === '') return '—'
+    if (f === 'urgency') return URGENCY_LBL[val] || val
+    if (f === 'installer_needed') return val === 'true' ? t('common.yes') : val === 'false' ? t('common.no') : val
+    if (['issue_reception_date','delivery_date','wish_delivery_date','sd_completed_at'].includes(f)) return formatDate(val)
+    if (f === 'status') return t(`status.${val}`)
+    if (MONEY_FIELDS.includes(f)) { const n = Number(val); return Number.isFinite(n) ? `$${Math.round(n).toLocaleString()}` : val }
+    return String(val)
+  }
 
   return (
     <>
@@ -1320,20 +1388,42 @@ export default function TicketDetail() {
               </div>
             )}
 
-            {/* History */}
+            {/* History — piste d'audit append-only : chaque modification (même annulée) */}
             <div className="card">
-              <SectionHeader icon="ti-history" title={t('ticket.history')} />
-              <div className="px-4 py-2">
-                {[
-                  { dot:'#2563eb', time: formatDate(ticket.updated_at || ticket.created_at), text: t('ticket.last_modified') },
-                  { dot:'#9ca3af', time: formatDate(ticket.issue_reception_date), text: `${t('ticket.created')}${creator?.full_name ? ` · ${creator.full_name}` : ''} · SC# ${ticket.sc_number || '—'}` },
-                ].map((h, i) => (
-                  <div key={i} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800 text-xs">
-                    <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: h.dot }} />
-                    <div className="text-gray-400 min-w-20">{h.time}</div>
-                    <div className="text-gray-600 dark:text-gray-300">{h.text}</div>
+              <SectionHeader icon="ti-history" title={t('ticket.history')}
+                right={<span className="text-xs text-gray-400">{(history || []).length}</span>} />
+              <div className="px-4 py-2 max-h-96 overflow-y-auto">
+                {(history || []).map(h => {
+                  const isEvent = h.field === 'line_added' || h.field === 'line_removed'
+                  const dot = h.field === 'line_removed' ? '#ef4444' : h.field === 'line_added' ? '#22c55e' : '#2563eb'
+                  return (
+                  <div key={h.id} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800 text-xs">
+                    <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: dot }} />
+                    <div className="text-gray-400 min-w-20 whitespace-nowrap">{formatDateTime(h.changed_at)}</div>
+                    <div className="text-gray-600 dark:text-gray-300 min-w-0">
+                      <span className="font-medium text-gray-700 dark:text-gray-200">{fieldLabel(h.field)}</span>
+                      {isEvent ? (
+                        <span className="ml-1 text-gray-900 dark:text-gray-100 break-words">{h.new_value || h.old_value || '—'}</span>
+                      ) : (
+                        <>
+                          <span className="mx-1 text-gray-400 line-through break-words">{histValue(h.field, h.old_value)}</span>
+                          <i className="ti ti-arrow-right text-gray-400 text-[10px]" aria-hidden="true" />
+                          <span className="ml-1 text-gray-900 dark:text-gray-100 break-words">{histValue(h.field, h.new_value)}</span>
+                        </>
+                      )}
+                      {h.note && <span className="text-gray-400 italic"> — {h.note}</span>}
+                      {h.changed_by_profile?.full_name && <span className="text-gray-400"> · {h.changed_by_profile.full_name}</span>}
+                    </div>
                   </div>
-                ))}
+                )})}
+                {/* Ligne de création — toujours en bas */}
+                <div className="flex gap-3 py-2 text-xs">
+                  <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background:'#9ca3af' }} />
+                  <div className="text-gray-400 min-w-20 whitespace-nowrap">{formatDate(ticket.issue_reception_date)}</div>
+                  <div className="text-gray-600 dark:text-gray-300">
+                    {t('ticket.created')}{creator?.full_name ? ` · ${creator.full_name}` : ''} · SC# {ticket.sc_number || '—'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

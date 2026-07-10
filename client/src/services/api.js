@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { useAuthStore } from '../store/authStore'
 
 // ─── Fiscal Year helpers ────────────────────────────────────────────────────
 export const CURRENT_FISCAL_YEAR = 2026
@@ -89,6 +90,13 @@ export const ticketApi = {
   },
 
   update: async (id, payload) => {
+    // Snapshot avant écriture — pour tracer chaque champ modifié (piste d'audit).
+    let before = null
+    try {
+      const { data } = await supabase.from('tickets').select('*').eq('id', id).single()
+      before = data
+    } catch { /* pas de snapshot → sauvegarde quand même, sans trace */ }
+
     const { data, error } = await supabase
       .from('tickets')
       .update({ ...payload, updated_at: new Date().toISOString() })
@@ -96,9 +104,91 @@ export const ticketApi = {
       .select()
       .single()
     if (error) throw error
+
+    await logTicketHistory(id, before, payload)
     return { data }
   },
 
+}
+
+// ─── Piste d'audit (ticket_history) ──────────────────────────────────────────
+// Journal append-only : une ligne par champ modifié. On garde la trace même
+// si une valeur est ensuite annulée — chaque modification crée une ligne.
+function sameHistoryValue(a, b) {
+  const na = a === null || a === undefined ? '' : a
+  const nb = b === null || b === undefined ? '' : b
+  if (na === '' && nb === '') return true
+  const fa = Number(na), fb = Number(nb)
+  const bothNumeric = String(na).trim() !== '' && String(nb).trim() !== ''
+    && !Number.isNaN(fa) && !Number.isNaN(fb)
+  if (bothNumeric) return fa === fb           // 3000 === 3000.00 (le NUMERIC revient en texte)
+  return String(na) === String(nb)
+}
+
+export async function logTicketHistory(ticketId, before, payload) {
+  if (!before || !payload) return
+  const userId = useAuthStore.getState().user?.id || null
+  const rows = []
+  for (const field of Object.keys(payload)) {
+    if (field === 'updated_at') continue
+    if (sameHistoryValue(before[field], payload[field])) continue
+    rows.push({
+      ticket_id:  ticketId,
+      changed_by: userId,
+      field:      String(field).slice(0, 50),
+      old_value:  before[field] === null || before[field] === undefined ? null : String(before[field]),
+      new_value:  payload[field] === null || payload[field] === undefined ? null : String(payload[field]),
+    })
+  }
+  if (!rows.length) return
+  try {
+    await supabase.from('ticket_history').insert(rows)
+  } catch (e) {
+    console.warn('ticket_history insert failed:', e?.message)
+  }
+}
+
+// Diff d'une ligne (occurrence_lines). Les champs sont préfixés « line: » et
+// la ligne concernée est notée dans `note` (intitulé du problème).
+export async function logLineHistory(ticketId, before, after, note = null) {
+  if (!before || !after) return
+  const userId = useAuthStore.getState().user?.id || null
+  const rows = []
+  for (const field of Object.keys(after)) {
+    if (field === 'updated_at') continue
+    if (sameHistoryValue(before[field], after[field])) continue
+    rows.push({
+      ticket_id:  ticketId,
+      changed_by: userId,
+      field:      ('line:' + field).slice(0, 50),
+      old_value:  before[field] === null || before[field] === undefined ? null : String(before[field]),
+      new_value:  after[field]  === null || after[field]  === undefined ? null : String(after[field]),
+      note:       note || null,
+    })
+  }
+  if (!rows.length) return
+  try {
+    await supabase.from('ticket_history').insert(rows)
+  } catch (e) {
+    console.warn('ticket_history (line) insert failed:', e?.message)
+  }
+}
+
+// Événement de ligne : ajout / suppression (l'intitulé va dans old/new_value).
+export async function logLineEvent(ticketId, kind, label = null) {
+  const userId = useAuthStore.getState().user?.id || null
+  const val = label === null || label === undefined ? null : String(label)
+  try {
+    await supabase.from('ticket_history').insert({
+      ticket_id:  ticketId,
+      changed_by: userId,
+      field:      kind,   // 'line_added' | 'line_removed'
+      old_value:  kind === 'line_removed' ? val : null,
+      new_value:  kind === 'line_added'   ? val : null,
+    })
+  } catch (e) {
+    console.warn('ticket_history (event) insert failed:', e?.message)
+  }
 }
 
 // ─── Line costs ──────────────────────────────────────────────────────────────
