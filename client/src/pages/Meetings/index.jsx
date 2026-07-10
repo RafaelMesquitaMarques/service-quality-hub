@@ -58,7 +58,7 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center p-8 z-[1000] overflow-y-auto">
-      <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl shadow-2xl">
+      <div className="bg-white dark:bg-[#161B22] rounded-xl border border-gray-200 dark:border-gray-700 w-full max-w-4xl shadow-2xl">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
           <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('meeting.add_tickets_title')}</span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg">✕</button>
@@ -89,7 +89,7 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
         <div className="px-5 py-1.5 text-xs text-gray-400 border-b border-gray-100 dark:border-gray-800">
           {filtered.length} — {selectedIds.size} {t('meeting.already_selected')}
         </div>
-        <div className="max-h-80 overflow-y-auto">
+        <div className="max-h-[65vh] overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="py-6 text-center text-xs text-gray-400">{t('meeting.no_tickets_found')}</div>
           ) : filtered.map(tk => {
