@@ -141,6 +141,7 @@ export default function MeetingsPage() {
   const [showNewMeeting,   setShowNewMeeting]   = useState(false)
   const [newMeetingDate,   setNewMeetingDate]   = useState('')
   const [meetingDept,      setMeetingDept]      = useState('')  // filtre par département (niveau ligne)
+  const [meetingPlant,     setMeetingPlant]     = useState('')  // filtre par usine (niveau ligne)
 
   const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
@@ -166,8 +167,8 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     }
   }, [meetings])
 
-  // Repartir de « tous les départements » quand on change de réunion
-  useEffect(() => { setMeetingDept('') }, [selId])
+  // Repartir de « tous les départements / toutes les usines » quand on change de réunion
+  useEffect(() => { setMeetingDept(''); setMeetingPlant('') }, [selId])
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
@@ -272,15 +273,55 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 
   const ticketById  = Object.fromEntries(tickets.map(tk => [tk?.id, tk]))
   const allLines    = meetingLines || []
-  const deptOptions = [...new Set(allLines.map(l => l.department).filter(Boolean))].sort()
+
+  // Unités de coût/problème par département, calquées sur le Dashboard : le
+  // département est porté par la LIGNE si elle a un coût, sinon on retombe sur
+  // le département au niveau OCCURRENCE. Sans ce repli, les occurrences classées
+  // au niveau header (ou sans lignes) n'affichaient aucun département.
+  const units = tickets.flatMap(tk => {
+    const ls = allLines.filter(l => l.occurrence_id === tk?.id)
+    const lineSum = ls.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
+    if (lineSum > 0) {
+      return ls.map(l => ({
+        id: l.id, occurrence_id: tk?.id,
+        quality_issue: l.quality_issue || tk?.quality_issue,
+        cost_approx: Number(l.cost_approx || 0),
+        department: l.department || tk?.department || null,
+        plant: l.plant || tk?.plant || null,
+      }))
+    }
+    return [{
+      id: tk?.id, occurrence_id: tk?.id,
+      quality_issue: tk?.quality_issue,
+      cost_approx: getTicketCost(tk),
+      department: tk?.department || null,
+      plant: tk?.plant || null,
+    }]
+  })
+
+  const deptOptions = [...new Set(units.map(u => u.department).filter(Boolean))].sort()
   const deptFilter  = deptOptions.includes(meetingDept) ? meetingDept : ''  // ignore si absent
-  const filteredLines = deptFilter ? allLines.filter(l => l.department === deptFilter) : allLines
+  const plantOptions = [...new Set(units.map(u => u.plant).filter(Boolean))].sort()
+  const plantFilter  = plantOptions.includes(meetingPlant) ? meetingPlant : ''  // ignore si absente
+  const anyFilter    = deptFilter || plantFilter
+  const filterLabel  = [deptFilter, plantFilter].filter(Boolean).join(' · ')
+  const filteredUnits = units.filter(u =>
+    (!deptFilter  || u.department === deptFilter) &&
+    (!plantFilter || u.plant === plantFilter)
+  )
+
+  // Départements distincts par occurrence (pour la colonne « Département »)
+  const deptByTicket = units.reduce((m, u) => {
+    if (u.department) (m[u.occurrence_id] ||= new Set()).add(u.department)
+    return m
+  }, {})
+  const ticketDept = (id) => [...(deptByTicket[id] || [])].sort().join(', ')
 
   const totalCost   = tickets.reduce((s, tk) => s + getTicketCost(tk), 0)
-  const deptLineCost = filteredLines.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
-  // KPIs : reflètent le département sélectionné (sinon toute la réunion)
-  const displayedCost  = deptFilter ? deptLineCost : totalCost
-  const displayedCount = deptFilter ? filteredLines.length : tickets.length
+  const deptUnitCost = filteredUnits.reduce((s, u) => s + Number(u.cost_approx || 0), 0)
+  // KPIs : reflètent le filtre actif (département / usine), sinon toute la réunion
+  const displayedCost  = anyFilter ? deptUnitCost : totalCost
+  const displayedCount = anyFilter ? filteredUnits.length : tickets.length
   const openAct   = actList.filter(a => a.status !== 'done').length
   const doneAct   = actList.filter(a => a.status === 'done').length
 
@@ -377,12 +418,12 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     if (!selMeeting) return
     const esc  = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const row  = (cells) => cells.map(esc).join(',')
-    // Respecte le filtre par département : exporte les lignes du dépt, sinon les occurrences.
-    const ticketRows = deptFilter
-      ? filteredLines.map(l => row([ticketById[l.occurrence_id]?.sc_number, l.quality_issue || ticketById[l.occurrence_id]?.quality_issue, l.department, Math.round(Number(l.cost_approx || 0))]))
-      : tickets.map(tk => row([tk?.sc_number, tk?.quality_issue, tk?.department, Math.round(getTicketCost(tk))]))
+    // Respecte le filtre actif (département / usine) : exporte les lignes filtrées, sinon les occurrences.
+    const ticketRows = anyFilter
+      ? filteredUnits.map(u => row([ticketById[u.occurrence_id]?.sc_number, u.quality_issue, u.department, Math.round(Number(u.cost_approx || 0))]))
+      : tickets.map(tk => row([tk?.sc_number, tk?.quality_issue, ticketDept(tk?.id) || tk?.department, Math.round(getTicketCost(tk))]))
     const lines = [
-      row([t('meeting.title'), formatDate(selMeeting.meeting_date), deptFilter || t('meeting.all_depts')]),
+      row([t('meeting.title'), formatDate(selMeeting.meeting_date), filterLabel || t('meeting.all_depts')]),
       '',
       row(['SC#', t('ticket.issue'), t('ticket.department'), t('ticket.cost')]),
       ...ticketRows,
@@ -392,8 +433,8 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     ]
     const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }))
     const el  = document.createElement('a')
-    const deptSuffix = deptFilter ? `-${deptFilter.replace(/[^a-z0-9]+/gi, '_')}` : ''
-    el.href = url; el.download = `meeting-${selMeeting.meeting_date}${deptSuffix}.csv`; el.click()
+    const filterSuffix = filterLabel ? `-${filterLabel.replace(/[^a-z0-9]+/gi, '_')}` : ''
+    el.href = url; el.download = `meeting-${selMeeting.meeting_date}${filterSuffix}.csv`; el.click()
   }
 
   return (
@@ -476,12 +517,24 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                       </select>
                       <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
                     </div>
+                    <div className="relative inline-flex items-center">
+                      <i className="ti ti-building-factory-2 text-sm text-gray-400 absolute left-2.5 pointer-events-none" aria-hidden="true" />
+                      <select value={plantFilter} onChange={e => setMeetingPlant(e.target.value)}
+                        className={`appearance-none text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors
+                          ${plantFilter
+                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
+                        <option value="">{t('meeting.all_plants')}</option>
+                        {plantOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
+                    </div>
                     <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
                   </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {[
-                    { v: displayedCount, l: deptFilter ? t('meeting.problem_lines') : t('meeting.tickets_discussed'), c:'#3b82f6' },
+                    { v: displayedCount, l: anyFilter ? t('meeting.problem_lines') : t('meeting.tickets_discussed'), c:'#3b82f6' },
                     { v: `$${Math.round(displayedCost).toLocaleString()}`, l: t('meeting.sc_cost_week'), c:'#ef4444' },
                     { v: openAct, l: t('meeting.open_actions'), c:'#f59e0b' },
                     { v: doneAct, l: t('meeting.completed_actions'), c:'#22c55e' },
@@ -527,10 +580,10 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                   <div className="flex items-center gap-2">
                     <i className="ti ti-clipboard-list text-blue-500 text-sm" aria-hidden="true" />
                     <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
-                      {deptFilter ? `${t('meeting.problem_lines')} · ${deptFilter}` : t('meeting.tickets_section')}
+                      {anyFilter ? `${t('meeting.problem_lines')} · ${filterLabel}` : t('meeting.tickets_section')}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
-                      {deptFilter ? filteredLines.length : `${tickets.length} ${t('meeting.selected')}`}
+                      {anyFilter ? filteredUnits.length : `${tickets.length} ${t('meeting.selected')}`}
                     </span>
                   </div>
                   <button onClick={() => setShowTicketPicker(true)} className="btn-primary py-1 px-2.5 text-xs">
@@ -540,26 +593,26 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                 <div className="px-4 py-1">
                   {tickets.length === 0 ? (
                     <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_tickets')}</div>
-                  ) : deptFilter ? (
-                    /* Vue par département — lignes (problèmes) du département sélectionné */
-                    filteredLines.length === 0 ? (
+                  ) : anyFilter ? (
+                    /* Vue filtrée — problèmes correspondant au département / à l'usine sélectionné */
+                    filteredUnits.length === 0 ? (
                       <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_tickets')}</div>
                     ) : (
                       <>
                         <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
                           <div>SC#</div><div>{t('ticket.issue')}</div><div className="text-right">{t('ticket.cost')}</div>
                         </div>
-                        {filteredLines.map(l => {
-                          const parent = ticketById[l.occurrence_id]
+                        {filteredUnits.map(u => {
+                          const parent = ticketById[u.occurrence_id]
                           return (
-                            <div key={l.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
+                            <div key={u.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
                               <div className="font-mono text-gray-400">{parent?.sc_number || '—'}</div>
                               <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
-                                onClick={() => navigate(`/tickets/${l.occurrence_id}?from=meeting&meetingId=${selId}`)}>
-                                {l.quality_issue || parent?.quality_issue}
+                                onClick={() => navigate(`/tickets/${u.occurrence_id}?from=meeting&meetingId=${selId}`)}>
+                                {u.quality_issue || parent?.quality_issue}
                               </div>
                               <div className="font-mono text-gray-400 text-right">
-                                {Number(l.cost_approx) > 0 ? `$${Math.round(Number(l.cost_approx)).toLocaleString()}` : '—'}
+                                {Number(u.cost_approx) > 0 ? `$${Math.round(Number(u.cost_approx)).toLocaleString()}` : '—'}
                               </div>
                             </div>
                           )
@@ -568,17 +621,18 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                     )
                   ) : (
                     <>
-                      <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 140px 64px 28px' }}>
-                        <div>SC#</div><div>{t('ticket.issue')}</div><div>{t('ticket.project_name')}</div><div className="text-right">{t('ticket.cost')}</div><div></div>
+                      <div className="grid gap-2 py-2 text-xs font-medium text-gray-400 border-b border-gray-100 dark:border-gray-800" style={{ gridTemplateColumns:'52px 1fr 140px 120px 64px 28px' }}>
+                        <div>SC#</div><div>{t('ticket.issue')}</div><div>{t('ticket.project_name')}</div><div>{t('ticket.department')}</div><div className="text-right">{t('ticket.cost')}</div><div></div>
                       </div>
                       {tickets.map(tk => (
-                        <div key={tk?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 140px 64px 28px' }}>
+                        <div key={tk?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 140px 120px 64px 28px' }}>
                           <div className="font-mono text-gray-400">{tk?.sc_number || '—'}</div>
                           <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
                             onClick={() => navigate(`/tickets/${tk?.id}?from=meeting&meetingId=${selId}`)}>
                             {tk?.quality_issue}
                           </div>
                           <div className="truncate text-gray-500 dark:text-gray-400">{tk?.project_name || '—'}</div>
+                          <div className="truncate text-gray-500 dark:text-gray-400" title={ticketDept(tk?.id)}>{ticketDept(tk?.id) || '—'}</div>
                           <div className="font-mono text-gray-400 text-right">
                             {getTicketCost(tk) > 0 ? `$${Math.round(getTicketCost(tk)).toLocaleString()}` : '—'}
                           </div>
