@@ -255,7 +255,7 @@ export default function TicketsPage() {
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'status', 'urgency', 'cost_approx', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'created_by_name']
       const rows    = filtered
         .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
@@ -346,6 +346,9 @@ export default function TicketsPage() {
                   <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <ColumnFilter label={t('ticket.plant')} values={uniq('plant')} selected={fPlant} onChange={setFPlant} onClear={() => setFPlant(new Set())} />
+                </th>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())}
                     renderValue={v => t(`status.${v}`)} />
                 </th>
@@ -389,6 +392,7 @@ export default function TicketsPage() {
                         ? <span className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{ticket.department}</span>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.plant || '—'}</td>
                     <td className="px-4 py-2.5"><StatusBadge status={ticket.status} /></td>
                     <td className="px-4 py-2.5">
                       {ticket.urgency
