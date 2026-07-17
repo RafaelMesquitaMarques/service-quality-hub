@@ -192,15 +192,17 @@ export default function MeetingsPage() {
   const { t } = useTranslation()
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
-  const [selId,  setSelId]   = useState(null)
+  const [selId,  setSelId]   = useState(() => new URLSearchParams(window.location.search).get('meetingId'))
   const [notes,  setNotes]   = useState('')
   const [newAction, setNewAction] = useState({ text:'', owner:'', due:'' })
   const [showActionForm,   setShowActionForm]   = useState(false)
   const [showTicketPicker, setShowTicketPicker] = useState(false)
   const [showNewMeeting,   setShowNewMeeting]   = useState(false)
   const [newMeetingDate,   setNewMeetingDate]   = useState('')
-  const [meetingDepts,     setMeetingDepts]     = useState([])  // filtre par départements (multi, niveau ligne)
-  const [meetingPlants,    setMeetingPlants]    = useState([])  // filtre par usines (multi, niveau ligne)
+  // Filtres par départements / usines (multi, niveau ligne) — restaurés depuis
+  // l'URL pour survivre à l'aller-retour vers le détail d'une occurrence.
+  const [meetingDepts,     setMeetingDepts]     = useState(() => (new URLSearchParams(window.location.search).get('depts')  || '').split(',').filter(Boolean))
+  const [meetingPlants,    setMeetingPlants]    = useState(() => (new URLSearchParams(window.location.search).get('plants') || '').split(',').filter(Boolean))
 
   const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
@@ -217,17 +219,35 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 })
 
   useEffect(() => {
-    if (!meetings || meetings.length === 0) return
+    if (!meetings) return
     const params = new URLSearchParams(window.location.search)
     const mid = params.get('meetingId')
     if (mid) {
       const m = meetings.find(x => x.id === mid)
       if (m) { setSelId(m.id); setNotes(m.notes || '') }
+      else   { setSelId(null) }  // réunion supprimée / id invalide
     }
   }, [meetings])
 
-  // Repartir de « tous les départements / toutes les usines » quand on change de réunion
-  useEffect(() => { setMeetingDepts([]); setMeetingPlants([]) }, [selId])
+  // Repartir de « tous les départements / toutes les usines » quand on change de
+  // réunion — mais pas au montage, pour ne pas écraser les filtres restaurés de l'URL.
+  const skipFilterReset = useRef(true)
+  useEffect(() => {
+    if (skipFilterReset.current) { skipFilterReset.current = false; return }
+    setMeetingDepts([]); setMeetingPlants([])
+  }, [selId])
+
+  // Reflète la sélection courante (réunion + filtres) dans l'URL, sans empiler
+  // l'historique — c'est elle que le bouton « Retour » du détail restaure.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    const before = p.toString()
+    if (selId) p.set('meetingId', selId); else p.delete('meetingId')
+    if (meetingDepts.length)  p.set('depts',  meetingDepts.join(',')); else p.delete('depts')
+    if (meetingPlants.length) p.set('plants', meetingPlants.join(',')); else p.delete('plants')
+    const after = p.toString()
+    if (after !== before) window.history.replaceState(null, '', `${window.location.pathname}${after ? `?${after}` : ''}`)
+  }, [selId, meetingDepts, meetingPlants])
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
@@ -477,6 +497,15 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     onError: (e) => toast.error(e.message),
   })
 
+  // Query string des liens vers le détail d'une occurrence : porte la réunion ET
+  // les filtres actifs, pour que « Retour » revienne sur la même sélection.
+  const ticketLinkParams = () => {
+    const p = new URLSearchParams({ from: 'meeting', meetingId: selId })
+    if (meetingDepts.length)  p.set('depts',  meetingDepts.join(','))
+    if (meetingPlants.length) p.set('plants', meetingPlants.join(','))
+    return p.toString()
+  }
+
   const handleExportExcel = () => {
     if (!selMeeting) return
     const esc  = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
@@ -651,7 +680,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                             <div key={u.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 64px' }}>
                               <div className="font-mono text-gray-400">{parent?.sc_number || '—'}</div>
                               <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
-                                onClick={() => navigate(`/tickets/${u.occurrence_id}?from=meeting&meetingId=${selId}`)}>
+                                onClick={() => navigate(`/tickets/${u.occurrence_id}?${ticketLinkParams()}`)}>
                                 {u.quality_issue || parent?.quality_issue}
                               </div>
                               <div className="font-mono text-gray-400 text-right">
@@ -671,7 +700,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                         <div key={tk?.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'52px 1fr 140px 120px 64px 28px' }}>
                           <div className="font-mono text-gray-400">{tk?.sc_number || '—'}</div>
                           <div className="truncate text-gray-900 dark:text-gray-100 cursor-pointer hover:text-blue-500"
-                            onClick={() => navigate(`/tickets/${tk?.id}?from=meeting&meetingId=${selId}`)}>
+                            onClick={() => navigate(`/tickets/${tk?.id}?${ticketLinkParams()}`)}>
                             {tk?.quality_issue}
                           </div>
                           <div className="truncate text-gray-500 dark:text-gray-400">{tk?.project_name || '—'}</div>

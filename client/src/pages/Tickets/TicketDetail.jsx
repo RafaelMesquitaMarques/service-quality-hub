@@ -1057,10 +1057,20 @@ export default function TicketDetail() {
     updateMut.mutate(payload)
   }
 
-  // Navigation (bouton Retour) : confirme avant de quitter.
+  // Navigation (bouton Retour) : confirme avant de quitter. Vers la revue hebdo,
+  // renvoie aussi les filtres département/usine reçus pour restaurer la sélection.
   const goBack = () => {
     if (!confirmDiscard()) return
-    fromMeeting ? navigate(`/meetings?meetingId=${meetingId}`) : navigate(-1)
+    if (fromMeeting) {
+      const p = new URLSearchParams({ meetingId })
+      const depts  = searchParams.get('depts')
+      const plants = searchParams.get('plants')
+      if (depts)  p.set('depts',  depts)
+      if (plants) p.set('plants', plants)
+      navigate(`/meetings?${p.toString()}`)
+    } else {
+      navigate(-1)
+    }
   }
 
   // Avertit aussi lors d'un rechargement / fermeture d'onglet.
