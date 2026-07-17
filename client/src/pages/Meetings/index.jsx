@@ -37,7 +37,10 @@ function weekLabel(d) {
 
 // Dropdown multi-sélection (checkboxes) — même gabarit visuel que les anciens
 // <select> du filtre : icône à gauche, chevron à droite, surbrillance bleue si actif.
-function MultiSelect({ icon, allLabel, options, value, onChange }) {
+// Les options sont dérivées des occurrences de la réunion : le panneau explicite
+// les états « chargement » et « aucune valeur » plutôt que d'afficher du vide.
+function MultiSelect({ icon, allLabel, options, value, onChange, loading }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -75,7 +78,11 @@ function MultiSelect({ icon, allLabel, options, value, onChange }) {
             {allLabel}
           </div>
           <div className="border-t border-gray-100 dark:border-gray-800 my-1" />
-          {options.map(opt => (
+          {options.length === 0 ? (
+            <div className="px-3 py-1.5 text-xs text-gray-400 italic whitespace-nowrap">
+              {loading ? t('common.loading') : t('meeting.filter_no_options')}
+            </div>
+          ) : options.map(opt => (
             <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
               <input type="checkbox" className="accent-blue-600 cursor-pointer" checked={value.includes(opt)} onChange={() => toggle(opt)} />
               {opt}
@@ -351,6 +358,10 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     }]
   })
 
+  // Occurrences pas encore chargées, ou lignes pas encore chargées → les
+  // dropdowns affichent « Chargement... » plutôt qu'un panneau vide.
+  const filtersLoading = !meetingTickets || (tickets.length > 0 && !meetingLines)
+
   const deptOptions = [...new Set(units.map(u => u.department).filter(Boolean))].sort()
   const deptFilter  = meetingDepts.filter(d => deptOptions.includes(d))    // ignore les absents
   const plantOptions = [...new Set(units.map(u => u.plant).filter(Boolean))].sort()
@@ -558,9 +569,9 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                   </div>
                   <div className="flex items-center gap-2">
                     <MultiSelect icon="ti-building" allLabel={t('meeting.all_depts')}
-                      options={deptOptions} value={deptFilter} onChange={setMeetingDepts} />
+                      options={deptOptions} value={deptFilter} onChange={setMeetingDepts} loading={filtersLoading} />
                     <MultiSelect icon="ti-building-factory-2" allLabel={t('meeting.all_plants')}
-                      options={plantOptions} value={plantFilter} onChange={setMeetingPlants} />
+                      options={plantOptions} value={plantFilter} onChange={setMeetingPlants} loading={filtersLoading} />
                     <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
                   </div>
                 </div>

@@ -186,7 +186,9 @@
     "total_cost_label": "Coût total",
     "fiscal_year": "Année fiscale",
     "no_data": "Aucune donnée pour les filtres sélectionnés",
-    "revenue_note": "Données de revenus disponibles pour FY{{fy}} seulement"
+    "revenue_note": "Données de revenus disponibles pour FY{{fy}} seulement",
+    "cmp_ytd": "À ce jour",
+    "cmp_ytd_tip": "Comparer les deux années sur la même période (Déc → mois courant)"
   },
   "meeting": {
     "title": "Revue hebdomadaire",
@@ -224,6 +226,7 @@
     "search_tickets": "Rechercher SC#, client, problème...",
     "all_depts": "Tous les depts.",
     "all_plants": "Toutes les usines",
+    "filter_no_options": "Aucune valeur dans cette réunion",
     "by_department": "Par département",
     "problem_lines": "Lignes (problèmes)",
     "all_statuses": "Tous les statuts",

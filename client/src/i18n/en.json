@@ -186,7 +186,9 @@
     "total_cost_label": "Total cost",
     "fiscal_year": "Fiscal year",
     "no_data": "No data for the selected filters",
-    "revenue_note": "Revenue data available for FY{{fy}} only"
+    "revenue_note": "Revenue data available for FY{{fy}} only",
+    "cmp_ytd": "Year to date",
+    "cmp_ytd_tip": "Compare both years over the same period (Dec → current month)"
   },
   "meeting": {
     "title": "Weekly Review",
@@ -224,6 +226,7 @@
     "search_tickets": "Search SC#, client, issue...",
     "all_depts": "All departments",
     "all_plants": "All plants",
+    "filter_no_options": "No values in this meeting",
     "by_department": "By department",
     "problem_lines": "Problem lines",
     "all_statuses": "All statuses",
