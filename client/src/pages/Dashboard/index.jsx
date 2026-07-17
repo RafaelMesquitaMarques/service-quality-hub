@@ -6,7 +6,7 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
-import { ticketApi, fetchOccurrenceLines, revenueApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchOccurrenceLines, revenueApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR, getFiscalMonth } from '../../services/api'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
 import { buildXlsxWithImage } from '../../utils/xlsxImage'
@@ -163,6 +163,20 @@ export default function Dashboard() {
   })
   const setFilter = (k, v) => setFilters(f => ({ ...f, [k]: v }))
   const resetFilters = () => setFilters(f => ({ fy: f.fy, department: 'all', brand: 'all', plant: 'all', status: 'all' }))
+
+  // Plage de mois fiscaux (1 = Déc … 12 = Nov) pour la table « comparaison
+  // annuelle » : les DEUX années sont agrégées sur la même période, ce qui
+  // permet une vraie comparaison « à ce jour » (sinon l'année précédente
+  // complète est comparée à une année courante partielle).
+  const [deptCmp, setDeptCmp] = useState({ from: 1, to: 12 })
+  const setDeptCmpFrom = v => setDeptCmp(r => ({ from: Number(v), to: Math.max(Number(v), r.to) }))
+  const setDeptCmpTo   = v => setDeptCmp(r => ({ from: Math.min(Number(v), r.from), to: Number(v) }))
+  const now = new Date()
+  const currentFiscalMonth = getFiscalMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`) || 12
+  const cmpFull = deptCmp.from === 1 && deptCmp.to === 12
+  const cmpYtdActive = deptCmp.from === 1 && deptCmp.to === currentFiscalMonth && currentFiscalMonth !== 12
+  const toggleCmpYtd = () => setDeptCmp(cmpYtdActive ? { from: 1, to: 12 } : { from: 1, to: currentFiscalMonth })
+  const fmShort = f => (FISCAL_MONTH_ORDER.find(m => m.fiscal === Number(f)) || {}).nameShort || String(f)
 
   const { data: currentYearTickets, isLoading: loadingCurrent } = useQuery({
     queryKey: ['tickets', 'dashboard', filters.fy],
@@ -375,19 +389,29 @@ export default function Dashboard() {
     if (tk.ship_to)    clientMap[clientKey(tk.ship_to)] = (clientMap[clientKey(tk.ship_to)] || 0) + 1
   })
   const deptCostData  = byCount(deptCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
+  // Total « année fiscale entière » pour le camembert et son export Excel —
+  // indépendant de la plage de mois de la table de comparaison.
+  const deptPieTotal  = deptCostData.reduce((s, d) => s + d.cost, 0)
   const plantCostData = byCount(plantCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
   const catData       = byCount(catMap).map(([name, count]) => ({ name, count }))
   const topClientsData = byCount(clientMap).slice(0, 10).map(([name, count]) => ({ name, count }))
   const topClientsCostData = byCount(clientCostMap).slice(0, 10).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
 
-  // Cost by department — current fiscal year vs previous (respects active filters)
-  const prevDeptCostMap = {}
-  prevUnits.forEach(u => {
-    if (u.cost > 0) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
+  // Cost by department — current fiscal year vs previous (respects active filters).
+  // Borné à la plage de mois fiscaux deptCmp, appliquée aux DEUX années pour une
+  // comparaison à périmètre égal. Plage pleine = aucun filtre de mois, afin de ne
+  // pas exclure les unités sans mois fiscal (comportement historique).
+  const inCmpRange = u => cmpFull || (u.fiscal_month >= deptCmp.from && u.fiscal_month <= deptCmp.to)
+  const cmpDeptCostMap = {}, prevDeptCostMap = {}
+  costUnits.forEach(u => {
+    if (u.cost > 0 && inCmpRange(u)) cmpDeptCostMap[u.department || UNCLASSIFIED] = (cmpDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
   })
-  const deptCompareData = [...new Set([...Object.keys(deptCostMap), ...Object.keys(prevDeptCostMap)])]
+  prevUnits.forEach(u => {
+    if (u.cost > 0 && inCmpRange(u)) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
+  })
+  const deptCompareData = [...new Set([...Object.keys(cmpDeptCostMap), ...Object.keys(prevDeptCostMap)])]
     .map(name => {
-      const cur = Math.round(deptCostMap[name] || 0)
+      const cur = Math.round(cmpDeptCostMap[name] || 0)
       const prev = Math.round(prevDeptCostMap[name] || 0)
       const gap = cur - prev
       const pct = prev > 0 ? Math.round(gap / prev * 100) : null
@@ -505,7 +529,7 @@ export default function Dashboard() {
 
       const bytes = buildXlsxWithImage({
         sheetName: `Dept FY${filters.fy}`,
-        title: `Coût par département — FY${filters.fy} — ${money(deptCompareTotals.cur)}`,
+        title: `Coût par département — FY${filters.fy} — ${money(deptPieTotal)}`,
         pngBase64, imgWidth: w, imgHeight: h,
       })
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
@@ -801,7 +825,7 @@ export default function Dashboard() {
 
           <ChartCard icon="ti-chart-pie" color="#F59E0B"
           title={t('dashboard.by_department')}
-          subtitle={`FY${filters.fy} · ${money(deptCompareTotals.cur)}`}
+          subtitle={`FY${filters.fy} · ${money(deptPieTotal)}`}
           right={deptCostData.length ? (
             <button onClick={exportDeptCosts}
               className="btn-ghost text-xs py-1 px-2.5 inline-flex items-center gap-1">
@@ -829,15 +853,35 @@ export default function Dashboard() {
         {/* Dept FY vs FY comparison table */}
         <div className="grid grid-cols-1 gap-4">
           <ChartCard icon="ti-table" color="#F59E0B"
-            title={t('dashboard.dept_comparison')} subtitle={`FY${filters.fy} ${t('dashboard.ytd')} vs FY${filters.fy - 1} ${t('dashboard.ytd')}`}>
+            title={t('dashboard.dept_comparison')}
+            subtitle={cmpFull
+              ? `FY${filters.fy} ${t('dashboard.ytd')} vs FY${filters.fy - 1} ${t('dashboard.ytd')}`
+              : `FY${filters.fy} vs FY${filters.fy - 1} · ${fmShort(deptCmp.from)} – ${fmShort(deptCmp.to)}`}
+            right={
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <button onClick={toggleCmpYtd} title={t('dashboard.cmp_ytd_tip')}
+                  className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 transition-colors ${cmpYtdActive
+                    ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
+                  {t('dashboard.cmp_ytd')}
+                </button>
+                <FilterSelect icon="ti-calendar" includeAll={false} highlight={deptCmp.from !== 1}
+                  value={String(deptCmp.from)} onChange={setDeptCmpFrom}
+                  options={FISCAL_MONTH_ORDER.map(m => String(m.fiscal))} optionLabel={fmShort} />
+                <span className="text-xs text-gray-400">–</span>
+                <FilterSelect includeAll={false} highlight={deptCmp.to !== 12}
+                  value={String(deptCmp.to)} onChange={setDeptCmpTo}
+                  options={FISCAL_MONTH_ORDER.map(m => String(m.fiscal))} optionLabel={fmShort} />
+              </div>
+            }>
           {deptCompareData.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700 text-xs text-gray-400 uppercase tracking-wide">
                     <th className="text-left font-medium py-2 pr-4">{t('ticket.department')}</th>
-                    <th className="text-right font-medium py-2 px-4">{`FY${filters.fy} ${t('dashboard.ytd')}`}</th>
-                    <th className="text-right font-medium py-2 px-4">{`FY${filters.fy - 1} ${t('dashboard.ytd')}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{cmpFull ? `FY${filters.fy} ${t('dashboard.ytd')}` : `FY${filters.fy} · ${fmShort(deptCmp.from)}–${fmShort(deptCmp.to)}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{cmpFull ? `FY${filters.fy - 1} ${t('dashboard.ytd')}` : `FY${filters.fy - 1} · ${fmShort(deptCmp.from)}–${fmShort(deptCmp.to)}`}</th>
                     <th className="text-right font-medium py-2 px-4">{t('dashboard.gap')}</th>
                     <th className="text-right font-medium py-2 pl-4">+/-%</th>
                   </tr>
