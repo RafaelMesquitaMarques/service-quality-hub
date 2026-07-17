@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -33,6 +33,58 @@ function weekLabel(d) {
   const mm = String(dt.getMonth() + 1).padStart(2,'0')
   const dd = String(dt.getDate()).padStart(2,'0')
   return `Week ${mm}-${dd}`
+}
+
+// Dropdown multi-sélection (checkboxes) — même gabarit visuel que les anciens
+// <select> du filtre : icône à gauche, chevron à droite, surbrillance bleue si actif.
+function MultiSelect({ icon, allLabel, options, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey  = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const toggle = (opt) => onChange(value.includes(opt) ? value.filter(v => v !== opt) : [...value, opt])
+  const active = value.length > 0
+  const label  = !active ? allLabel : value.length === 1 ? value[0] : `${value[0]} +${value.length - 1}`
+
+  return (
+    <div className="relative inline-flex items-center" ref={ref}>
+      <i className={`ti ${icon} text-sm absolute left-2.5 pointer-events-none ${active ? 'text-blue-500' : 'text-gray-400'}`} aria-hidden="true" />
+      <button type="button" onClick={() => setOpen(o => !o)} title={active ? value.join(', ') : allLabel}
+        className={`text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors max-w-44 truncate
+          ${active
+            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
+        {label}
+      </button>
+      <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-full w-max max-h-72 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] shadow-xl py-1">
+          <div className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 ${!active ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-300'}`}
+            onClick={() => { onChange([]); setOpen(false) }}>
+            {allLabel}
+          </div>
+          <div className="border-t border-gray-100 dark:border-gray-800 my-1" />
+          {options.map(opt => (
+            <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
+              <input type="checkbox" className="accent-blue-600 cursor-pointer" checked={value.includes(opt)} onChange={() => toggle(opt)} />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
@@ -140,8 +192,8 @@ export default function MeetingsPage() {
   const [showTicketPicker, setShowTicketPicker] = useState(false)
   const [showNewMeeting,   setShowNewMeeting]   = useState(false)
   const [newMeetingDate,   setNewMeetingDate]   = useState('')
-  const [meetingDept,      setMeetingDept]      = useState('')  // filtre par département (niveau ligne)
-  const [meetingPlant,     setMeetingPlant]     = useState('')  // filtre par usine (niveau ligne)
+  const [meetingDepts,     setMeetingDepts]     = useState([])  // filtre par départements (multi, niveau ligne)
+  const [meetingPlants,    setMeetingPlants]    = useState([])  // filtre par usines (multi, niveau ligne)
 
   const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
@@ -168,7 +220,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
   }, [meetings])
 
   // Repartir de « tous les départements / toutes les usines » quand on change de réunion
-  useEffect(() => { setMeetingDept(''); setMeetingPlant('') }, [selId])
+  useEffect(() => { setMeetingDepts([]); setMeetingPlants([]) }, [selId])
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
@@ -300,14 +352,14 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
   })
 
   const deptOptions = [...new Set(units.map(u => u.department).filter(Boolean))].sort()
-  const deptFilter  = deptOptions.includes(meetingDept) ? meetingDept : ''  // ignore si absent
+  const deptFilter  = meetingDepts.filter(d => deptOptions.includes(d))    // ignore les absents
   const plantOptions = [...new Set(units.map(u => u.plant).filter(Boolean))].sort()
-  const plantFilter  = plantOptions.includes(meetingPlant) ? meetingPlant : ''  // ignore si absente
-  const anyFilter    = deptFilter || plantFilter
-  const filterLabel  = [deptFilter, plantFilter].filter(Boolean).join(' · ')
+  const plantFilter  = meetingPlants.filter(p => plantOptions.includes(p)) // ignore les absentes
+  const anyFilter    = deptFilter.length > 0 || plantFilter.length > 0
+  const filterLabel  = [...deptFilter, ...plantFilter].join(' · ')
   const filteredUnits = units.filter(u =>
-    (!deptFilter  || u.department === deptFilter) &&
-    (!plantFilter || u.plant === plantFilter)
+    (!deptFilter.length  || deptFilter.includes(u.department)) &&
+    (!plantFilter.length || plantFilter.includes(u.plant))
   )
 
   // Départements distincts par occurrence (pour la colonne « Département »)
@@ -505,30 +557,10 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                     {t('meeting.kpis')} — {weekLabel(selMeeting?.meeting_date)}
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="relative inline-flex items-center">
-                      <i className="ti ti-building text-sm text-gray-400 absolute left-2.5 pointer-events-none" aria-hidden="true" />
-                      <select value={deptFilter} onChange={e => setMeetingDept(e.target.value)}
-                        className={`appearance-none text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors
-                          ${deptFilter
-                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
-                        <option value="">{t('meeting.all_depts')}</option>
-                        {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
-                      <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
-                    </div>
-                    <div className="relative inline-flex items-center">
-                      <i className="ti ti-building-factory-2 text-sm text-gray-400 absolute left-2.5 pointer-events-none" aria-hidden="true" />
-                      <select value={plantFilter} onChange={e => setMeetingPlant(e.target.value)}
-                        className={`appearance-none text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors
-                          ${plantFilter
-                            ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}`}>
-                        <option value="">{t('meeting.all_plants')}</option>
-                        {plantOptions.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
-                      <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
-                    </div>
+                    <MultiSelect icon="ti-building" allLabel={t('meeting.all_depts')}
+                      options={deptOptions} value={deptFilter} onChange={setMeetingDepts} />
+                    <MultiSelect icon="ti-building-factory-2" allLabel={t('meeting.all_plants')}
+                      options={plantOptions} value={plantFilter} onChange={setMeetingPlants} />
                     <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
                   </div>
                 </div>
