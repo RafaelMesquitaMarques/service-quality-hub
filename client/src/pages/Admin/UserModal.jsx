@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { adminApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
-import { DEPARTMENTS } from '../../constants/taxonomy'
+import { useDepartments } from '../../hooks/useTaxonomy'
 import toast from 'react-hot-toast'
 
 const ROLES = [
@@ -27,6 +27,7 @@ const PERMISSIONS = [
 
 export default function UserModal({ user, plants, onClose }) {
   const { t, i18n } = useTranslation()
+  const departmentOptions = useDepartments()
   const isEdit = !!user
   const fileRef = useRef(null)
   const [saving, setSaving] = useState(false)
@@ -274,7 +275,8 @@ export default function UserModal({ user, plants, onClose }) {
               <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Departement' : 'Department'}</label>
               <select style={inp} value={form.department} onChange={e => sf('department', e.target.value)}>
                 <option value="">{uiLang === 'fr' ? 'Selectionner...' : 'Select...'}</option>
-                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                {form.department && !departmentOptions.includes(form.department) && <option value={form.department}>{form.department}</option>}
+                {departmentOptions.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>

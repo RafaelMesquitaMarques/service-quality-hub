@@ -4,7 +4,7 @@
     "tickets": "Occurrences",
     "weekly_review": "Revue hebdomadaire",
     "import": "Importer Excel",
-    "referentials": "Clients & Marques",
+    "referentials": "Référentiels",
     "admin": "Administration",
     "plants": "Usines",
     "mobile_version": "Version mobile",
@@ -304,10 +304,12 @@
     "deleted": "Usine supprimée"
   },
   "referentials": {
-    "title": "Clients & Marques",
-    "subtitle": "Gérer les clients et les marques",
+    "title": "Référentiels",
+    "subtitle": "Gérer les clients, marques, départements, catégories et revenus",
     "clients": "Clients",
     "brands": "Marques",
+    "departments": "Départements",
+    "categories": "Catégories",
     "revenues": "Revenus",
     "fiscal_year": "Année fiscale",
     "revenues_hint": "Revenu mensuel par année fiscale. Un mois n'apparaît sur le graphique « SC Cost % des revenus » qu'une fois son revenu renseigné.",
@@ -315,6 +317,10 @@
     "edit_client": "Modifier le client",
     "new_brand": "Nouvelle marque",
     "edit_brand": "Modifier la marque",
+    "new_department": "Nouveau département",
+    "edit_department": "Modifier le département",
+    "new_category": "Nouvelle catégorie",
+    "edit_category": "Modifier la catégorie",
     "name": "Nom",
     "contact": "Contact",
     "email": "Email",
@@ -331,6 +337,8 @@
     "delete_confirm": "Supprimer",
     "no_clients": "Aucun client",
     "no_brands": "Aucune marque",
+    "no_departments": "Aucun département",
+    "no_categories": "Aucune catégorie",
     "required": "« {{field}} » est obligatoire"
   },
   "import": {

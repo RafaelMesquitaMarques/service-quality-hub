@@ -8,7 +8,7 @@ import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useThemeStore } from '../../store/themeStore'
 import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
-import { CATEGORIES, DEPARTMENTS } from '../../constants/taxonomy'
+import { useCategories, useDepartments } from '../../hooks/useTaxonomy'
 import toast from 'react-hot-toast'
 
 const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
@@ -358,6 +358,8 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
 // ── Line Card (display + edit) ─────────────────────────────────────────────
 function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp, onView }) {
   const queryClient = useQueryClient()
+  const categoryOptions   = useCategories()
+  const departmentOptions = useDepartments()
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ ...line })
   const [annotating, setAnnotating] = useState(null)
@@ -774,8 +776,8 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                         onChange={e => { setClf(c => ({ ...c, categories: e.target.value })); setClfDirty(true) }}
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
                         <option value="">—</option>
-                        {clf.categories && !CATEGORIES.includes(clf.categories) && <option value={clf.categories}>{clf.categories}</option>}
-                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                        {clf.categories && !categoryOptions.includes(clf.categories) && <option value={clf.categories}>{clf.categories}</option>}
+                        {categoryOptions.map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
@@ -784,8 +786,8 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                         onChange={e => { setClf(c => ({ ...c, department: e.target.value })); setClfDirty(true) }}
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
                         <option value="">—</option>
-                        {clf.department && !DEPARTMENTS.includes(clf.department) && <option value={clf.department}>{clf.department}</option>}
-                        {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                        {clf.department && !departmentOptions.includes(clf.department) && <option value={clf.department}>{clf.department}</option>}
+                        {departmentOptions.map(d => <option key={d}>{d}</option>)}
                       </select>
                     </div>
                   </div>
@@ -840,6 +842,9 @@ export default function TicketDetail() {
   const [searchParams] = useState(() => new URLSearchParams(window.location.search))
   const fromMeeting    = searchParams.get('from') === 'meeting'
   const meetingId      = searchParams.get('meetingId')
+
+  const categoryOptions   = useCategories()
+  const departmentOptions = useDepartments()
 
   const [rootCause,   setRootCause]   = useState('')
   const [corrective,  setCorrective]  = useState('')
@@ -1359,8 +1364,8 @@ export default function TicketDetail() {
                       <select value={categories} onChange={e => setCategories(e.target.value)} disabled={!canEdit}
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
                         <option value="">—</option>
-                        {categories && !CATEGORIES.includes(categories) && <option value={categories}>{categories}</option>}
-                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                        {categories && !categoryOptions.includes(categories) && <option value={categories}>{categories}</option>}
+                        {categoryOptions.map(c => <option key={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1368,8 +1373,8 @@ export default function TicketDetail() {
                       <select value={department} onChange={e => setDepartment(e.target.value)} disabled={!canEdit}
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
                         <option value="">—</option>
-                        {department && !DEPARTMENTS.includes(department) && <option value={department}>{department}</option>}
-                        {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+                        {department && !departmentOptions.includes(department) && <option value={department}>{department}</option>}
+                        {departmentOptions.map(d => <option key={d}>{d}</option>)}
                       </select>
                     </div>
                   </div>

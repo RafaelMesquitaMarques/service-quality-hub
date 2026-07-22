@@ -6,7 +6,7 @@ import { supabase } from '../../services/supabase'
 import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
-import { DEPARTMENTS } from '../../constants/taxonomy'
+import { useDepartments } from '../../hooks/useTaxonomy'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
@@ -97,6 +97,7 @@ function MultiSelect({ icon, allLabel, options, value, onChange, loading }) {
 function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
   const { t } = useTranslation()
   const [search, setSearch]   = useState('')
+  const departmentOptions     = useDepartments()
   const [dept,   setDept]     = useState('')
   const [status, setStatus]   = useState('quality_meeting')
   const [dateFrom, setDateFrom] = useState('')
@@ -131,7 +132,7 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={dept} onChange={e => setDept(e.target.value)}>
             <option value="">{t('meeting.all_depts')}</option>
-            {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+            {departmentOptions.map(d => <option key={d}>{d}</option>)}
           </select>
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={status} onChange={e => setStatus(e.target.value)}>

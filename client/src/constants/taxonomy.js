@@ -1,6 +1,7 @@
-// Listes de référence partagées pour les occurrences.
-// Source unique de vérité — modifier ici met à jour tous les écrans
-// (détail d'occurrence, réunions, admin, etc.).
+// Listes de repli pour les occurrences.
+// Depuis 2026-07, la source de vérité est en base (tables `departments` et
+// `categories`, gérées via Référentiels) — voir hooks/useTaxonomy.js.
+// Ces constantes ne servent que si la table est vide ou inaccessible.
 
 export const CATEGORIES = [
   'Damaged', 'Cleaning', 'Electrical', 'Fitting/Adjustment', 'Hardware',

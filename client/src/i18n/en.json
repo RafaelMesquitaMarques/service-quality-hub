@@ -4,7 +4,7 @@
     "tickets": "Occurrences",
     "weekly_review": "Weekly Review",
     "import": "Import Excel",
-    "referentials": "Clients & Brands",
+    "referentials": "Reference data",
     "admin": "Admin",
     "plants": "Plants",
     "mobile_version": "Mobile version",
@@ -304,10 +304,12 @@
     "deleted": "Plant deleted"
   },
   "referentials": {
-    "title": "Clients & Brands",
-    "subtitle": "Manage clients and brands",
+    "title": "Reference data",
+    "subtitle": "Manage clients, brands, departments, categories and revenues",
     "clients": "Clients",
     "brands": "Brands",
+    "departments": "Departments",
+    "categories": "Categories",
     "revenues": "Revenues",
     "fiscal_year": "Fiscal year",
     "revenues_hint": "Monthly revenue per fiscal year. A month only appears on the “SC Cost % of revenue” chart once its revenue is set.",
@@ -315,6 +317,10 @@
     "edit_client": "Edit client",
     "new_brand": "New brand",
     "edit_brand": "Edit brand",
+    "new_department": "New department",
+    "edit_department": "Edit department",
+    "new_category": "New category",
+    "edit_category": "Edit category",
     "name": "Name",
     "contact": "Contact",
     "email": "Email",
@@ -331,6 +337,8 @@
     "delete_confirm": "Delete",
     "no_clients": "No clients",
     "no_brands": "No brands",
+    "no_departments": "No departments",
+    "no_categories": "No categories",
     "required": "{{field}} is required"
   },
   "import": {

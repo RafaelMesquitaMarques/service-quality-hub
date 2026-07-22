@@ -301,9 +301,35 @@ export default function ReferentialsPage() {
         { header: t('referentials.name'), cell: r => r.name },
       ],
     },
+    departments: {
+      table: 'departments', queryKey: 'departments-admin', formKey: 'departments', icon: '🏬',
+      newLabel: t('referentials.new_department'), editTitle: t('referentials.edit_department'),
+      emptyLabel: t('referentials.no_departments'),
+      fields: [
+        { key: 'name', label: t('referentials.name'), required: true },
+      ],
+      columns: [
+        { header: t('referentials.name'), cell: r => r.name },
+      ],
+    },
+    categories: {
+      table: 'categories', queryKey: 'categories-admin', formKey: 'categories', icon: '🗂️',
+      newLabel: t('referentials.new_category'), editTitle: t('referentials.edit_category'),
+      emptyLabel: t('referentials.no_categories'),
+      fields: [
+        { key: 'name', label: t('referentials.name'), required: true },
+      ],
+      columns: [
+        { header: t('referentials.name'), cell: r => r.name },
+      ],
+    },
   }
 
-  const tabs = [['clients', t('referentials.clients')], ['brands', t('referentials.brands')], ['revenues', t('referentials.revenues')]]
+  const tabs = [
+    ['clients', t('referentials.clients')], ['brands', t('referentials.brands')],
+    ['departments', t('referentials.departments')], ['categories', t('referentials.categories')],
+    ['revenues', t('referentials.revenues')],
+  ]
 
   return (
     <>
