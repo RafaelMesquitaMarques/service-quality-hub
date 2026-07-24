@@ -325,14 +325,13 @@ export const adminApi = {
     return { data: { url: data.publicUrl } }
   },
 
-  deactivate: async (id) => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update({ active: false, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
+  // Suppression réelle via RPC SECURITY DEFINER (migration 2026-07-24).
+  // Retourne 'deleted', ou 'deactivated' si l'utilisateur a des
+  // enregistrements liés (occurrences, photos, réunions…).
+  removeUser: async (id) => {
+    const { data, error } = await supabase.rpc('admin_remove_user', { target_id: id })
     if (error) throw error
-    return { data: data?.[0] || null }
+    return { data }
   },
 
   stats: async () => {

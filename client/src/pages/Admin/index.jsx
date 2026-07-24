@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '../../services/api'
 import { supabase } from '../../services/supabase'
+import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import UserModal from './UserModal'
@@ -79,6 +80,7 @@ export default function AdminPage() {
   const [resettingId, setResettingId] = useState(null)
   const { t } = useTranslation()
   const { dark: isDark } = useThemeStore()
+  const currentUser = useAuthStore(s => s.user)
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -94,9 +96,19 @@ export default function AdminPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => adminApi.deactivate(id),
-    onSuccess: () => { queryClient.invalidateQueries(['admin-users']); toast.success(t('admin.user_deactivated')) },
-    onError: () => toast.error(t('common.error')),
+    mutationFn: (id) => adminApi.removeUser(id),
+    onSuccess: ({ data: result }) => {
+      queryClient.invalidateQueries(['admin-users'])
+      queryClient.invalidateQueries(['admin-stats'])
+      toast.success(result === 'deactivated' ? t('admin.user_deactivated_refs') : t('admin.user_deleted'))
+    },
+    onError: (err) => {
+      const msg = err?.message || ''
+      if (msg.includes('cannot_delete_self'))  toast.error(t('admin.cannot_delete_self'))
+      else if (msg.includes('not_admin'))      toast.error(t('admin.delete_not_admin'))
+      else if (msg.includes('user_not_found')) toast.error(t('admin.user_not_found'))
+      else toast.error(msg || t('common.error'))
+    },
   })
 
   const handleEdit  = (user) => { setEditUser(user); setShowModal(true) }
@@ -232,12 +244,16 @@ export default function AdminPage() {
                               : <><i className="ti ti-key text-sm" /> Reset pwd</>
                             }
                           </button>
-                          <button
-                            onClick={() => { if (window.confirm(t('admin.deactivate_confirm') + ' ' + user.full_name + ' ?')) deleteMutation.mutate(user.id) }}
-                            className="text-xs py-1 px-2.5 rounded-lg border cursor-pointer inline-flex items-center"
-                            style={{ border: '1px solid ' + (isDark ? '#7f1d1d' : '#fecaca'), background: isDark ? '#1f0a0a' : '#fff5f5', color: '#ef4444' }}>
-                            <i className="ti ti-trash text-sm" aria-hidden="true" />
-                          </button>
+                          {user.id !== currentUser?.id && (
+                            <button
+                              onClick={() => { if (window.confirm(t('admin.delete_confirm', { name: user.full_name }))) deleteMutation.mutate(user.id) }}
+                              disabled={deleteMutation.isPending}
+                              title={t('admin.delete_title')}
+                              className="text-xs py-1 px-2.5 rounded-lg border cursor-pointer inline-flex items-center"
+                              style={{ border: '1px solid ' + (isDark ? '#7f1d1d' : '#fecaca'), background: isDark ? '#1f0a0a' : '#fff5f5', color: '#ef4444', opacity: deleteMutation.isPending ? 0.6 : 1 }}>
+                              <i className="ti ti-trash text-sm" aria-hidden="true" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
