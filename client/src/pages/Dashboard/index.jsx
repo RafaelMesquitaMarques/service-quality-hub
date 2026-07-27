@@ -249,9 +249,16 @@ export default function Dashboard() {
   const prevTickets = rawPrev.filter(match)
   const activeCount = ['department', 'brand', 'plant', 'status'].filter(k => filters[k] !== 'all').length
 
-  // Revenus par mois fiscal, pour l'année courante et la précédente.
+  // Revenus par mois fiscal, pour l'année courante et la précédente. Les lignes
+  // sont ventilées par usine (plant NULL = totaux non ventilés) : on somme.
+  // Avec un filtre usine actif, seul le revenu de cette usine compte — un mois
+  // sans revenu pour cette usine disparaît du graphique « SC Cost % ».
   const revByFY = {}
-  ;(revenueRows || []).forEach(r => { (revByFY[r.fiscal_year] = revByFY[r.fiscal_year] || {})[r.fiscal_month] = Number(r.revenue) || 0 })
+  ;(revenueRows || []).forEach(r => {
+    if (filters.plant !== 'all' && r.plant !== filters.plant) return
+    const m = (revByFY[r.fiscal_year] = revByFY[r.fiscal_year] || {})
+    m[r.fiscal_month] = (m[r.fiscal_month] || 0) + (Number(r.revenue) || 0)
+  })
   const revenueByFM     = revByFY[filters.fy]     || {}
   const prevRevenueByFM = revByFY[filters.fy - 1] || {}
   const revenueAvailable = Object.values(revenueByFM).some(v => v > 0)

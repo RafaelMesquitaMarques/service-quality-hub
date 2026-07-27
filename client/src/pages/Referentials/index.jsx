@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../services/supabase'
@@ -200,38 +200,68 @@ function EntityManager({ config }) {
   )
 }
 
-// ── Revenus mensuels par année fiscale ─────────────────────────────────────
+// ── Revenus mensuels par année fiscale, ventilés par usine ─────────────────
 const REVENUE_YEARS = [CURRENT_FISCAL_YEAR + 1, CURRENT_FISCAL_YEAR, CURRENT_FISCAL_YEAR - 1, CURRENT_FISCAL_YEAR - 2]
 
 function RevenueManager() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [fy, setFy]       = useState(CURRENT_FISCAL_YEAR)
-  const [draft, setDraft] = useState({})
+  const [draft, setDraft] = useState({}) // clé `${mois fiscal}|${usine}` ('' = non ventilé)
 
   const { data: allRev, isLoading } = useQuery({ queryKey: ['monthly-revenue'], queryFn: revenueApi.all })
+  const { data: plants } = useQuery({
+    queryKey: ['plants'],
+    queryFn: async () => {
+      const { data } = await supabase.from('plants').select('id,name').eq('active', true).order('name')
+      return data || []
+    },
+  })
+
+  const yearRows = useMemo(() => (allRev || []).filter(r => r.fiscal_year === fy), [allRev, fy])
+
+  // Colonnes : usines actives + usines présentes dans les revenus de n'importe
+  // quelle année (ex. IR, livraisons sans usine enregistrée — la colonne reste
+  // saisissable pour les années suivantes), + « Non ventilé » ('') si l'année
+  // affichée a d'anciennes lignes globales — ou si aucune usine n'est définie.
+  const cols = useMemo(() => {
+    const names = (plants || []).map(p => p.name)
+    ;(allRev || []).forEach(r => { if (r.plant && !names.includes(r.plant)) names.push(r.plant) })
+    if (yearRows.some(r => !r.plant) || names.length === 0) names.push('')
+    return names
+  }, [plants, allRev, yearRows])
 
   // (Ré)initialise les champs quand l'année ou les données changent.
   useEffect(() => {
     const m = {}
-    ;(allRev || []).filter(r => r.fiscal_year === fy).forEach(r => { m[r.fiscal_month] = String(Number(r.revenue)) })
+    yearRows.forEach(r => { m[`${r.fiscal_month}|${r.plant || ''}`] = String(Number(r.revenue)) })
     setDraft(m)
-  }, [allRev, fy])
+  }, [yearRows])
 
   const saveMut = useMutation({
-    mutationFn: () => revenueApi.upsertYear(fy, FISCAL_MONTH_ORDER.map(mo => ({
-      fiscal_month: mo.fiscal,
-      revenue: draft[mo.fiscal] === '' || draft[mo.fiscal] == null ? 0 : Number(draft[mo.fiscal]),
-    }))),
+    mutationFn: () => {
+      const entries = []
+      FISCAL_MONTH_ORDER.forEach(mo => cols.forEach(c => {
+        const v = Number(draft[`${mo.fiscal}|${c}`])
+        if (v > 0) entries.push({ fiscal_month: mo.fiscal, plant: c || null, revenue: v })
+      }))
+      return revenueApi.saveYear(fy, entries)
+    },
     onSuccess: () => { qc.invalidateQueries(['monthly-revenue']); toast.success(t('common.save')) },
     onError:   () => toast.error(t('common.error')),
   })
 
-  const total = FISCAL_MONTH_ORDER.reduce((s, mo) => s + (Number(draft[mo.fiscal]) || 0), 0)
+  const cellVal    = (fiscal, c) => Number(draft[`${fiscal}|${c}`]) || 0
+  const monthTotal = fiscal => cols.reduce((s, c) => s + cellVal(fiscal, c), 0)
+  const colTotal   = c => FISCAL_MONTH_ORDER.reduce((s, mo) => s + cellVal(mo.fiscal, c), 0)
+  const grandTotal = cols.reduce((s, c) => s + colTotal(c), 0)
   const money = v => '$' + Math.round(Number(v) || 0).toLocaleString()
 
+  const thCls  = 'px-2 py-2 text-right text-xs font-medium text-gray-400 uppercase tracking-wide'
+  const totCls = 'px-2 py-2.5 text-right text-sm font-mono font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap'
+
   return (
-    <div className="card p-5 max-w-xl">
+    <div className="card p-5">
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-500 dark:text-gray-400">{t('referentials.fiscal_year')}</label>
@@ -245,21 +275,39 @@ function RevenueManager() {
       </div>
       <p className="text-xs text-gray-400 mb-3">{t('referentials.revenues_hint')}</p>
       {isLoading ? <div className="flex justify-center p-6"><Spinner /></div> : (
-        <div className="space-y-2">
-          {FISCAL_MONTH_ORDER.map(mo => (
-            <div key={mo.fiscal} className="grid items-center gap-3" style={{ gridTemplateColumns: '96px 1fr' }}>
-              <span className="text-sm text-gray-600 dark:text-gray-300">{mo.name}</span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">$</span>
-                <input type="number" min="0" step="1000" placeholder="0" className="input text-sm pl-6"
-                  value={draft[mo.fiscal] ?? ''}
-                  onChange={e => setDraft(d => ({ ...d, [mo.fiscal]: e.target.value }))} />
-              </div>
-            </div>
-          ))}
-          <div className="flex justify-between pt-3 mt-1 border-t border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-900 dark:text-gray-100">
-            <span>{t('dashboard.total')}</span><span className="font-mono">{money(total)}</span>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-gray-700">
+                <th className="px-2 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{t('referentials.month')}</th>
+                {cols.map(c => <th key={c || 'none'} className={thCls}>{c || t('referentials.unallocated')}</th>)}
+                <th className={thCls}>{t('dashboard.total')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {FISCAL_MONTH_ORDER.map(mo => (
+                <tr key={mo.fiscal} className="border-b border-gray-100 dark:border-gray-800">
+                  <td className="px-2 py-1.5 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">{mo.name}</td>
+                  {cols.map(c => (
+                    <td key={c || 'none'} className="px-1 py-1.5">
+                      <input type="number" min="0" step="any" placeholder="0"
+                        className="input text-sm text-right font-mono" style={{ minWidth: 110 }}
+                        value={draft[`${mo.fiscal}|${c}`] ?? ''}
+                        onChange={e => setDraft(d => ({ ...d, [`${mo.fiscal}|${c}`]: e.target.value }))} />
+                    </td>
+                  ))}
+                  <td className="px-2 py-1.5 text-right text-sm font-mono text-gray-900 dark:text-gray-100 whitespace-nowrap">{money(monthTotal(mo.fiscal))}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-200 dark:border-gray-700">
+                <td className="px-2 py-2.5 text-sm font-semibold text-gray-900 dark:text-gray-100">{t('dashboard.total')}</td>
+                {cols.map(c => <td key={c || 'none'} className={totCls}>{money(colTotal(c))}</td>)}
+                <td className={totCls}>{money(grandTotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
     </div>

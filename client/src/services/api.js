@@ -230,25 +230,35 @@ export async function fetchOccurrenceLines(occurrenceIds) {
   return rows
 }
 
-// ─── Revenus mensuels (par année fiscale) ────────────────────────────────────
+// ─── Revenus mensuels (par année fiscale, ventilés par usine) ────────────────
 export const revenueApi = {
-  // Toutes les lignes (la table est minuscule : ~12 lignes par année).
+  // Toutes les lignes. plant NULL = montant « non ventilé » (anciennes saisies
+  // globales, d'avant la ventilation par usine).
   all: async () => {
     const { data, error } = await supabase
       .from('monthly_revenue')
-      .select('fiscal_year, fiscal_month, revenue')
+      .select('fiscal_year, fiscal_month, plant, revenue')
     if (error) { console.warn('monthly_revenue indisponible:', error.message); return [] }
     return data || []
   },
-  // entries: [{ fiscal_month, revenue }]
-  upsertYear: async (fiscalYear, entries) => {
-    const rows = entries.map(e => ({
-      fiscal_year: fiscalYear, fiscal_month: e.fiscal_month,
-      revenue: Number(e.revenue) || 0, updated_at: new Date().toISOString(),
-    }))
-    const { error } = await supabase
+  // Remplace toutes les lignes d'une année fiscale.
+  // entries: [{ fiscal_month, plant|null, revenue }] — seules les valeurs > 0
+  // sont écrites (un mois sans revenu n'apparaît pas sur le graphique SC Cost %).
+  saveYear: async (fiscalYear, entries) => {
+    const { error: delError } = await supabase
       .from('monthly_revenue')
-      .upsert(rows, { onConflict: 'fiscal_year,fiscal_month' })
+      .delete()
+      .eq('fiscal_year', fiscalYear)
+    if (delError) throw delError
+    const rows = entries
+      .filter(e => Number(e.revenue) > 0)
+      .map(e => ({
+        fiscal_year: fiscalYear, fiscal_month: e.fiscal_month,
+        plant: e.plant || null, revenue: Number(e.revenue),
+        updated_at: new Date().toISOString(),
+      }))
+    if (rows.length === 0) return true
+    const { error } = await supabase.from('monthly_revenue').insert(rows)
     if (error) throw error
     return true
   },
