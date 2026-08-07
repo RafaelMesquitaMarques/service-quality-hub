@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
-import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchOccurrenceLines, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { usePermissions } from '../../hooks/usePermissions'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
 import TicketModal from './TicketModal'
@@ -113,6 +113,12 @@ function TextColumnFilter({ label, value, onChange, placeholder }) {
   )
 }
 
+// Lecture des filtres depuis l'URL — restaurés au montage pour survivre à
+// l'aller-retour vers le détail d'une occurrence (même approche que la revue
+// hebdo) ; un rechargement de la page les conserve aussi.
+const urlParam    = (k) => new URLSearchParams(window.location.search).get(k)
+const urlParamSet = (k) => new Set(new URLSearchParams(window.location.search).getAll(k))
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function TicketsPage() {
   const { t }    = useTranslation()
@@ -121,22 +127,26 @@ export default function TicketsPage() {
   const { isManager } = usePermissions()
 
   const [showModal, setShowModal] = useState(false)
-  const [fiscalYear, setFiscalYear] = useState(CURRENT_FISCAL_YEAR)
-  const [search,     setSearch]     = useState('')
+  const [fiscalYear, setFiscalYear] = useState(() => {
+    const fy = urlParam('fy')
+    if (fy === 'all') return 'all'
+    return FISCAL_YEARS.includes(Number(fy)) ? Number(fy) : CURRENT_FISCAL_YEAR
+  })
+  const [search,     setSearch]     = useState(() => urlParam('q') || '')
 
-  const [fStatus, setFStatus]   = useState(new Set())
-  const [fUrgency, setFUrgency] = useState(new Set())
-  const [fBrand,  setFBrand]    = useState(new Set())
-  const [fDept,   setFDept]     = useState(new Set())
-  const [fPlant,  setFPlant]    = useState(new Set())
-  const [fProject, setFProject]   = useState(new Set())
-  const [fSC,     setFSC]       = useState(new Set())
-  const [fDate,   setFDate]     = useState(new Set())
-  const [fCreator, setFCreator] = useState(new Set())
-  const [costSort, setCostSort] = useState(null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
-  const [fQuality, setFQuality] = useState('')    // filtre « contient » sur le problème qualité
+  const [fStatus, setFStatus]   = useState(() => urlParamSet('st'))
+  const [fUrgency, setFUrgency] = useState(() => urlParamSet('urg'))
+  const [fBrand,  setFBrand]    = useState(() => urlParamSet('brand'))
+  const [fDept,   setFDept]     = useState(() => urlParamSet('dept'))
+  const [fPlant,  setFPlant]    = useState(() => urlParamSet('plant'))
+  const [fProject, setFProject]   = useState(() => urlParamSet('proj'))
+  const [fSC,     setFSC]       = useState(() => urlParamSet('sc'))
+  const [fDate,   setFDate]     = useState(() => urlParamSet('date'))
+  const [fCreator, setFCreator] = useState(() => urlParamSet('by'))
+  const [costSort, setCostSort] = useState(() => ['desc', 'asc'].includes(urlParam('cost')) ? urlParam('cost') : null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
+  const [fQuality, setFQuality] = useState(() => urlParam('issue') || '')    // filtre « contient » sur le problème qualité
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError: ticketsError, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
     queryFn: () => ticketApi.list({ fiscal_year: fiscalYear }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
@@ -146,7 +156,7 @@ export default function TicketsPage() {
   const allTickets = data?.tickets || []
 
   // Profils pour afficher/filtrer par créateur
-  const { data: profiles } = useQuery({
+  const { data: profiles, isError: profilesError } = useQuery({
     queryKey: ['user-profiles-names'],
     queryFn: async () => {
       const { data } = await supabase.from('user_profiles').select('id, full_name')
@@ -162,18 +172,42 @@ export default function TicketsPage() {
   }, [profiles])
 
   const getCreator = (tk) => profileMap[tk.created_by] || null
-  const NO_DEPT = t('dashboard.unclassified')  // « (Non défini) » — occurrences sans département
+  // Sentinelle des occurrences sans département — valeur neutre et stable dans
+  // l'URL quelle que soit la langue ; traduite seulement à l'affichage.
+  const NO_DEPT = '__none__'
+  const noDeptLabel = t('dashboard.unclassified')  // « (Non défini) »
 
-  const { data: lineCosts } = useQuery({
+  // Lignes des occurrences affichées : coût ET département vivent au niveau de
+  // la ligne. Clé ['line-costs'] conservée — c'est elle que le détail invalide
+  // après une sauvegarde (refreshCostViews).
+  const { data: lineRows, isError: linesError } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id)],
-    queryFn: () => fetchLineCostTotals(allTickets.map(t => t.id)),
+    queryFn: () => fetchOccurrenceLines(allTickets.map(t => t.id)),
     enabled: allTickets.length > 0,
   })
 
+  const lineAgg = useMemo(() => {
+    const costs = {}, depts = {}
+    for (const l of lineRows || []) {
+      costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
+      ;(depts[l.occurrence_id] = depts[l.occurrence_id] || []).push(l.department || null)
+    }
+    return { costs, depts }
+  }, [lineRows])
+
   const getCost = (ticket) => {
-    const lineTotal = lineCosts?.[ticket.id]
+    const lineTotal = lineAgg.costs[ticket.id]
     if (lineTotal && lineTotal > 0) return lineTotal
     return ticket.cost_approx ? Number(ticket.cost_approx) : null
+  }
+
+  // Départements d'une occurrence : ceux de ses lignes (repli sur l'en-tête
+  // pour une ligne non classifiée — même convention que le tableau de bord),
+  // ou celui de l'en-tête pour les occurrences sans lignes (import / héritage).
+  const getDepts = (ticket) => {
+    const lineDepts = lineAgg.depts[ticket.id]
+    const source = lineDepts?.length ? lineDepts.map(d => d || ticket.department) : [ticket.department]
+    return [...new Set(source.filter(Boolean))]
   }
 
   // ── Delete mutation ──────────────────────────────────────────────────────
@@ -204,7 +238,7 @@ export default function TicketsPage() {
       const q = search.toLowerCase()
       result = result.filter(tk =>
         [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.project_name, tk.brand,
-         tk.department, tk.categories, tk.plant, tk.status, getCreator(tk)]
+         ...getDepts(tk), tk.categories, tk.plant, tk.status, getCreator(tk)]
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
@@ -212,18 +246,32 @@ export default function TicketsPage() {
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
     if (fUrgency.size > 0) result = result.filter(tk => fUrgency.has(tk.urgency))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
-    if (fDept.size   > 0) result = result.filter(tk => fDept.has(tk.department || NO_DEPT))
+    if (fDept.size   > 0) result = result.filter(tk => {
+      const depts = getDepts(tk)
+      return depts.length ? depts.some(d => fDept.has(d)) : fDept.has(NO_DEPT)
+    })
     if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
     if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT])
+  }, [allTickets, search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT, lineAgg])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
-  // Ajoute « (Non défini) » en tête du filtre Département s'il existe des occurrences sans département.
-  const deptFilterValues = allTickets.some(tk => !tk.department) ? [NO_DEPT, ...uniq('department')] : uniq('department')
+  // Valeurs du filtre Département — dérivées des lignes (repli en-tête), avec
+  // « (Non défini) » en tête s'il existe des occurrences sans département.
+  const deptFilterValues = useMemo(() => {
+    const all = new Set()
+    let hasNone = false
+    for (const tk of allTickets) {
+      const depts = getDepts(tk)
+      if (depts.length === 0) hasNone = true
+      depts.forEach(d => all.add(d))
+    }
+    const sorted = [...all].sort()
+    return hasNone ? [NO_DEPT, ...sorted] : sorted
+  }, [allTickets, lineAgg, NO_DEPT])
   const creatorNames = useMemo(
     () => [...new Set(allTickets.map(tk => getCreator(tk)).filter(Boolean))].sort(),
     [allTickets, profileMap]
@@ -236,14 +284,68 @@ export default function TicketsPage() {
       const ca = getCost(a) || 0, cb = getCost(b) || 0
       return costSort === 'desc' ? cb - ca : ca - cb
     })
-  }, [filtered, costSort, lineCosts])
+  }, [filtered, costSort, lineAgg])
 
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(() => Math.max(1, Number(urlParam('p')) || 1))
   const start   = (page - 1) * PAGE_SIZE
   const tickets = sorted.slice(start, start + PAGE_SIZE)
   const hasMore = start + PAGE_SIZE < sorted.length
 
-  useEffect(() => setPage(1), [search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fiscalYear, costSort])
+  // Changer un filtre ramène à la page 1 — fait de manière SYNCHRONE dans les
+  // gestionnaires (resetPage ci-dessous), pas via un effet : un effet de reset
+  // ferait la course avec la borne ci-dessous dans le même commit React, et
+  // l'URL pourrait capturer un état hybride « nouveau filtre + ancienne page ».
+  const resetPage = (setter) => (v) => { setter(v); setPage(1) }
+
+  // Ramène la page dans les bornes quand le jeu de résultats a rétréci (p
+  // restauré depuis l'URL, ou occurrence sortie du filtre après modification).
+  // Attend que lignes ET profils soient chargés : tant qu'ils ne sont pas là,
+  // les filtres département / créé par voient un jeu transitoire réduit et la
+  // borne perdrait à tort la page restaurée. Setter fonctionnel (min) : jamais
+  // d'augmentation de page, et insensible aux fermetures périmées.
+  const linesSettled    = lineRows !== undefined || linesError || allTickets.length === 0
+  const profilesSettled = profiles !== undefined || profilesError
+  useEffect(() => {
+    if ((!data && !ticketsError) || !linesSettled || !profilesSettled) return
+    const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+    setPage(p => Math.min(p, pageCount))
+  }, [data, ticketsError, linesSettled, profilesSettled, sorted.length])
+
+  // Reflète les filtres actifs dans l'URL sans empiler l'historique — c'est
+  // cette URL que le retour depuis le détail d'une occurrence restaure.
+  // `location` en dépendance : cliquer « Occurrences » dans la barre latérale
+  // alors qu'on est déjà sur la liste pousse /tickets nu sans démonter la page ;
+  // l'effet re-écrit alors les filtres actifs dans l'URL. Throttle à front
+  // montant : un événement isolé (clic, restauration) écrit immédiatement, la
+  // frappe au clavier est coalescée à 350 ms — sous la limite de débit de
+  // Safari (SecurityError au-delà de ~100 replaceState / 30 s).
+  const location = useLocation()
+  const lastUrlWrite = useRef(0)
+  useEffect(() => {
+    const write = () => {
+      lastUrlWrite.current = Date.now()
+      // Si la navigation vers le détail est déjà engagée, ne pas réécrire son URL.
+      if (!/\/tickets\/?$/.test(window.location.pathname)) return
+      const p = new URLSearchParams()
+      if (search)   p.set('q', search)
+      if (fQuality) p.set('issue', fQuality)
+      if (fiscalYear !== CURRENT_FISCAL_YEAR) p.set('fy', String(fiscalYear))
+      const sets = { st: fStatus, urg: fUrgency, brand: fBrand, dept: fDept, plant: fPlant, proj: fProject, sc: fSC, date: fDate, by: fCreator }
+      for (const [key, set] of Object.entries(sets)) [...set].forEach(v => p.append(key, v))
+      if (costSort) p.set('cost', costSort)
+      if (page > 1) p.set('p', String(page))
+      const qs = p.toString()
+      if (qs !== window.location.search.replace(/^\?/, '')) {
+        try {
+          window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+        } catch { /* limite Safari — l'URL se resynchronisera au prochain changement */ }
+      }
+    }
+    const elapsed = Date.now() - lastUrlWrite.current
+    if (elapsed >= 350) { write(); return }
+    const id = setTimeout(write, 350 - elapsed)
+    return () => clearTimeout(id)
+  }, [location, search, fQuality, fiscalYear, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, costSort, page])
 
   const hasActiveFilters = search || fQuality || fStatus.size || fUrgency.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
@@ -251,13 +353,14 @@ export default function TicketsPage() {
     setSearch(''); setFQuality(''); setFStatus(new Set()); setFUrgency(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFProject(new Set())
     setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
+    setPage(1)
   }
 
   const handleExport = () => {
     try {
       const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'created_by_name']
       const rows    = filtered
-        .map(t => ({ ...t, created_by_name: getCreator(t) || '' }))
+        .map(t => ({ ...t, created_by_name: getCreator(t) || '', department: getDepts(t).join(', ') }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
@@ -291,9 +394,9 @@ export default function TicketsPage() {
             className="outline-none text-sm w-full placeholder:text-gray-400 bg-transparent text-gray-900 dark:text-gray-100"
             placeholder={t('ticket.search_placeholder')}
             value={search}
-            onChange={e => setSearch(e.target.value)} />
+            onChange={e => { setSearch(e.target.value); setPage(1) }} />
           {search && (
-            <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer p-0">
+            <button onClick={() => { setSearch(''); setPage(1) }} className="text-gray-400 hover:text-gray-600 bg-transparent border-0 cursor-pointer p-0">
               <i className="ti ti-x text-sm" aria-hidden="true" />
             </button>
           )}
@@ -302,7 +405,7 @@ export default function TicketsPage() {
         <select
           className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none"
           value={fiscalYear}
-          onChange={e => setFiscalYear(e.target.value === 'all' ? 'all' : Number(e.target.value))}>
+          onChange={e => { setFiscalYear(e.target.value === 'all' ? 'all' : Number(e.target.value)); setPage(1) }}>
           {FISCAL_YEARS.map(fy => <option key={fy} value={fy}>{fy === 'all' ? t('ticket.all_fy') : `FY${fy}`}</option>)}
         </select>
 
@@ -328,44 +431,45 @@ export default function TicketsPage() {
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">#</span>
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={setFSC} onClear={() => setFSC(new Set())} />
+                  <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={resetPage(setFSC)} onClear={() => { setFSC(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={setFDate} onClear={() => setFDate(new Set())} />
+                  <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={resetPage(setFDate)} onClear={() => { setFDate(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <TextColumnFilter label={t('ticket.issue')} value={fQuality} onChange={setFQuality} placeholder={t('ticket.filter_issue_ph')} />
+                  <TextColumnFilter label={t('ticket.issue')} value={fQuality} onChange={resetPage(setFQuality)} placeholder={t('ticket.filter_issue_ph')} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={setFProject} onClear={() => setFProject(new Set())} />
+                  <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={resetPage(setFProject)} onClear={() => { setFProject(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={setFBrand} onClear={() => setFBrand(new Set())} />
+                  <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={resetPage(setFBrand)} onClear={() => { setFBrand(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={setFDept} onClear={() => setFDept(new Set())} />
+                  <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={resetPage(setFDept)} onClear={() => { setFDept(new Set()); setPage(1) }}
+                    renderValue={v => v === NO_DEPT ? noDeptLabel : v} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.plant')} values={uniq('plant')} selected={fPlant} onChange={setFPlant} onClear={() => setFPlant(new Set())} />
+                  <ColumnFilter label={t('ticket.plant')} values={uniq('plant')} selected={fPlant} onChange={resetPage(setFPlant)} onClear={() => { setFPlant(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={setFStatus} onClear={() => setFStatus(new Set())}
+                  <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={resetPage(setFStatus)} onClear={() => { setFStatus(new Set()); setPage(1) }}
                     renderValue={v => t(`status.${v}`)} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.urgency_col')} values={uniq('urgency')} selected={fUrgency} onChange={setFUrgency} onClear={() => setFUrgency(new Set())}
+                  <ColumnFilter label={t('ticket.urgency_col')} values={uniq('urgency')} selected={fUrgency} onChange={resetPage(setFUrgency)} onClear={() => { setFUrgency(new Set()); setPage(1) }}
                     renderValue={v => URGENCY_LBL[v] || v} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <button
-                    onClick={() => setCostSort(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
+                    onClick={() => { setCostSort(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc'); setPage(1) }}
                     className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
                     {t('ticket.cost')}
                     <i className={`ti ${costSort === 'desc' ? 'ti-sort-descending text-blue-500' : costSort === 'asc' ? 'ti-sort-ascending text-blue-500' : 'ti-selector'} text-xs`} aria-hidden="true" />
                   </button>
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={setFCreator} onClear={() => setFCreator(new Set())} />
+                  <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={resetPage(setFCreator)} onClear={() => { setFCreator(new Set()); setPage(1) }} />
                 </th>
                 {/* Coluna de acções — só visível para admin/manager */}
                 {isManager && (
@@ -375,7 +479,8 @@ export default function TicketsPage() {
             </thead>
             <tbody>
               {tickets.map(ticket => {
-                const cost = getCost(ticket)
+                const cost  = getCost(ticket)
+                const depts = getDepts(ticket)
                 const isDeleting = deleteMutation.isPending && deleteMutation.variables === ticket.id
                 return (
                   <tr key={ticket.id}
@@ -388,8 +493,12 @@ export default function TicketsPage() {
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.project_name || '—'}</td>
                     <td className="px-4 py-2.5"><BrandTag brand={ticket.brand} /></td>
                     <td className="px-4 py-2.5">
-                      {ticket.department
-                        ? <span className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{ticket.department}</span>
+                      {depts.length
+                        ? <div className="flex flex-wrap gap-1">
+                            {depts.map(d => (
+                              <span key={d} className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{d}</span>
+                            ))}
+                          </div>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.plant || '—'}</td>
