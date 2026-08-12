@@ -1063,15 +1063,17 @@ export default function TicketDetail() {
   }
 
   // Navigation (bouton Retour) : confirme avant de quitter. Vers la revue hebdo,
-  // renvoie aussi les filtres département/usine reçus pour restaurer la sélection.
+  // renvoie aussi les filtres département/usine et le tri reçus pour restaurer la sélection.
   const goBack = () => {
     if (!confirmDiscard()) return
     if (fromMeeting) {
       const p = new URLSearchParams({ meetingId })
       const depts  = searchParams.get('depts')
       const plants = searchParams.get('plants')
+      const sort   = searchParams.get('sort')
       if (depts)  p.set('depts',  depts)
       if (plants) p.set('plants', plants)
+      if (sort)   p.set('sort',   sort)
       navigate(`/meetings?${p.toString()}`)
     } else {
       navigate(-1)
