@@ -153,7 +153,7 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={status} onChange={e => setStatus(e.target.value)}>
             <option value="">{t('meeting.all_statuses')}</option>
-            {['not_started','service_desk','quality_meeting','completed','cancelled'].map(s => (
+            {['not_started','service_desk','sd_waiting_info','quality_meeting','completed','cancelled'].map(s => (
               <option key={s} value={s}>{t(`status.${s}`)}</option>
             ))}
           </select>

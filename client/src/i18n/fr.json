@@ -15,6 +15,7 @@
     "not_started": "Non démarré",
     "wip": "En cours",
     "service_desk": "Service Desk",
+    "sd_waiting_info": "Service Desk - info en attente",
     "quality_meeting": "Réunion qualité",
     "completed": "Complété",
     "cancelled": "Annulé"
@@ -100,6 +101,7 @@
     "discard_confirm": "Vous avez des modifications non enregistrées. Continuer sans enregistrer ? Vos modifications seront perdues.",
     "submit_to_sd": "Soumettre au Service Desk",
     "submit_to_qm": "Soumettre à la Réunion qualité",
+    "mark_waiting_info": "Marquer en attente d'info",
     "mark_completed": "Marquer comme complété",
     "step1": "Création",
     "step2": "Service Desk",

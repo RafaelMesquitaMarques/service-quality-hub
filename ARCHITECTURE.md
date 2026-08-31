@@ -121,7 +121,8 @@ CREATE TABLE tickets (
   categories          VARCHAR(100),
   status              VARCHAR(30) DEFAULT 'not_started'
                         CHECK (status IN (
-                          'not_started','wip','completed','cancelled'
+                          'not_started','wip','service_desk','sd_waiting_info',
+                          'quality_meeting','completed','cancelled'
                         )),
 
   -- Issue details

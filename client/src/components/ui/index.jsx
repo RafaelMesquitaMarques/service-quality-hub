@@ -7,6 +7,7 @@ export function StatusBadge({ status }) {
     not_started:     'pill-ns',
     wip:             'pill-wip',
     service_desk:    'pill-sd',
+    sd_waiting_info: 'pill-sdw',
     quality_meeting: 'pill-qm',
     completed:       'pill-done',
     cancelled:       'pill-cancelled',

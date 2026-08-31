@@ -11,10 +11,11 @@ import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO
 import { useCategories, useDepartments } from '../../hooks/useTaxonomy'
 import toast from 'react-hot-toast'
 
-const STATUS_OPTS = ['not_started','service_desk','quality_meeting','completed','cancelled']
+const STATUS_OPTS = ['not_started','service_desk','sd_waiting_info','quality_meeting','completed','cancelled']
 const STATUS_CLR_LIGHT = {
   not_started:     { bg:'#f3f4f6', color:'#6b7280' },
   service_desk:    { bg:'#E6F1FB', color:'#0C447C' },
+  sd_waiting_info: { bg:'#EEF2FF', color:'#3730A3' },
   quality_meeting: { bg:'#FAEEDA', color:'#633806' },
   completed:       { bg:'#eaf3de', color:'#27500a' },
   cancelled:       { bg:'#fcebeb', color:'#791f1f' },
@@ -22,6 +23,7 @@ const STATUS_CLR_LIGHT = {
 const STATUS_CLR_DARK = {
   not_started:     { bg:'#1f2937', color:'#9ca3af' },
   service_desk:    { bg:'#1e3a5f', color:'#93c5fd' },
+  sd_waiting_info: { bg:'#1e1b4b', color:'#a5b4fc' },
   quality_meeting: { bg:'#3b2a00', color:'#fcd34d' },
   completed:       { bg:'#14532d', color:'#86efac' },
   cancelled:       { bg:'#4a1b0c', color:'#fca5a5' },
@@ -41,7 +43,7 @@ const TOOLS   = [
 ]
 
 // Status pipeline para avançar/recuar
-const STATUS_FLOW = ['not_started','service_desk','quality_meeting','completed']
+const STATUS_FLOW = ['not_started','service_desk','sd_waiting_info','quality_meeting','completed']
 function nextStatus(s) {
   const i = STATUS_FLOW.indexOf(s)
   return i < STATUS_FLOW.length - 1 ? STATUS_FLOW[i + 1] : null
@@ -49,6 +51,9 @@ function nextStatus(s) {
 function prevStatus(s) {
   if (s === 'cancelled') return null
   if (s === 'completed') return 'quality_meeting'
+  // « Info en attente » est un état optionnel de l'étape Service Desk : depuis la
+  // Réunion qualité on revient donc au Service Desk, et non à cet état d'attente.
+  if (s === 'quality_meeting') return 'service_desk'
   const i = STATUS_FLOW.indexOf(s)
   return i > 0 ? STATUS_FLOW[i - 1] : null
 }
@@ -541,11 +546,11 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   }
 
   // canEdit: role-based (from parent) AND status allows it
-  const canEditLine = canEditProp && ['service_desk','quality_meeting','not_started'].includes(status)
+  const canEditLine = canEditProp && ['service_desk','sd_waiting_info','quality_meeting','not_started'].includes(status)
 
   // Coût visible dès le Service Desk ; classification réservée à la Réunion qualité.
   // Édition gérée par le rôle (canEditProp), comme les sections au niveau occurrence.
-  const showLineCost  = ['service_desk','quality_meeting','completed'].includes(status)
+  const showLineCost  = ['service_desk','sd_waiting_info','quality_meeting','completed'].includes(status)
   const showLineClass = ['quality_meeting','completed'].includes(status)
   const clfCostSum = ['cost_furniture','cost_freight','cost_install'].reduce((s, k) => s + (Number(clf[k]) || 0), 0)
 
@@ -843,17 +848,9 @@ export default function TicketDetail() {
   const fromMeeting    = searchParams.get('from') === 'meeting'
   const meetingId      = searchParams.get('meetingId')
 
-  const categoryOptions   = useCategories()
-  const departmentOptions = useDepartments()
-
-  const [rootCause,   setRootCause]   = useState('')
-  const [corrective,  setCorrective]  = useState('')
   const [sdNotes,     setSdNotes]     = useState('')
   const [scNumber,    setScNumber]    = useState('')
-  const [categories,  setCategories]  = useState('')
-  const [department,  setDepartment]  = useState('')
   const [costApprox,  setCostApprox]  = useState('')
-  const [costFinal,   setCostFinal]   = useState('')
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
@@ -873,14 +870,9 @@ export default function TicketDetail() {
 
   useEffect(() => {
     if (ticket && !initialized) {
-      setRootCause(ticket.root_cause || '')
-      setCorrective(ticket.corrective_action || '')
       setSdNotes(ticket.service_desk_notes || '')
       setScNumber(ticket.sc_number || '')
-      setCategories(ticket.categories || '')
-      setDepartment(ticket.department || '')
       setCostApprox(ticket.cost_approx != null ? String(ticket.cost_approx) : '')
-      setCostFinal(ticket.cost_final != null ? String(ticket.cost_final) : '')
       setInitialized(true)
     }
   }, [ticket, initialized])
@@ -1000,14 +992,9 @@ export default function TicketDetail() {
   })
 
   const handleSave = () => updateMut.mutate({
-    root_cause:         rootCause  || null,
-    corrective_action:  corrective || null,
     service_desk_notes: sdNotes    || null,
     sc_number:          scNumber   || null,
-    categories:         categories || null,
-    department:         department || null,
     cost_approx:        costApprox !== '' ? Number(costApprox) : null,
-    cost_final:         costFinal  !== '' ? Number(costFinal)  : null,
   })
 
   // Salvar edição dos campos de informação
@@ -1025,28 +1012,18 @@ export default function TicketDetail() {
   }
 
   // ── Garde « modifications non enregistrées » ────────────────────────────
-  // Réinitialise les champs SD/QM aux valeurs persistées (abandon des modifs).
+  // Réinitialise les champs Service Desk aux valeurs persistées (abandon des modifs).
   const resetFields = (tk) => {
-    setRootCause(tk.root_cause || '')
-    setCorrective(tk.corrective_action || '')
     setSdNotes(tk.service_desk_notes || '')
     setScNumber(tk.sc_number || '')
-    setCategories(tk.categories || '')
-    setDepartment(tk.department || '')
     setCostApprox(tk.cost_approx != null ? String(tk.cost_approx) : '')
-    setCostFinal(tk.cost_final != null ? String(tk.cost_final) : '')
     setEditingInfo(false)
   }
 
   const fieldsDirty = initialized && !!ticket && (
-    (ticket.root_cause         || '') !== rootCause  ||
-    (ticket.corrective_action  || '') !== corrective ||
     (ticket.service_desk_notes || '') !== sdNotes    ||
     (ticket.sc_number          || '') !== scNumber   ||
-    (ticket.categories         || '') !== categories ||
-    (ticket.department         || '') !== department ||
-    (ticket.cost_approx != null ? String(ticket.cost_approx) : '') !== costApprox ||
-    (ticket.cost_final  != null ? String(ticket.cost_final)  : '') !== costFinal
+    (ticket.cost_approx != null ? String(ticket.cost_approx) : '') !== costApprox
   )
   const isDirty = fieldsDirty || editingInfo
 
@@ -1177,8 +1154,11 @@ export default function TicketDetail() {
                   <button key={s}
                     onClick={() => changeStatus({ status: s })}
                     disabled={!canEdit}
-                    className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all min-w-0"
+                    className="flex-1 py-1.5 px-1 rounded-lg text-xs font-medium transition-all"
                     style={{
+                      // Largeur mini : la rangée passe sur deux lignes (flex-wrap)
+                      // plutôt que d'écraser les libellés des 6 statuts.
+                      minWidth:   92,
                       cursor:     canEdit ? 'pointer' : 'default',
                       border:     ticket.status === s ? '1px solid #2563eb' : '1px solid ' + (isDark ? '#374151' : '#e5e7eb'),
                       background: ticket.status === s ? '#2563eb' : (isDark ? '#161B22' : '#fff'),
@@ -1200,9 +1180,17 @@ export default function TicketDetail() {
                       <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_sd')}
                     </button>
                   )}
-                  {ticket.status === 'service_desk' && (
+                  {['service_desk','sd_waiting_info'].includes(ticket.status) && (
                     <button onClick={() => changeStatus({ status: 'quality_meeting', sd_completed_at: new Date().toISOString() })} className="btn-primary text-xs w-full justify-center" style={{ background:'#1D9E75' }}>
                       <i className="ti ti-send text-xs" aria-hidden="true" /> {t('ticket.submit_to_qm')}
+                    </button>
+                  )}
+                  {/* Le Service Desk met l'occurrence en attente d'information */}
+                  {ticket.status === 'service_desk' && (
+                    <button onClick={() => changeStatus({ status: 'sd_waiting_info' })}
+                      className="btn-ghost text-xs w-full justify-center"
+                      style={{ border: '1px solid ' + (isDark ? '#374151' : '#e5e7eb') }}>
+                      <i className="ti ti-hourglass text-xs" aria-hidden="true" /> {t('ticket.mark_waiting_info')}
                     </button>
                   )}
                   {ticket.status === 'quality_meeting' && (
@@ -1325,7 +1313,7 @@ export default function TicketDetail() {
             </div>
 
             {/* SD Notes */}
-            {['service_desk','quality_meeting','completed'].includes(ticket.status) && (
+            {['service_desk','sd_waiting_info','quality_meeting','completed'].includes(ticket.status) && (
               <div className="card">
                 <SectionHeader icon="ti-notes" title={t('ticket.step2')} />
                 <div className="px-4 py-3 flex flex-col gap-3">
@@ -1350,56 +1338,6 @@ export default function TicketDetail() {
                       disabled={!canEdit}
                       placeholder={t('ticket.sd_notes_placeholder')}
                       className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Quality Meeting — classification + résolution */}
-            {['quality_meeting','completed'].includes(ticket.status) && (
-              <div className="card">
-                <SectionHeader icon="ti-clipboard-check" title={t('ticket.step3')} />
-                <div className="px-4 py-3 flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="label">{t('ticket.categories')}</label>
-                      <select value={categories} onChange={e => setCategories(e.target.value)} disabled={!canEdit}
-                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
-                        <option value="">—</option>
-                        {categories && !categoryOptions.includes(categories) && <option value={categories}>{categories}</option>}
-                        {categoryOptions.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">{t('ticket.department')}</label>
-                      <select value={department} onChange={e => setDepartment(e.target.value)} disabled={!canEdit}
-                        className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
-                        <option value="">—</option>
-                        {department && !departmentOptions.includes(department) && <option value={department}>{department}</option>}
-                        {departmentOptions.map(d => <option key={d}>{d}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label">{t('ticket.root_cause')}</label>
-                    <select value={rootCause} onChange={e => setRootCause(e.target.value)} disabled={!canEdit}
-                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed">
-                      <option value="">—</option>
-                      {rootCause && !ROOT_CAUSES.includes(rootCause) && <option value={rootCause}>{rootCause}</option>}
-                      {ROOT_CAUSES.map(r => <option key={r}>{r}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">{t('ticket.corrective_action')}</label>
-                    <textarea rows={3} value={corrective} onChange={e => setCorrective(e.target.value)}
-                      disabled={!canEdit}
-                      placeholder={t('ticket.corrective_placeholder')} className="input resize-y text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
-                  </div>
-                  <div>
-                    <label className="label">{t('ticket.cost_final')}</label>
-                    <input type="number" min="0" value={costFinal} onChange={e => setCostFinal(e.target.value)}
-                      disabled={!canEdit} placeholder="$0.00"
-                      className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
                   </div>
                 </div>
               </div>

@@ -15,6 +15,7 @@
     "not_started": "Not started",
     "wip": "WIP",
     "service_desk": "Service Desk",
+    "sd_waiting_info": "Service desk waiting info",
     "quality_meeting": "Quality Meeting",
     "completed": "Completed",
     "cancelled": "Cancelled"
@@ -100,6 +101,7 @@
     "discard_confirm": "You have unsaved changes. Continue without saving? Your changes will be lost.",
     "submit_to_sd": "Submit to Service Desk",
     "submit_to_qm": "Submit to Quality Meeting",
+    "mark_waiting_info": "Mark as waiting info",
     "mark_completed": "Mark as completed",
     "step1": "Creation",
     "step2": "Service Desk",
