@@ -19,15 +19,23 @@ const TOLERANCE_PCT = 0.003
 const BRAND_COLORS  = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA']
 const DEPT_COLORS   = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA',
   '#0EA5E9', '#F59E0B', '#10B981', '#EF4444', '#6366F1', '#14B8A6', '#F97316', '#EC4899', '#22C55E', '#A855F7']
-const STATUS_ORDER  = ['not_started', 'service_desk', 'quality_meeting', 'wip', 'completed', 'cancelled']
+const STATUS_ORDER  = ['not_started', 'service_desk', 'sd_waiting_info', 'quality_meeting', 'wip', 'completed', 'cancelled']
 const STATUS_COLORS = {
   not_started:     '#94A3B8',
   service_desk:    '#3B82F6',
+  sd_waiting_info: '#6366F1',
   quality_meeting: '#8B5CF6',
   wip:             '#F59E0B',
   completed:       '#10B981',
   cancelled:       '#EF4444',
 }
+
+// Périmètre du tableau de bord : seules les occurrences arrivées à la Réunion
+// qualité (donc classées) ou complétées sont prises en compte. Les étapes amont
+// (non démarré, Service Desk, info en attente) et les annulées sont exclues de
+// TOUS les calculs — KPI, coûts, graphiques, tableau des récentes.
+const DASHBOARD_STATUSES = ['quality_meeting', 'completed']
+const inDashboardScope = tk => DASHBOARD_STATUSES.includes(tk.status)
 
 const money  = v => `$${Math.round(Number(v) || 0).toLocaleString()}`
 const moneyK = v => `$${Math.round((Number(v) || 0) / 1000)}k`
@@ -194,8 +202,8 @@ export default function Dashboard() {
 
   // Per-line rows for the current & previous fiscal year — costs are aggregated
   // from these (occurrence_lines), not the occurrence-level fields.
-  const curIds  = (currentYearTickets || []).map(t => t.id)
-  const prevIds = (prevYearTickets    || []).map(t => t.id)
+  const curIds  = (currentYearTickets || []).filter(inDashboardScope).map(t => t.id)
+  const prevIds = (prevYearTickets    || []).filter(inDashboardScope).map(t => t.id)
   const { data: curLinesRaw } = useQuery({
     queryKey: ['dashboard-lines', curIds],
     queryFn: () => fetchOccurrenceLines(curIds),
@@ -222,27 +230,67 @@ export default function Dashboard() {
     <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   )
 
-  const rawTickets = currentYearTickets || []
-  const rawPrev    = prevYearTickets    || []
+  const rawTickets = (currentYearTickets || []).filter(inDashboardScope)
+  const rawPrev    = (prevYearTickets    || []).filter(inDashboardScope)
 
   // Filter option lists (from the unfiltered year so they never disappear)
   const uniq = (arr, key) => [...new Set(arr.map(t => t[key]).filter(Boolean))].sort()
-  // « (Non défini) » : filtre pour isoler le coût/les occurrences sans département
-  // (correspond à la part « (Non défini) » du camembert). Un coût est non défini
-  // quand ni la ligne ni l'occurrence n'a de département → ⟺ occurrence sans dépt.
+
+  // Département ET usine d'une occurrence : ceux de ses LIGNES, avec repli sur
+  // l'en-tête pour une ligne non renseignée — exactement getDepts()/getPlants()
+  // de la liste des occurrences, et les unités de la revue hebdo. Indispensable :
+  // la classification vit sur les lignes depuis 2026-06-25 et la grande majorité
+  // des occurrences n'a AUCUN département/usine au niveau en-tête. Filtrer sur
+  // tk.department revenait donc à ignorer presque toutes les occurrences
+  // classées (ex. « Ext. Sales » : 3 occurrences vues au lieu de 8) ; filtrer les
+  // compteurs sur tk.plant tout en valorisant les coûts au niveau ligne faisait
+  // diverger le nombre d'occurrences et le coût d'une même usine.
+  const lineValuesByOcc = { department: {}, plant: {} }
+  ;[...(curLinesRaw || []), ...(prevLinesRaw || [])].forEach(l => {
+    for (const key of ['department', 'plant']) {
+      (lineValuesByOcc[key][l.occurrence_id] = lineValuesByOcc[key][l.occurrence_id] || []).push(l[key] || null)
+    }
+  })
+  const occValues = (tk, key) => {
+    const lineVals = lineValuesByOcc[key][tk.id]
+    const source = lineVals?.length ? lineVals.map(v => v || tk[key]) : [tk[key]]
+    return [...new Set(source.filter(Boolean))]
+  }
+  const occDepts  = (tk) => occValues(tk, 'department')
+  const occPlants = (tk) => occValues(tk, 'plant')
+
+  // « (Non défini) » : valeur de filtre pour isoler le coût/les occurrences sans
+  // département (ou sans usine) — elle correspond à la part « (Non défini) » du
+  // camembert et du graphique par usine. Sans elle, ce coût n'était isolable par
+  // aucune valeur du filtre. Une valeur est non définie quand ni la ligne ni
+  // l'occurrence ne la porte.
   const NO_DEPT = t('dashboard.unclassified')
-  const deptOptions   = rawTickets.some(tk => !tk.department)
-    ? [NO_DEPT, ...uniq(rawTickets, 'department')] : uniq(rawTickets, 'department')
+  const derivedOptions = (getter) => {
+    const all = new Set()
+    let hasNone = false
+    rawTickets.forEach(tk => {
+      const vs = getter(tk)
+      if (!vs.length) hasNone = true
+      vs.forEach(v => all.add(v))
+    })
+    const sorted = [...all].sort()
+    return hasNone ? [NO_DEPT, ...sorted] : sorted
+  }
+  const deptOptions   = derivedOptions(occDepts)
+  const plantOptions  = derivedOptions(occPlants)
   const brandOptions  = uniq(rawTickets, 'brand')
-  const plantOptions  = uniq(rawTickets, 'plant')
   const statusOptions = STATUS_ORDER.filter(s => rawTickets.some(t => t.status === s))
-  const deptMatch = (dep) => filters.department === 'all' || dep === filters.department
-    || (filters.department === NO_DEPT && !dep)
+  // Par valeur (pour les unités de coût, qui portent déjà dépt/usine de leur ligne)…
+  const valMatch  = (sel, v) => sel === 'all' || v === sel || (sel === NO_DEPT && !v)
+  const deptMatch  = (dep) => valMatch(filters.department, dep)
+  const plantMatch = (p)   => valMatch(filters.plant, p)
+  // …et par occurrence (pour les compteurs), qui peut relever de plusieurs valeurs.
+  const occMatch = (sel, vs) => sel === 'all' || (vs.length ? vs.includes(sel) : sel === NO_DEPT)
 
   const match = (tk) =>
-    deptMatch(tk.department) &&
+    occMatch(filters.department, occDepts(tk)) &&
     (filters.brand      === 'all' || tk.brand      === filters.brand) &&
-    (filters.plant      === 'all' || tk.plant      === filters.plant) &&
+    occMatch(filters.plant, occPlants(tk)) &&
     (filters.status     === 'all' || tk.status     === filters.status)
 
   const tickets     = rawTickets.filter(match)
@@ -255,7 +303,9 @@ export default function Dashboard() {
   // sans revenu pour cette usine disparaît du graphique « SC Cost % ».
   const revByFY = {}
   ;(revenueRows || []).forEach(r => {
-    if (filters.plant !== 'all' && r.plant !== filters.plant) return
+    // « (Non défini) » = les revenus non ventilés (plant NULL), en regard du coût
+    // dont l'usine n'est renseignée ni sur la ligne ni sur l'occurrence.
+    if (filters.plant !== 'all' && (filters.plant === NO_DEPT ? r.plant != null : r.plant !== filters.plant)) return
     const m = (revByFY[r.fiscal_year] = revByFY[r.fiscal_year] || {})
     m[r.fiscal_month] = (m[r.fiscal_month] || 0) + (Number(r.revenue) || 0)
   })
@@ -304,7 +354,7 @@ export default function Dashboard() {
   const unitMatch = (u) =>
     deptMatch(u.department) &&
     (filters.brand      === 'all' || u.brand      === filters.brand) &&
-    (filters.plant      === 'all' || u.plant      === filters.plant) &&
+    plantMatch(u.plant) &&
     (filters.status     === 'all' || u.status     === filters.status)
   const costUnits = buildUnits(rawTickets, curByOcc).filter(unitMatch)
   const prevUnits = buildUnits(rawPrev,    prevByOcc).filter(unitMatch)

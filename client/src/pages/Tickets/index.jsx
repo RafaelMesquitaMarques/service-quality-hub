@@ -175,6 +175,7 @@ export default function TicketsPage() {
   // Sentinelle des occurrences sans département — valeur neutre et stable dans
   // l'URL quelle que soit la langue ; traduite seulement à l'affichage.
   const NO_DEPT = '__none__'
+  const NO_PLANT = '__none__'   // même sentinelle, paramètre d'URL distinct
   const noDeptLabel = t('dashboard.unclassified')  // « (Non défini) »
 
   // Lignes des occurrences affichées : coût ET département vivent au niveau de
@@ -187,12 +188,13 @@ export default function TicketsPage() {
   })
 
   const lineAgg = useMemo(() => {
-    const costs = {}, depts = {}
+    const costs = {}, depts = {}, plants = {}
     for (const l of lineRows || []) {
       costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
-      ;(depts[l.occurrence_id] = depts[l.occurrence_id] || []).push(l.department || null)
+      ;(depts[l.occurrence_id]  = depts[l.occurrence_id]  || []).push(l.department || null)
+      ;(plants[l.occurrence_id] = plants[l.occurrence_id] || []).push(l.plant || null)
     }
-    return { costs, depts }
+    return { costs, depts, plants }
   }, [lineRows])
 
   const getCost = (ticket) => {
@@ -207,6 +209,16 @@ export default function TicketsPage() {
   const getDepts = (ticket) => {
     const lineDepts = lineAgg.depts[ticket.id]
     const source = lineDepts?.length ? lineDepts.map(d => d || ticket.department) : [ticket.department]
+    return [...new Set(source.filter(Boolean))]
+  }
+
+  // Usines d'une occurrence : même convention que les départements — celles de
+  // ses lignes (repli sur l'en-tête), sinon celle de l'en-tête. L'usine vit sur
+  // la ligne depuis 2026-06-25 : afficher/filtrer sur tk.plant laissait 30
+  // occurrences FY2026 sans usine à l'écran alors que leurs lignes en ont une.
+  const getPlants = (ticket) => {
+    const linePlants = lineAgg.plants[ticket.id]
+    const source = linePlants?.length ? linePlants.map(p => p || ticket.plant) : [ticket.plant]
     return [...new Set(source.filter(Boolean))]
   }
 
@@ -238,7 +250,7 @@ export default function TicketsPage() {
       const q = search.toLowerCase()
       result = result.filter(tk =>
         [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.project_name, tk.brand,
-         ...getDepts(tk), tk.categories, tk.plant, tk.status, getCreator(tk)]
+         ...getDepts(tk), tk.categories, ...getPlants(tk), tk.status, getCreator(tk)]
           .some(v => v && String(v).toLowerCase().includes(q))
       )
     }
@@ -250,7 +262,10 @@ export default function TicketsPage() {
       const depts = getDepts(tk)
       return depts.length ? depts.some(d => fDept.has(d)) : fDept.has(NO_DEPT)
     })
-    if (fPlant.size  > 0) result = result.filter(tk => fPlant.has(tk.plant))
+    if (fPlant.size  > 0) result = result.filter(tk => {
+      const plants = getPlants(tk)
+      return plants.length ? plants.some(p => fPlant.has(p)) : fPlant.has(NO_PLANT)
+    })
     if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
@@ -272,6 +287,18 @@ export default function TicketsPage() {
     const sorted = [...all].sort()
     return hasNone ? [NO_DEPT, ...sorted] : sorted
   }, [allTickets, lineAgg, NO_DEPT])
+  // Valeurs du filtre Usine — dérivées des lignes, comme le département.
+  const plantFilterValues = useMemo(() => {
+    const all = new Set()
+    let hasNone = false
+    for (const tk of allTickets) {
+      const plants = getPlants(tk)
+      if (plants.length === 0) hasNone = true
+      plants.forEach(p => all.add(p))
+    }
+    const sorted = [...all].sort()
+    return hasNone ? [NO_PLANT, ...sorted] : sorted
+  }, [allTickets, lineAgg, NO_PLANT])
   const creatorNames = useMemo(
     () => [...new Set(allTickets.map(tk => getCreator(tk)).filter(Boolean))].sort(),
     [allTickets, profileMap]
@@ -360,7 +387,7 @@ export default function TicketsPage() {
     try {
       const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'created_by_name']
       const rows    = filtered
-        .map(t => ({ ...t, created_by_name: getCreator(t) || '', department: getDepts(t).join(', ') }))
+        .map(t => ({ ...t, created_by_name: getCreator(t) || '', department: getDepts(t).join(', '), plant: getPlants(t).join(', ') }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
@@ -450,7 +477,8 @@ export default function TicketsPage() {
                     renderValue={v => v === NO_DEPT ? noDeptLabel : v} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.plant')} values={uniq('plant')} selected={fPlant} onChange={resetPage(setFPlant)} onClear={() => { setFPlant(new Set()); setPage(1) }} />
+                  <ColumnFilter label={t('ticket.plant')} values={plantFilterValues} selected={fPlant} onChange={resetPage(setFPlant)} onClear={() => { setFPlant(new Set()); setPage(1) }}
+                    renderValue={v => v === NO_PLANT ? noDeptLabel : v} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={resetPage(setFStatus)} onClear={() => { setFStatus(new Set()); setPage(1) }}
@@ -481,6 +509,7 @@ export default function TicketsPage() {
               {tickets.map(ticket => {
                 const cost  = getCost(ticket)
                 const depts = getDepts(ticket)
+                const plants = getPlants(ticket)
                 const isDeleting = deleteMutation.isPending && deleteMutation.variables === ticket.id
                 return (
                   <tr key={ticket.id}
@@ -501,7 +530,7 @@ export default function TicketsPage() {
                           </div>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.plant || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{plants.length ? plants.join(', ') : '—'}</td>
                     <td className="px-4 py-2.5"><StatusBadge status={ticket.status} /></td>
                     <td className="px-4 py-2.5">
                       {ticket.urgency
