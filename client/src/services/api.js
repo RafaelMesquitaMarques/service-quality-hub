@@ -251,17 +251,28 @@ export async function fetchLineCostTotals(occurrenceIds) {
   return totals
 }
 
-// Lignes d'occurrence avec leurs attributs par ligne (coût, département, usine,
-// catégorie) pour l'agrégation des coûts du tableau de bord. Batché comme
+// Colonnes d'agrégation : coût, département, usine, catégorie — le strict
+// nécessaire au tableau de bord, qui charge les lignes de milliers d'occurrences.
+const LINE_AGG_COLS = 'occurrence_id, cost_approx, department, plant, categories'
+// Colonnes en plus pour la recherche « dans les lignes » de la liste des
+// occurrences : tout ce qu'un utilisateur peut saisir sur une ligne. La liste
+// charge déjà ces mêmes lignes pour les coûts — seule la largeur change.
+const LINE_TEXT_COLS = 'line_item, foliot_id, quality_issue, description, root_cause, '
+  + 'corrective_action, ref_so, completion_type, affected_qty, total_qty, '
+  + 'cost_final, cost_furniture, cost_freight, cost_install'
+
+// Lignes d'occurrence avec leurs attributs par ligne. Batché comme
 // fetchLineCostTotals pour ne pas dépasser la limite d'URL de PostgREST.
-export async function fetchOccurrenceLines(occurrenceIds) {
+// `withTextFields` ajoute les champs libres, pour la recherche de la liste.
+export async function fetchOccurrenceLines(occurrenceIds, { withTextFields = false } = {}) {
   const ids = [...new Set((occurrenceIds || []).filter(Boolean))]
+  const cols = withTextFields ? `${LINE_AGG_COLS}, ${LINE_TEXT_COLS}` : LINE_AGG_COLS
   const rows = []
   const CHUNK = 150
   for (let i = 0; i < ids.length; i += CHUNK) {
     const { data, error } = await supabase
       .from('occurrence_lines')
-      .select('occurrence_id, cost_approx, department, plant, categories')
+      .select(cols)
       .in('occurrence_id', ids.slice(i, i + CHUNK))
     if (error) throw error
     rows.push(...(data || []))

@@ -20,6 +20,18 @@ const URGENCY_STYLE = {
   normal:    'text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400',
 }
 
+// Champs jamais indexés pour la recherche : identifiants techniques et
+// horodatages internes. Un UUID correspondrait à presque n'importe quelle
+// frappe et noierait les résultats.
+const NON_SEARCHABLE = new Set([
+  'id', 'occurrence_id', 'created_by', 'assigned_to',
+  'created_at', 'updated_at', 'submitted_at', 'sd_completed_at',
+  'sort_order', 'fiscal_year', 'fiscal_month', 'date_yyyy_mm',
+])
+// Séparateur entre champs indexés : un caractère non saisissable, pour qu'une
+// recherche ne puisse pas correspondre à cheval sur deux champs.
+const SEP = String.fromCharCode(1)
+
 // ── Column Filter Dropdown ─────────────────────────────────────────────────
 function ColumnFilter({ label, values, selected, onChange, onClear, renderValue }) {
   const { t } = useTranslation()
@@ -183,7 +195,7 @@ export default function TicketsPage() {
   // après une sauvegarde (refreshCostViews).
   const { data: lineRows, isError: linesError } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id)],
-    queryFn: () => fetchOccurrenceLines(allTickets.map(t => t.id)),
+    queryFn: () => fetchOccurrenceLines(allTickets.map(t => t.id), { withTextFields: true }),
     enabled: allTickets.length > 0,
   })
 
@@ -196,6 +208,41 @@ export default function TicketsPage() {
     }
     return { costs, depts, plants }
   }, [lineRows])
+
+  // ── Index de recherche ───────────────────────────────────────────────────
+  // La recherche porte sur TOUTE l'occurrence, pas seulement les colonnes du
+  // tableau : chaque champ de l'en-tête et chaque champ de chacune de ses
+  // lignes (intitulé, description, cause racine, action corrective, item,
+  // Foliot ID, ref SO, coûts, quantités...). Un défaut saisi sur la ligne 3
+  // d'une occurrence la rend donc trouvable depuis la liste.
+  // Construit une seule fois par jeu de données — le filtre par frappe n'est
+  // ensuite qu'un `includes` sur une chaîne déjà en minuscules.
+  const searchIndex = useMemo(() => {
+    const linesByOcc = {}
+    for (const l of lineRows || []) (linesByOcc[l.occurrence_id] ||= []).push(l)
+
+    const collect = (obj, out) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (NON_SEARCHABLE.has(k)) continue
+        if (v === null || v === undefined || v === '') continue
+        out.push(String(v))
+      }
+    }
+    const index = {}
+    for (const tk of allTickets) {
+      const parts = []
+      collect(tk, parts)
+      for (const line of linesByOcc[tk.id] || []) collect(line, parts)
+      // Valeurs affichées mais absentes des colonnes brutes : nom du créateur
+      // et libellés traduits (chercher « complété » doit fonctionner).
+      const creator = getCreator(tk)
+      if (creator) parts.push(creator)
+      if (tk.status)  parts.push(t(`status.${tk.status}`))
+      if (tk.urgency) parts.push(URGENCY_LBL[tk.urgency] || tk.urgency)
+      index[tk.id] = parts.join(SEP).toLowerCase()
+    }
+    return index
+  }, [allTickets, lineRows, profileMap, t])
 
   const getCost = (ticket) => {
     const lineTotal = lineAgg.costs[ticket.id]
@@ -248,11 +295,7 @@ export default function TicketsPage() {
     let result = allTickets
     if (search.trim()) {
       const q = search.toLowerCase()
-      result = result.filter(tk =>
-        [tk.occurrence_no, tk.sc_number, tk.quality_issue, tk.project_name, tk.brand,
-         ...getDepts(tk), tk.categories, ...getPlants(tk), tk.status, getCreator(tk)]
-          .some(v => v && String(v).toLowerCase().includes(q))
-      )
+      result = result.filter(tk => (searchIndex[tk.id] || '').includes(q))
     }
     if (fQuality.trim()) { const q = fQuality.toLowerCase(); result = result.filter(tk => tk.quality_issue?.toLowerCase().includes(q)) }
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
@@ -271,7 +314,7 @@ export default function TicketsPage() {
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
     return result
-  }, [allTickets, search, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT, lineAgg])
+  }, [allTickets, search, searchIndex, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT, lineAgg])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   // Valeurs du filtre Département — dérivées des lignes (repli en-tête), avec

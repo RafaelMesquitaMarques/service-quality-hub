@@ -134,7 +134,7 @@
     "zoom_out": "Zoom arrière",
     "zoom_reset": "Réinitialiser",
     "revert_to": "Retour à",
-    "search_placeholder": "Rechercher dans toutes les colonnes...",
+    "search_placeholder": "Rechercher dans toute l'occurrence et ses lignes...",
     "clear_filters": "Effacer tous les filtres",
     "filter_issue_ph": "Filtrer par problème qualité...",
     "all_fy": "Tous les FY",
