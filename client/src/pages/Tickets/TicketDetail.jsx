@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { ticketApi, logLineHistory, logLineEvent } from '../../services/api'
+import { ticketApi, logLineHistory, logLineEvent, syncOccurrenceTitle } from '../../services/api'
 import { supabase } from '../../services/supabase'
 import { PageHeader, Spinner, StatusBadge } from '../../components/ui'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useThemeStore } from '../../store/themeStore'
 import { normalizeMediaFile, isVideoFile, isVideoUrl, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
+import { formatDate, formatDateTime } from '../../utils/date'
 import { useCategories, useDepartments } from '../../hooks/useTaxonomy'
 import toast from 'react-hot-toast'
 
@@ -58,13 +59,13 @@ function prevStatus(s) {
   return i > 0 ? STATUS_FLOW[i - 1] : null
 }
 
-function formatDate(d) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric' })
-}
-function formatDateTime(d) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+// Message d'erreur : on annexe le détail renvoyé par Postgres/PostgREST.
+// Un « Une erreur est survenue » nu ne dit pas si c'est un droit manquant, une
+// contrainte violée ou une coupure réseau — impossible à diagnostiquer depuis
+// une capture d'écran.
+function errMsg(t, e) {
+  const detail = (e?.message || '').trim()
+  return detail ? `${t('common.error')} — ${detail.slice(0, 160)}` : t('common.error')
 }
 
 function SectionHeader({ icon, title, right }) {
@@ -513,8 +514,9 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     }
     const { error } = await supabase.from('occurrence_lines')
       .update({ ...payload, updated_at: new Date().toISOString() }).eq('id', line.id)
-    if (error) { toast.error(t('common.error')); return }
+    if (error) { toast.error(errMsg(t, error)); return }
     await logLineHistory(occurrenceId, line, payload, form.quality_issue || line.quality_issue)
+    await syncOccurrenceTitle(occurrenceId)   // le titre suit l'intitulé de la 1re ligne
     queryClient.invalidateQueries({ queryKey: ['ticket-history', occurrenceId] })
     toast.success(t('common.save'))
     onUpdate()
@@ -537,7 +539,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     }
     const { error } = await supabase.from('occurrence_lines')
       .update({ ...payload, updated_at: new Date().toISOString() }).eq('id', line.id)
-    if (error) { toast.error(t('common.error')); return }
+    if (error) { toast.error(errMsg(t, error)); return }
     await logLineHistory(occurrenceId, line, payload, line.quality_issue)
     queryClient.invalidateQueries({ queryKey: ['ticket-history', occurrenceId] })
     toast.success(t('common.save'))
@@ -897,6 +899,9 @@ export default function TicketDetail() {
   // (['line-costs']) + le dashboard (['tickets','dashboard', …]).
   const refreshCostViews = () => {
     refetchLines()
+    // ['ticket', id] : le titre de l'en-tête vient de tickets.quality_issue, que
+    // syncOccurrenceTitle réaligne sur la 1re ligne à chaque modification.
+    queryClient.invalidateQueries({ queryKey: ['ticket', id] })
     queryClient.invalidateQueries({ queryKey: ['tickets'] })
     queryClient.invalidateQueries({ queryKey: ['line-costs'] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-lines'] })
@@ -948,7 +953,7 @@ export default function TicketDetail() {
   const updateMut = useMutation({
     mutationFn: (payload) => ticketApi.update(id, payload),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ticket', id] }); queryClient.invalidateQueries({ queryKey: ['ticket-history', id] }); refreshCostViews(); toast.success(t('common.save')) },
-    onError: () => toast.error(t('common.error')),
+    onError: (e) => toast.error(errMsg(t, e)),
   })
 
   const addLineMut = useMutation({
@@ -969,6 +974,7 @@ export default function TicketDetail() {
       })
       if (error) throw error
       await logLineEvent(id, 'line_added', newLine.quality_issue || null)
+      await syncOccurrenceTitle(id)
     },
     onSuccess: () => {
       refreshCostViews()
@@ -977,7 +983,7 @@ export default function TicketDetail() {
       setNewLine({ quality_issue:'', description:'', line_item:'', foliot_id:'', ref_so:'', plant:'', affected_qty:'', total_qty:'', completion_type:'' })
       toast.success(t('ticket.add_line'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (e) => toast.error(errMsg(t, e)),
   })
 
   const deleteLineMut = useMutation({
@@ -986,9 +992,10 @@ export default function TicketDetail() {
       const { error } = await supabase.from('occurrence_lines').delete().eq('id', lineId)
       if (error) throw error
       await logLineEvent(id, 'line_removed', removed?.quality_issue || null)
+      await syncOccurrenceTitle(id)   // 1re ligne supprimée : la suivante donne le titre
     },
     onSuccess: () => { refreshCostViews(); queryClient.invalidateQueries({ queryKey: ['ticket-history', id] }) },
-    onError: () => toast.error(t('common.error')),
+    onError: (e) => toast.error(errMsg(t, e)),
   })
 
   const handleSave = () => updateMut.mutate({

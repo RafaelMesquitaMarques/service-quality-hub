@@ -7,6 +7,7 @@ import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../servi
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
 import { useDepartments } from '../../hooks/useTaxonomy'
+import { formatDate as formatDateValue, isPastDate } from '../../utils/date'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
@@ -26,16 +27,14 @@ const STATUS_STYLE_LIGHT = {
 const SORT_KEYS = ['sc', 'issue', 'project', 'department', 'cost']
 
 
+// `meeting_date` et les échéances d'action sont des colonnes DATE : formatage
+// sans conversion de fuseau (voir utils/date.js).
 function formatDate(d) {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('fr-CA', { day:'2-digit', month:'2-digit', year:'numeric' })
+  return formatDateValue(d, '')
 }
 function weekLabel(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  const mm = String(dt.getMonth() + 1).padStart(2,'0')
-  const dd = String(dt.getDate()).padStart(2,'0')
-  return `Week ${mm}-${dd}`
+  const s = formatDateValue(d, '')   // « YYYY-MM-DD »
+  return s ? `Week ${s.slice(5)}` : ''
 }
 
 // Dropdown multi-sélection (checkboxes) — même gabarit visuel que les anciens
@@ -683,7 +682,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                   </div>
                   <div className="px-4 py-1">
                     {(prevActions || []).map(a => {
-                      const isLate = a.due && new Date(a.due) < new Date() && a.status !== 'done'
+                      const isLate = isPastDate(a.due) && a.status !== 'done'
                       const s = SS[isLate ? 'late' : (a.status || 'todo')]
                       return (
                         <div key={a.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'1fr 90px 80px 80px' }}>
@@ -802,7 +801,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                         </div>
                       )}
                       {actList.map(a => {
-                        const isLate = a.due && new Date(a.due) < new Date() && a.status !== 'done'
+                        const isLate = isPastDate(a.due) && a.status !== 'done'
                         const s = SS[isLate ? 'late' : (a.status || 'todo')]
                         return (
                           <div key={a.id} className="grid gap-2 py-2 border-b border-gray-100 dark:border-gray-800 text-xs items-center" style={{ gridTemplateColumns:'1fr 90px 80px 80px' }}>

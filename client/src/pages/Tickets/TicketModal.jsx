@@ -6,6 +6,7 @@ import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import { Spinner } from '../../components/ui'
 import { buildMediaItem, isVideoFile, MAX_VIDEO_BYTES, MAX_VIDEO_MB } from '../../utils/media'
+import { todayISO } from '../../utils/date'
 import toast from 'react-hot-toast'
 
 const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -484,7 +485,7 @@ export default function TicketModal({ onClose }) {
   const [submitting, setSubmitting] = useState(false)
 
   const [form, setForm] = useState({
-    issue_reception_date: new Date().toISOString().slice(0,10),
+    issue_reception_date: todayISO(),
     brand:'', project_name:'',
     delivery_date:'', wish_delivery_date:'', installer_needed:'', urgency:'', comment:'',
   })

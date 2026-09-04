@@ -6,6 +6,7 @@ import { getFiscalYear, getFiscalMonth } from '../../services/api'
 import { useAuthStore } from '../../store/authStore'
 import { useQuery } from '@tanstack/react-query'
 import Logo from '../../components/Logo'
+import { todayISO } from '../../utils/date'
 import toast from 'react-hot-toast'
 
 const BRANDS = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
@@ -20,7 +21,7 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
   const [submitting, setSubmitting] = useState(false)
   const [photos, setPhotos] = useState([])
   const [form, setForm] = useState({
-    issue_reception_date: new Date().toISOString().slice(0, 10),
+    issue_reception_date: todayISO(),
     brand: '',
     ship_to: '',
     quality_issue: '',
@@ -136,7 +137,7 @@ export default function MobileTicketForm({ onSubmitted, onClose, asModal }) {
 
       // Reset form
       setForm({
-        issue_reception_date: new Date().toISOString().slice(0, 10),
+        issue_reception_date: todayISO(),
         brand: '', ship_to: '', quality_issue: '', plant: '', affected_qty: '', total_qty: '',
       })
       setPhotos([])

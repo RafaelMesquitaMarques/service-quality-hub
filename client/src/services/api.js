@@ -191,6 +191,41 @@ export async function logLineEvent(ticketId, kind, label = null) {
   }
 }
 
+// ─── Titre de l'occurrence ───────────────────────────────────────────────────
+// `tickets.quality_issue` sert de titre : liste des occurrences, en-tête de la
+// page détail, revue hebdo, export CSV, et c'est aussi la colonne interrogée par
+// la recherche (`ticketApi.list`). Il est initialisé à la création avec
+// l'intitulé de la 1re ligne (TicketModal) — mais rien ne le remettait à jour
+// ensuite : modifier l'intitulé de la ligne 1 laissait l'ancien titre partout.
+// À rappeler après tout ajout / modification / suppression de ligne.
+export async function syncOccurrenceTitle(occurrenceId) {
+  if (!occurrenceId) return
+  const { data: first, error } = await supabase
+    .from('occurrence_lines')
+    .select('quality_issue')
+    .eq('occurrence_id', occurrenceId)
+    .order('sort_order')
+    .limit(1)
+  if (error) { console.warn('sync titre occurrence:', error.message); return }
+
+  const title = first?.[0]?.quality_issue || null
+  // Plus aucune ligne (ou 1re ligne sans intitulé) : on conserve le dernier
+  // titre connu plutôt que de vider la colonne de la liste.
+  if (!title) return
+
+  // Pas d'écriture si rien ne change — évite une ligne d'historique inutile.
+  const { data: tk } = await supabase.from('tickets').select('quality_issue').eq('id', occurrenceId).single()
+  if (!tk || tk.quality_issue === title) return
+
+  // Écriture directe : la modification est déjà tracée côté ligne par
+  // `logLineHistory` (« line:quality_issue »), inutile de la journaliser deux fois.
+  const { error: upErr } = await supabase
+    .from('tickets')
+    .update({ quality_issue: title, updated_at: new Date().toISOString() })
+    .eq('id', occurrenceId)
+  if (upErr) console.warn('sync titre occurrence:', upErr.message)
+}
+
 // ─── Line costs ──────────────────────────────────────────────────────────────
 // Somme des coûts (cost_approx) des lignes par occurrence.
 // Par lots: un .in() avec des centaines d'UUID dépasse la limite d'URL de
