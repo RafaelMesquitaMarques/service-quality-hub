@@ -200,17 +200,21 @@ export async function logLineEvent(ticketId, kind, label = null) {
 // À rappeler après tout ajout / modification / suppression de ligne.
 export async function syncOccurrenceTitle(occurrenceId) {
   if (!occurrenceId) return
-  const { data: first, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('occurrence_lines')
     .select('quality_issue')
     .eq('occurrence_id', occurrenceId)
     .order('sort_order')
-    .limit(1)
   if (error) { console.warn('sync titre occurrence:', error.message); return }
 
-  const title = first?.[0]?.quality_issue || null
-  // Plus aucune ligne (ou 1re ligne sans intitulé) : on conserve le dernier
-  // titre connu plutôt que de vider la colonne de la liste.
+  // La 1re ligne *qui porte un intitulé* — pas strictement `sort_order` 0.
+  // Vu en production (#2651) : les deux premières lignes avaient été vidées de
+  // leur intitulé, donc s'en tenir à la ligne 0 figeait le titre pour toujours
+  // et aucune édition des lignes suivantes ne le rafraîchissait.
+  const first = (rows || []).find(r => (r.quality_issue || '').trim())
+  const title = first ? first.quality_issue : null
+  // Aucune ligne n'a d'intitulé : on conserve le dernier titre connu plutôt que
+  // de vider la colonne de la liste.
   if (!title) return
 
   // Pas d'écriture si rien ne change — évite une ligne d'historique inutile.
