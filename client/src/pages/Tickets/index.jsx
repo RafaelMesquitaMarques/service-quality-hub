@@ -288,24 +288,26 @@ export default function TicketsPage() {
     return ticket.supplier_credit ? Number(ticket.supplier_credit) : 0
   }
 
-  // Départements d'une occurrence : ceux de ses lignes (repli sur l'en-tête
-  // pour une ligne non classifiée — même convention que le tableau de bord),
-  // ou celui de l'en-tête pour les occurrences sans lignes (import / héritage).
-  const getDepts = (ticket) => {
-    const lineDepts = lineAgg.depts[ticket.id]
-    const source = lineDepts?.length ? lineDepts.map(d => d || ticket.department) : [ticket.department]
-    return [...new Set(source.filter(Boolean))]
+  // Départements / usines d'une occurrence : ceux de ses lignes (repli sur
+  // l'en-tête pour une ligne non classifiée — même convention que le tableau de
+  // bord), ou celui de l'en-tête pour les occurrences sans lignes (import).
+  // Une ligne qui reste non classifiée met la SENTINELLE dans l'ensemble : une
+  // occurrence partiellement classée relève donc à la fois de ses départements
+  // ET de « (Non défini) ». Indispensable — le coût vit sur la ligne, donc la
+  // part « (Non défini) » du camembert est la somme de LIGNES non classées ;
+  // ne rendre « (Non défini) » qu'aux occurrences 100 % non classées rendait
+  // 35 000 $ sur 45 000 $ (FY2026) introuvables par le filtre.
+  const deriveValues = (lineVals, headerVal, none) => {
+    const source = lineVals?.length ? lineVals.map(v => v || headerVal) : [headerVal]
+    return [...new Set(source.map(v => v || none))]
   }
-
-  // Usines d'une occurrence : même convention que les départements — celles de
-  // ses lignes (repli sur l'en-tête), sinon celle de l'en-tête. L'usine vit sur
-  // la ligne depuis 2026-06-25 : afficher/filtrer sur tk.plant laissait 30
-  // occurrences FY2026 sans usine à l'écran alors que leurs lignes en ont une.
-  const getPlants = (ticket) => {
-    const linePlants = lineAgg.plants[ticket.id]
-    const source = linePlants?.length ? linePlants.map(p => p || ticket.plant) : [ticket.plant]
-    return [...new Set(source.filter(Boolean))]
-  }
+  const getDepts  = (ticket) => deriveValues(lineAgg.depts[ticket.id],  ticket.department, NO_DEPT)
+  // L'usine vit sur la ligne depuis 2026-06-25 : afficher/filtrer sur tk.plant
+  // laissait 30 occurrences FY2026 sans usine à l'écran alors que leurs lignes
+  // en ont une.
+  const getPlants = (ticket) => deriveValues(lineAgg.plants[ticket.id], ticket.plant, NO_PLANT)
+  // Valeurs réelles (sentinelle retirée) — pour l'affichage et l'export.
+  const named = (vals, none) => vals.filter(v => v !== none)
 
   // ── Delete mutation ──────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -339,14 +341,8 @@ export default function TicketsPage() {
     if (fStatus.size > 0) result = result.filter(tk => fStatus.has(tk.status))
     if (fUrgency.size > 0) result = result.filter(tk => fUrgency.has(tk.urgency))
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
-    if (fDept.size   > 0) result = result.filter(tk => {
-      const depts = getDepts(tk)
-      return depts.length ? depts.some(d => fDept.has(d)) : fDept.has(NO_DEPT)
-    })
-    if (fPlant.size  > 0) result = result.filter(tk => {
-      const plants = getPlants(tk)
-      return plants.length ? plants.some(p => fPlant.has(p)) : fPlant.has(NO_PLANT)
-    })
+    if (fDept.size   > 0) result = result.filter(tk => getDepts(tk).some(d => fDept.has(d)))
+    if (fPlant.size  > 0) result = result.filter(tk => getPlants(tk).some(p => fPlant.has(p)))
     if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
@@ -357,29 +353,16 @@ export default function TicketsPage() {
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   // Valeurs du filtre Département — dérivées des lignes (repli en-tête), avec
   // « (Non défini) » en tête s'il existe des occurrences sans département.
-  const deptFilterValues = useMemo(() => {
+  const filterValues = (getter, none) => {
     const all = new Set()
-    let hasNone = false
-    for (const tk of allTickets) {
-      const depts = getDepts(tk)
-      if (depts.length === 0) hasNone = true
-      depts.forEach(d => all.add(d))
-    }
+    for (const tk of allTickets) getter(tk).forEach(v => all.add(v))
+    const hasNone = all.delete(none)
     const sorted = [...all].sort()
-    return hasNone ? [NO_DEPT, ...sorted] : sorted
-  }, [allTickets, lineAgg, NO_DEPT])
+    return hasNone ? [none, ...sorted] : sorted
+  }
+  const deptFilterValues = useMemo(() => filterValues(getDepts, NO_DEPT), [allTickets, lineAgg, NO_DEPT])
   // Valeurs du filtre Usine — dérivées des lignes, comme le département.
-  const plantFilterValues = useMemo(() => {
-    const all = new Set()
-    let hasNone = false
-    for (const tk of allTickets) {
-      const plants = getPlants(tk)
-      if (plants.length === 0) hasNone = true
-      plants.forEach(p => all.add(p))
-    }
-    const sorted = [...all].sort()
-    return hasNone ? [NO_PLANT, ...sorted] : sorted
-  }, [allTickets, lineAgg, NO_PLANT])
+  const plantFilterValues = useMemo(() => filterValues(getPlants, NO_PLANT), [allTickets, lineAgg, NO_PLANT])
   const creatorNames = useMemo(
     () => [...new Set(allTickets.map(tk => getCreator(tk)).filter(Boolean))].sort(),
     [allTickets, profileMap]
@@ -474,7 +457,7 @@ export default function TicketsPage() {
       const rows    = filtered
         // `cost_approx` et `supplier_credit` viennent des lignes agrégées, pas
         // des colonnes de l'en-tête : on les injecte pour l'export.
-        .map(t => ({ ...t, cost_approx: getCost(t) ?? '', supplier_credit: getCredit(t) || '', created_by_name: getCreator(t) || '', department: getDepts(t).join(', '), plant: getPlants(t).join(', ') }))
+        .map(t => ({ ...t, cost_approx: getCost(t) ?? '', supplier_credit: getCredit(t) || '', created_by_name: getCreator(t) || '', department: named(getDepts(t), NO_DEPT).join(', '), plant: named(getPlants(t), NO_PLANT).join(', ') }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
@@ -596,8 +579,13 @@ export default function TicketsPage() {
               {tickets.map(ticket => {
                 const cost   = getCost(ticket)
                 const credit = getCredit(ticket)
-                const depts = getDepts(ticket)
-                const plants = getPlants(ticket)
+                // Les noms réels d'un côté, la part non classifiée de l'autre :
+                // une occurrence partiellement classée porte les deux, et le
+                // discret « (Non défini) » signale qu'il reste une ligne à classer.
+                const depts  = named(getDepts(ticket),  NO_DEPT)
+                const plants = named(getPlants(ticket), NO_PLANT)
+                const deptPartial  = depts.length  > 0 && getDepts(ticket).includes(NO_DEPT)
+                const plantPartial = plants.length > 0 && getPlants(ticket).includes(NO_PLANT)
                 const isDeleting = deleteMutation.isPending && deleteMutation.variables === ticket.id
                 return (
                   <tr key={ticket.id}
@@ -615,10 +603,15 @@ export default function TicketsPage() {
                             {depts.map(d => (
                               <span key={d} className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{d}</span>
                             ))}
+                            {deptPartial && (
+                              <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 px-2 py-0.5 rounded-full">{noDeptLabel}</span>
+                            )}
                           </div>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{plants.length ? plants.join(', ') : '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">
+                      {plants.length ? plants.join(', ') + (plantPartial ? `, ${noDeptLabel}` : '') : '—'}
+                    </td>
                     <td className="px-4 py-2.5"><StatusBadge status={ticket.status} /></td>
                     <td className="px-4 py-2.5">
                       {ticket.urgency

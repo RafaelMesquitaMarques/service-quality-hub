@@ -251,28 +251,31 @@ export default function Dashboard() {
       (lineValuesByOcc[key][l.occurrence_id] = lineValuesByOcc[key][l.occurrence_id] || []).push(l[key] || null)
     }
   })
-  const occValues = (tk, key) => {
-    const lineVals = lineValuesByOcc[key][tk.id]
-    const source = lineVals?.length ? lineVals.map(v => v || tk[key]) : [tk[key]]
-    return [...new Set(source.filter(Boolean))]
-  }
-  const occDepts  = (tk) => occValues(tk, 'department')
-  const occPlants = (tk) => occValues(tk, 'plant')
-
   // « (Non défini) » : valeur de filtre pour isoler le coût/les occurrences sans
   // département (ou sans usine) — elle correspond à la part « (Non défini) » du
   // camembert et du graphique par usine. Sans elle, ce coût n'était isolable par
   // aucune valeur du filtre. Une valeur est non définie quand ni la ligne ni
   // l'occurrence ne la porte.
   const NO_DEPT = t('dashboard.unclassified')
+  // Une ligne qui reste non classifiée met « (Non défini) » dans l'ensemble :
+  // une occurrence partiellement classée relève à la fois de ses départements
+  // et de « (Non défini) ». Sans ça, le coût (qui vit sur la LIGNE) et le
+  // nombre d'occurrences divergeaient pour cette valeur de filtre : FY2026,
+  // filtre « (Non défini) » → 45 120 $ mais 15 occurrences seulement, les
+  // 35 287 $ portés par des lignes non classées d'occurrences classées
+  // n'étant rattachés à aucune occurrence affichable.
+  const occValues = (tk, key) => {
+    const lineVals = lineValuesByOcc[key][tk.id]
+    const source = lineVals?.length ? lineVals.map(v => v || tk[key]) : [tk[key]]
+    return [...new Set(source.map(v => v || NO_DEPT))]
+  }
+  const occDepts  = (tk) => occValues(tk, 'department')
+  const occPlants = (tk) => occValues(tk, 'plant')
+
   const derivedOptions = (getter) => {
     const all = new Set()
-    let hasNone = false
-    rawTickets.forEach(tk => {
-      const vs = getter(tk)
-      if (!vs.length) hasNone = true
-      vs.forEach(v => all.add(v))
-    })
+    rawTickets.forEach(tk => getter(tk).forEach(v => all.add(v)))
+    const hasNone = all.delete(NO_DEPT)
     const sorted = [...all].sort()
     return hasNone ? [NO_DEPT, ...sorted] : sorted
   }
@@ -285,7 +288,7 @@ export default function Dashboard() {
   const deptMatch  = (dep) => valMatch(filters.department, dep)
   const plantMatch = (p)   => valMatch(filters.plant, p)
   // …et par occurrence (pour les compteurs), qui peut relever de plusieurs valeurs.
-  const occMatch = (sel, vs) => sel === 'all' || (vs.length ? vs.includes(sel) : sel === NO_DEPT)
+  const occMatch = (sel, vs) => sel === 'all' || vs.includes(sel)
 
   const match = (tk) =>
     occMatch(filters.department, occDepts(tk)) &&
