@@ -245,7 +245,12 @@ export async function fetchLineCostTotals(occurrenceIds) {
       .in('occurrence_id', ids.slice(i, i + CHUNK))
     if (error) throw error
     for (const l of data || []) {
-      totals[l.occurrence_id] = (totals[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
+      // Les lignes pas encore chiffrées ne créent pas d'entrée : l'absence de
+      // clé signifie « aucun coût saisi sur les lignes » et l'appelant peut
+      // alors se replier sur le coût de l'en-tête. Un total nul ou négatif
+      // (crédit fournisseur ≥ coûts) reste, lui, une valeur légitime.
+      if (l.cost_approx == null) continue
+      totals[l.occurrence_id] = (totals[l.occurrence_id] || 0) + Number(l.cost_approx)
     }
   }
   return totals
@@ -253,7 +258,7 @@ export async function fetchLineCostTotals(occurrenceIds) {
 
 // Colonnes d'agrégation : coût, département, usine, catégorie — le strict
 // nécessaire au tableau de bord, qui charge les lignes de milliers d'occurrences.
-const LINE_AGG_COLS = 'occurrence_id, cost_approx, department, plant, categories'
+const LINE_AGG_COLS = 'occurrence_id, cost_approx, supplier_credit, department, plant, categories'
 // Colonnes en plus pour la recherche « dans les lignes » de la liste des
 // occurrences : tout ce qu'un utilisateur peut saisir sur une ligne. La liste
 // charge déjà ces mêmes lignes pour les coûts — seule la largeur change.

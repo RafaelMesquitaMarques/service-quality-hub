@@ -329,13 +329,15 @@ export default function Dashboard() {
     const units = []
     occs.forEach(tk => {
       const ls = byOcc[tk.id] || []
-      const lineSum = ls.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
       const parent = { fiscal_month: tk.fiscal_month, brand: tk.brand, status: tk.status, ship_to: tk.ship_to, occId: tk.id }
-      // Détail par ligne SEULEMENT si les lignes portent un coût (> 0), sinon repli
+      // Détail par ligne SEULEMENT si les lignes portent un coût saisi, sinon repli
       // sur le coût + dépt/usine/catégorie au niveau occurrence — exactement comme
       // la liste (getCost). Sans ça, les occurrences dont le coût est au niveau
-      // occurrence (lignes à 0) comptaient pour $0 et le total s'effondrait.
-      if (lineSum > 0) {
+      // occurrence (lignes non chiffrées) comptaient pour $0 et le total s'effondrait.
+      // Le test porte sur la PRÉSENCE d'un coût, pas sur « > 0 » : depuis le crédit
+      // fournisseur, une ligne chiffrée peut nettoyer à zéro ou en négatif, et un
+      // test « > 0 » retomberait à tort sur l'en-tête en ignorant le crédit.
+      if (ls.some(l => l.cost_approx != null)) {
         // Une ligne non classée hérite de la classification de l'occurrence
         // (sinon son coût tomberait dans « non défini » alors que l'occurrence
         // a bien un département) — sans ça, le détail ne totalise pas le KPI.
@@ -360,9 +362,14 @@ export default function Dashboard() {
   const prevUnits = buildUnits(rawPrev,    prevByOcc).filter(unitMatch)
 
   // Coût par occurrence (tableau « récentes ») = somme de ses lignes, repli sur le header.
+  // Clé absente = aucune ligne chiffrée → repli sur l'en-tête. Un total nul ou
+  // négatif (crédit fournisseur ≥ coûts) reste une valeur légitime.
   const occLineCost = {}
-  ;(curLinesRaw || []).forEach(l => { occLineCost[l.occurrence_id] = (occLineCost[l.occurrence_id] || 0) + Number(l.cost_approx || 0) })
-  const getTicketCost = (tk) => (occLineCost[tk.id] > 0 ? occLineCost[tk.id] : Number(tk.cost_approx || 0))
+  ;(curLinesRaw || []).forEach(l => {
+    if (l.cost_approx == null) return
+    occLineCost[l.occurrence_id] = (occLineCost[l.occurrence_id] || 0) + Number(l.cost_approx)
+  })
+  const getTicketCost = (tk) => (occLineCost[tk.id] !== undefined ? occLineCost[tk.id] : Number(tk.cost_approx || 0))
 
   // ── KPIs ───────────────────────────────────────────────────
   const totalCost = costUnits.reduce((s, u) => s + u.cost, 0)
@@ -433,7 +440,10 @@ export default function Dashboard() {
   const UNCLASSIFIED = t('dashboard.unclassified')
   const deptCostMap = {}, plantCostMap = {}, clientCostMap = {}
   costUnits.forEach(u => {
-    if (u.cost > 0) {
+    // « !== 0 » et non « > 0 » : une unité au net négatif (crédit fournisseur
+    // supérieur aux coûts) doit rester dans le détail, sinon la ventilation ne
+    // totalise plus exactement le KPI.
+    if (u.cost !== 0) {
       deptCostMap[u.department || UNCLASSIFIED]  = (deptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
       plantCostMap[u.plant || UNCLASSIFIED]      = (plantCostMap[u.plant || UNCLASSIFIED] || 0) + u.cost
       if (u.ship_to) clientCostMap[clientKey(u.ship_to)] = (clientCostMap[clientKey(u.ship_to)] || 0) + u.cost
@@ -461,10 +471,10 @@ export default function Dashboard() {
   const inCmpRange = u => cmpFull || (u.fiscal_month >= deptCmp.from && u.fiscal_month <= deptCmp.to)
   const cmpDeptCostMap = {}, prevDeptCostMap = {}
   costUnits.forEach(u => {
-    if (u.cost > 0 && inCmpRange(u)) cmpDeptCostMap[u.department || UNCLASSIFIED] = (cmpDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
+    if (u.cost !== 0 && inCmpRange(u)) cmpDeptCostMap[u.department || UNCLASSIFIED] = (cmpDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
   })
   prevUnits.forEach(u => {
-    if (u.cost > 0 && inCmpRange(u)) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
+    if (u.cost !== 0 && inCmpRange(u)) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
   })
   const deptCompareData = [...new Set([...Object.keys(cmpDeptCostMap), ...Object.keys(prevDeptCostMap)])]
     .map(name => {
@@ -1001,7 +1011,7 @@ export default function Dashboard() {
                       <td className="px-4 py-2.5"><span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">{tk.department}</span></td>
                       <td className="px-4 py-2.5"><StatusBadge status={tk.status} /></td>
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-900 dark:text-gray-100">
-                        {cost > 0 ? money(cost) : '—'}
+                        {cost ? money(cost) : '—'}
                       </td>
                     </tr>
                   )

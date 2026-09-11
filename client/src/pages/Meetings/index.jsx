@@ -354,8 +354,10 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
   })
 
   const getTicketCost = (tk) => {
+    // Clé présente = au moins une ligne chiffrée : elle fait référence, même si
+    // le net est nul ou négatif (crédit fournisseur ≥ coûts).
     const lineTotal = lineCosts?.[tk?.id]
-    if (lineTotal && lineTotal > 0) return lineTotal
+    if (lineTotal !== undefined) return lineTotal
     return tk?.cost_approx ? Number(tk.cost_approx) : 0
   }
 

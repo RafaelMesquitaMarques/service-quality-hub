@@ -63,6 +63,13 @@ function prevStatus(s) {
 // Un « Une erreur est survenue » nu ne dit pas si c'est un droit manquant, une
 // contrainte violée ou une coupure réseau — impossible à diagnostiquer depuis
 // une capture d'écran.
+// Montant affiché : le signe précède le « $ » (−$49, et non $-49). Un coût net
+// est négatif quand le crédit fournisseur dépasse les coûts de la ligne.
+function money(v) {
+  const n = Math.round(Number(v) || 0)
+  return `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
+}
+
 function errMsg(t, e) {
   const detail = (e?.message || '').trim()
   return detail ? `${t('common.error')} — ${detail.slice(0, 160)}` : t('common.error')
@@ -374,9 +381,10 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
 
   // Coût + classification au niveau de la ligne (édités inline, hors du mode édition descriptif)
   const costFields = (l) => ({
-    cost_furniture: l.cost_furniture != null ? String(l.cost_furniture) : '',
-    cost_freight:   l.cost_freight   != null ? String(l.cost_freight)   : '',
-    cost_install:   l.cost_install   != null ? String(l.cost_install)   : '',
+    cost_furniture:  l.cost_furniture  != null ? String(l.cost_furniture)  : '',
+    cost_freight:    l.cost_freight    != null ? String(l.cost_freight)    : '',
+    cost_install:    l.cost_install    != null ? String(l.cost_install)    : '',
+    supplier_credit: l.supplier_credit != null ? String(l.supplier_credit) : '',
   })
   const [clf, setClf] = useState({
     ...costFields(line),
@@ -386,6 +394,13 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
     corrective_action: line.corrective_action || '',
   })
   const [clfDirty, setClfDirty] = useState(false)
+
+  // Coût de la ligne : les trois postes moins le crédit obtenu du fournisseur.
+  // Un crédit supérieur aux coûts donne un net négatif — c'est voulu, la ligne
+  // a rapporté plus qu'elle n'a coûté et le total de l'occurrence doit le refléter.
+  const clfCostGross = ['cost_furniture','cost_freight','cost_install'].reduce((s, k) => s + (Number(clf[k]) || 0), 0)
+  const clfCredit    = Number(clf.supplier_credit) || 0
+  const clfCostNet   = clfCostGross - clfCredit
 
   // Re-synchronise depuis la ligne quand les valeurs persistées changent
   // (après sauvegarde / refetch). N'écrase pas une saisie en cours car le prop
@@ -399,7 +414,7 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
       corrective_action: line.corrective_action || '',
     })
     setClfDirty(false)
-  }, [line.id, line.cost_furniture, line.cost_freight, line.cost_install, line.categories, line.department, line.root_cause, line.corrective_action])
+  }, [line.id, line.cost_furniture, line.cost_freight, line.cost_install, line.supplier_credit, line.categories, line.department, line.root_cause, line.corrective_action])
 
   const { data: photos, refetch: refetchPhotos } = useQuery({
     queryKey: ['line-photos', line.id],
@@ -524,14 +539,16 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   }
 
   const saveClassification = async () => {
-    const parts = [clf.cost_furniture, clf.cost_freight, clf.cost_install]
+    // Le crédit fournisseur compte comme un poste saisi : une ligne qui n'a
+    // qu'un crédit a bien un coût net (négatif), pas un coût inconnu.
+    const parts = [clf.cost_furniture, clf.cost_freight, clf.cost_install, clf.supplier_credit]
     const anyCost = parts.some(v => v !== '' && v != null)
-    const costSum = parts.reduce((s, v) => s + (Number(v) || 0), 0)
     const payload = {
       cost_furniture:    clf.cost_furniture === '' ? null : Number(clf.cost_furniture),
       cost_freight:      clf.cost_freight === '' ? null : Number(clf.cost_freight),
       cost_install:      clf.cost_install === '' ? null : Number(clf.cost_install),
-      cost_approx:       anyCost ? costSum : null,   // total = somme des 3 postes
+      supplier_credit:   clf.supplier_credit === '' ? null : Number(clf.supplier_credit),
+      cost_approx:       anyCost ? clfCostNet : null,   // 3 postes − crédit fournisseur
       categories:        clf.categories || null,
       department:        clf.department || null,
       root_cause:        clf.root_cause || null,
@@ -554,7 +571,6 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   // Édition gérée par le rôle (canEditProp), comme les sections au niveau occurrence.
   const showLineCost  = ['service_desk','sd_waiting_info','quality_meeting','completed'].includes(status)
   const showLineClass = ['quality_meeting','completed'].includes(status)
-  const clfCostSum = ['cost_furniture','cost_freight','cost_install'].reduce((s, k) => s + (Number(clf[k]) || 0), 0)
 
   const isVid       = p => p.media_type === 'video' || isVideoUrl(p.url)
   const videoPhotos = (photos || []).filter(p =>  isVid(p))
@@ -751,22 +767,33 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
                 </div>
                 <div className="flex flex-col gap-2">
                   {[
-                    ['cost_furniture', t('ticket.cost_furniture')],
-                    ['cost_freight',   t('ticket.cost_freight')],
-                    ['cost_install',   t('ticket.cost_install')],
+                    ['cost_furniture',  t('ticket.cost_furniture')],
+                    ['cost_freight',    t('ticket.cost_freight')],
+                    ['cost_install',    t('ticket.cost_install')],
+                    ['supplier_credit', t('ticket.supplier_credit')],
                   ].map(([key, label]) => (
                     <div key={key}>
+                      {/* Le crédit se soustrait : signalé par le libellé et le « −$ »
+                          du gabarit, pour qu'on ne le saisisse pas en négatif. */}
                       <label className="label">{label}</label>
                       <input type="number" min="0" value={clf[key]}
                         onChange={e => { setClf(c => ({ ...c, [key]: e.target.value })); setClfDirty(true) }}
-                        disabled={!canEditProp} placeholder="$0.00"
+                        disabled={!canEditProp} placeholder={key === 'supplier_credit' ? '−$0.00' : '$0.00'}
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
                     </div>
                   ))}
                   <div className="flex justify-between items-center pt-1 border-t border-gray-100 dark:border-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300">
                     <span>{t('ticket.cost')}</span>
-                    <span className="font-mono">{`$${Math.round(clfCostSum).toLocaleString()}`}</span>
+                    <span className="font-mono">{money(clfCostNet)}</span>
                   </div>
+                  {/* Détail du calcul, seulement quand un crédit est saisi —
+                      sinon le net diffère des postes sans explication. */}
+                  {clfCredit !== 0 && (
+                    <div className="flex justify-between items-center text-[11px] text-gray-400 -mt-1">
+                      <span>{t('ticket.credit_applied')}</span>
+                      <span className="font-mono">{`${money(clfCostGross)} − ${money(clfCredit)}`}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -891,8 +918,12 @@ export default function TicketDetail() {
   // Coût de l'occurrence = somme des coûts des lignes (source de vérité).
   // Repli sur le coût au niveau occurrence pour les enregistrements sans lignes
   // (import / héritage), exactement comme la liste (getCost).
+  // Une ligne chiffrée fait référence, même si le net est nul ou négatif
+  // (crédit fournisseur ≥ coûts) — un test « > 0 » retomberait à tort sur
+  // l'en-tête et masquerait le crédit.
   const lineCostSum   = (lines || []).reduce((s, l) => s + Number(l.cost_approx || 0), 0)
-  const occurrenceCost = lineCostSum > 0 ? lineCostSum : Number(ticket?.cost_approx || 0)
+  const hasLineCost   = (lines || []).some(l => l.cost_approx != null)
+  const occurrenceCost = hasLineCost ? lineCostSum : Number(ticket?.cost_approx || 0)
 
   // Après une modification de coût/ligne, rafraîchir le détail ET les vues qui
   // agrègent les coûts par ligne : la liste (['tickets']) + son total de lignes
@@ -1097,7 +1128,7 @@ export default function TicketDetail() {
     ref_so: t('ticket.ref_so'),                    affected_qty: t('ticket.affected_qty'),
     total_qty: t('ticket.total_qty'),              completion_type: t('ticket.completion_type'),
     cost_furniture: t('ticket.cost_furniture'),    cost_freight: t('ticket.cost_freight'),
-    cost_install: t('ticket.cost_install'),
+    cost_install: t('ticket.cost_install'),        supplier_credit: t('ticket.supplier_credit'),
     // événements
     line_added: t('ticket.line_added'),            line_removed: t('ticket.line_removed'),
   }
@@ -1106,7 +1137,7 @@ export default function TicketDetail() {
     if (isLineField(f)) { const base = f.slice(5); return `${t('ticket.line_n')} · ${FIELD_LABELS[base] || base}` }
     return FIELD_LABELS[f] || f
   }
-  const MONEY_FIELDS = ['cost_approx','cost_final','cost_furniture','cost_freight','cost_install']
+  const MONEY_FIELDS = ['cost_approx','cost_final','cost_furniture','cost_freight','cost_install','supplier_credit']
   const histValue = (field, val) => {
     const f = isLineField(field) ? field.slice(5) : field
     if (val === null || val === undefined || val === '') return '—'
@@ -1114,7 +1145,7 @@ export default function TicketDetail() {
     if (f === 'installer_needed') return val === 'true' ? t('common.yes') : val === 'false' ? t('common.no') : val
     if (['issue_reception_date','delivery_date','wish_delivery_date','sd_completed_at'].includes(f)) return formatDate(val)
     if (f === 'status') return t(`status.${val}`)
-    if (MONEY_FIELDS.includes(f)) { const n = Number(val); return Number.isFinite(n) ? `$${Math.round(n).toLocaleString()}` : val }
+    if (MONEY_FIELDS.includes(f)) { const n = Number(val); return Number.isFinite(n) ? money(n) : val }
     return String(val)
   }
 
@@ -1334,9 +1365,9 @@ export default function TicketDetail() {
                     <div>
                       <label className="label">{t('ticket.cost')}</label>
                       <div className="input text-xs flex items-center bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed">
-                        {`$${Math.round(occurrenceCost).toLocaleString()}`}
+                        {money(occurrenceCost)}
                       </div>
-                      {lineCostSum > 0 && <p className="text-[11px] text-gray-400 mt-1">{t('ticket.cost_from_lines')}</p>}
+                      {hasLineCost && <p className="text-[11px] text-gray-400 mt-1">{t('ticket.cost_from_lines')}</p>}
                     </div>
                   </div>
                   <div>

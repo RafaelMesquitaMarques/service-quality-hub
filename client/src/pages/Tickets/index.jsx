@@ -131,6 +131,27 @@ function TextColumnFilter({ label, value, onChange, placeholder }) {
 const urlParam    = (k) => new URLSearchParams(window.location.search).get(k)
 const urlParamSet = (k) => new Set(new URLSearchParams(window.location.search).getAll(k))
 
+// En-tête d'une colonne de montant (coût, crédit). Le clic cycle en trois
+// temps : décroissant → croissant → ordre d'origine.
+function AmountSortHeader({ label, sort, onCycle }) {
+  return (
+    <button
+      onClick={onCycle}
+      className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+      {label}
+      <i className={`ti ${sort === 'desc' ? 'ti-sort-descending text-blue-500' : sort === 'asc' ? 'ti-sort-ascending text-blue-500' : 'ti-selector'} text-xs`} aria-hidden="true" />
+    </button>
+  )
+}
+const nextSort = (s) => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc'
+
+// Montant : le signe précède le « $ » (−$49, et non $-49). Un coût net devient
+// négatif quand le crédit fournisseur d'une ligne dépasse ses coûts.
+const money = (v) => {
+  const n = Math.round(Number(v) || 0)
+  return `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function TicketsPage() {
   const { t }    = useTranslation()
@@ -156,6 +177,7 @@ export default function TicketsPage() {
   const [fDate,   setFDate]     = useState(() => urlParamSet('date'))
   const [fCreator, setFCreator] = useState(() => urlParamSet('by'))
   const [costSort, setCostSort] = useState(() => ['desc', 'asc'].includes(urlParam('cost')) ? urlParam('cost') : null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
+  const [creditSort, setCreditSort] = useState(() => ['desc', 'asc'].includes(urlParam('credit')) ? urlParam('credit') : null)  // idem pour le crédit fournisseur
   const [fQuality, setFQuality] = useState(() => urlParam('issue') || '')    // filtre « contient » sur le problème qualité
 
   const { data, isLoading, isError: ticketsError, refetch } = useQuery({
@@ -200,13 +222,17 @@ export default function TicketsPage() {
   })
 
   const lineAgg = useMemo(() => {
-    const costs = {}, depts = {}, plants = {}
+    const costs = {}, credits = {}, chiffree = {}, creditee = {}, depts = {}, plants = {}
     for (const l of lineRows || []) {
       costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
+      if (l.cost_approx != null) chiffree[l.occurrence_id] = true
+      // Crédit fournisseur : cumulé à part du coût, qui en est déjà net.
+      credits[l.occurrence_id] = (credits[l.occurrence_id] || 0) + Number(l.supplier_credit || 0)
+      if (l.supplier_credit != null) creditee[l.occurrence_id] = true
       ;(depts[l.occurrence_id]  = depts[l.occurrence_id]  || []).push(l.department || null)
       ;(plants[l.occurrence_id] = plants[l.occurrence_id] || []).push(l.plant || null)
     }
-    return { costs, depts, plants }
+    return { costs, credits, chiffree, creditee, depts, plants }
   }, [lineRows])
 
   // ── Index de recherche ───────────────────────────────────────────────────
@@ -245,9 +271,21 @@ export default function TicketsPage() {
   }, [allTickets, lineRows, profileMap, t])
 
   const getCost = (ticket) => {
-    const lineTotal = lineAgg.costs[ticket.id]
-    if (lineTotal && lineTotal > 0) return lineTotal
+    // Une ligne chiffrée fait référence, même si le net est nul ou négatif
+    // (crédit fournisseur ≥ coûts). Sans aucune ligne chiffrée, repli sur
+    // l'en-tête (occurrences importées, sans lignes).
+    if (lineAgg.chiffree[ticket.id]) return lineAgg.costs[ticket.id]
     return ticket.cost_approx ? Number(ticket.cost_approx) : null
+  }
+
+  // Crédit total obtenu des fournisseurs sur l'occurrence : somme des lignes,
+  // repli sur l'en-tête (colonne héritée `tickets.supplier_credit`, venue des
+  // imports Excel — 9 occurrences FY2025/26 pour 9 191 $) quand aucune ligne
+  // ne porte de crédit. Même règle que getCost : la ligne fait foi dès qu'elle
+  // est renseignée. Le coût d'en-tête de ces occurrences est déjà net du crédit.
+  const getCredit = (ticket) => {
+    if (lineAgg.creditee[ticket.id]) return lineAgg.credits[ticket.id]
+    return ticket.supplier_credit ? Number(ticket.supplier_credit) : 0
   }
 
   // Départements d'une occurrence : ceux de ses lignes (repli sur l'en-tête
@@ -347,14 +385,17 @@ export default function TicketsPage() {
     [allTickets, profileMap]
   )
 
-  // Tri par coût pour repérer les « worst offenders » (coût le plus élevé en tête)
+  // Tri par coût pour repérer les « worst offenders » (coût le plus élevé en tête),
+  // ou par crédit pour voir d'un coup quels projets ont obtenu un crédit.
+  // Les deux tris sont exclusifs : activer l'un désactive l'autre.
   const sorted = useMemo(() => {
-    if (!costSort) return filtered
+    const active = costSort ? { dir: costSort, val: getCost } : creditSort ? { dir: creditSort, val: getCredit } : null
+    if (!active) return filtered
     return [...filtered].sort((a, b) => {
-      const ca = getCost(a) || 0, cb = getCost(b) || 0
-      return costSort === 'desc' ? cb - ca : ca - cb
+      const va = active.val(a) || 0, vb = active.val(b) || 0
+      return active.dir === 'desc' ? vb - va : va - vb
     })
-  }, [filtered, costSort, lineAgg])
+  }, [filtered, costSort, creditSort, lineAgg])
 
   const [page, setPage] = useState(() => Math.max(1, Number(urlParam('p')) || 1))
   const start   = (page - 1) * PAGE_SIZE
@@ -403,6 +444,7 @@ export default function TicketsPage() {
       const sets = { st: fStatus, urg: fUrgency, brand: fBrand, dept: fDept, plant: fPlant, proj: fProject, sc: fSC, date: fDate, by: fCreator }
       for (const [key, set] of Object.entries(sets)) [...set].forEach(v => p.append(key, v))
       if (costSort) p.set('cost', costSort)
+      if (creditSort) p.set('credit', creditSort)
       if (page > 1) p.set('p', String(page))
       const qs = p.toString()
       if (qs !== window.location.search.replace(/^\?/, '')) {
@@ -415,7 +457,7 @@ export default function TicketsPage() {
     if (elapsed >= 350) { write(); return }
     const id = setTimeout(write, 350 - elapsed)
     return () => clearTimeout(id)
-  }, [location, search, fQuality, fiscalYear, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, costSort, page])
+  }, [location, search, fQuality, fiscalYear, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, costSort, creditSort, page])
 
   const hasActiveFilters = search || fQuality || fStatus.size || fUrgency.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
 
@@ -428,9 +470,11 @@ export default function TicketsPage() {
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'supplier_credit', 'created_by_name']
       const rows    = filtered
-        .map(t => ({ ...t, created_by_name: getCreator(t) || '', department: getDepts(t).join(', '), plant: getPlants(t).join(', ') }))
+        // `cost_approx` et `supplier_credit` viennent des lignes agrégées, pas
+        // des colonnes de l'en-tête : on les injecte pour l'export.
+        .map(t => ({ ...t, cost_approx: getCost(t) ?? '', supplier_credit: getCredit(t) || '', created_by_name: getCreator(t) || '', department: getDepts(t).join(', '), plant: getPlants(t).join(', ') }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
@@ -532,12 +576,12 @@ export default function TicketsPage() {
                     renderValue={v => URGENCY_LBL[v] || v} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <button
-                    onClick={() => { setCostSort(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc'); setPage(1) }}
-                    className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
-                    {t('ticket.cost')}
-                    <i className={`ti ${costSort === 'desc' ? 'ti-sort-descending text-blue-500' : costSort === 'asc' ? 'ti-sort-ascending text-blue-500' : 'ti-selector'} text-xs`} aria-hidden="true" />
-                  </button>
+                  <AmountSortHeader label={t('ticket.cost')} sort={costSort}
+                    onCycle={() => { setCostSort(nextSort); setCreditSort(null); setPage(1) }} />
+                </th>
+                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <AmountSortHeader label={t('ticket.credit_total')} sort={creditSort}
+                    onCycle={() => { setCreditSort(nextSort); setCostSort(null); setPage(1) }} />
                 </th>
                 <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={resetPage(setFCreator)} onClear={() => { setFCreator(new Set()); setPage(1) }} />
@@ -550,7 +594,8 @@ export default function TicketsPage() {
             </thead>
             <tbody>
               {tickets.map(ticket => {
-                const cost  = getCost(ticket)
+                const cost   = getCost(ticket)
+                const credit = getCredit(ticket)
                 const depts = getDepts(ticket)
                 const plants = getPlants(ticket)
                 const isDeleting = deleteMutation.isPending && deleteMutation.variables === ticket.id
@@ -581,7 +626,11 @@ export default function TicketsPage() {
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
-                      {cost ? `$${Math.round(cost).toLocaleString()}` : '—'}
+                      {cost ? money(cost) : '—'}
+                    </td>
+                    {/* Crédit fournisseur : en vert, c'est de l'argent récupéré. */}
+                    <td className="px-4 py-2.5 font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      {credit ? money(credit) : <span className="text-gray-400 font-normal">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{getCreator(ticket) || '—'}</td>
                     {/* Botão apagar — só admin/manager */}
