@@ -173,7 +173,7 @@ export default function Layout() {
             ))}
 
             <button
-              onClick={() => window.open('https://rafaelmesquitamarques.github.io/supplierq/', '_blank', 'noopener,noreferrer')}
+              onClick={() => window.open('https://supplierq-preview.vercel.app/', '_blank', 'noopener,noreferrer')}
               className="flex items-center gap-2.5 px-4 py-2 text-xs font-medium transition-all border-l-2 text-white/60 border-transparent hover:text-white hover:bg-white/5 w-full text-left"
               style={{ background: 'none', border: 'none', borderLeft: '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit' }}
             >
