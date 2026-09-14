@@ -515,6 +515,9 @@ export default function TicketsPage() {
       </div>
 
       {/* ── Table ── */}
+      {/* Cellules en px-3 : avec les pastilles de statut sur une seule ligne,
+          le px-4 d'origine faisait déborder le tableau (défilement horizontal
+          de ~70 px à 1920 px de large). */}
       <div className="flex-1 overflow-auto bg-white dark:bg-[#0D1117]">
         {isLoading && !data ? (
           <div className="flex items-center justify-center h-40"><Spinner /></div>
@@ -524,54 +527,54 @@ export default function TicketsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-[#161B22] sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-14">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-14">
                   <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">#</span>
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label="SC#" values={uniq('sc_number')} selected={fSC} onChange={resetPage(setFSC)} onClear={() => { setFSC(new Set()); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.reception_date')} values={uniq('issue_reception_date')} selected={fDate} onChange={resetPage(setFDate)} onClear={() => { setFDate(new Set()); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <TextColumnFilter label={t('ticket.issue')} value={fQuality} onChange={resetPage(setFQuality)} placeholder={t('ticket.filter_issue_ph')} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={resetPage(setFProject)} onClear={() => { setFProject(new Set()); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={resetPage(setFBrand)} onClear={() => { setFBrand(new Set()); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.department')} values={deptFilterValues} selected={fDept} onChange={resetPage(setFDept)} onClear={() => { setFDept(new Set()); setPage(1) }}
                     renderValue={v => v === NO_DEPT ? noDeptLabel : v} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.plant')} values={plantFilterValues} selected={fPlant} onChange={resetPage(setFPlant)} onClear={() => { setFPlant(new Set()); setPage(1) }}
                     renderValue={v => v === NO_PLANT ? noDeptLabel : v} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.status')} values={uniq('status')} selected={fStatus} onChange={resetPage(setFStatus)} onClear={() => { setFStatus(new Set()); setPage(1) }}
                     renderValue={v => t(`status.${v}`)} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.urgency_col')} values={uniq('urgency')} selected={fUrgency} onChange={resetPage(setFUrgency)} onClear={() => { setFUrgency(new Set()); setPage(1) }}
                     renderValue={v => URGENCY_LBL[v] || v} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <AmountSortHeader label={t('ticket.cost')} sort={costSort}
                     onCycle={() => { setCostSort(nextSort); setCreditSort(null); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <AmountSortHeader label={t('ticket.credit_total')} sort={creditSort}
                     onCycle={() => { setCreditSort(nextSort); setCostSort(null); setPage(1) }} />
                 </th>
-                <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={resetPage(setFCreator)} onClear={() => { setFCreator(new Set()); setPage(1) }} />
                 </th>
                 {/* Coluna de acções — só visível para admin/manager */}
                 {isManager && (
-                  <th className="px-4 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-12" />
+                  <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60 w-12" />
                 )}
               </tr>
             </thead>
@@ -591,41 +594,41 @@ export default function TicketsPage() {
                   <tr key={ticket.id}
                     className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors group"
                     onClick={() => navigate(`/tickets/${ticket.id}`)}>
-                    <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-700 dark:text-gray-300">{ticket.occurrence_no ? `#${ticket.occurrence_no}` : '—'}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
-                    <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.project_name || '—'}</td>
-                    <td className="px-4 py-2.5"><BrandTag brand={ticket.brand} /></td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-3 py-2.5 font-mono text-xs font-medium text-gray-700 dark:text-gray-300">{ticket.occurrence_no ? `#${ticket.occurrence_no}` : '—'}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
+                    <td className="px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.project_name || '—'}</td>
+                    <td className="px-3 py-2.5"><BrandTag brand={ticket.brand} /></td>
+                    <td className="px-3 py-2.5">
                       {depts.length
                         ? <div className="flex flex-wrap gap-1">
                             {depts.map(d => (
-                              <span key={d} className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full">{d}</span>
+                              <span key={d} className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full whitespace-nowrap">{d}</span>
                             ))}
                             {deptPartial && (
-                              <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 px-2 py-0.5 rounded-full">{noDeptLabel}</span>
+                              <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 dark:text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">{noDeptLabel}</span>
                             )}
                           </div>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">
+                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">
                       {plants.length ? plants.join(', ') + (plantPartial ? `, ${noDeptLabel}` : '') : '—'}
                     </td>
-                    <td className="px-4 py-2.5"><StatusBadge status={ticket.status} /></td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-3 py-2.5"><StatusBadge status={ticket.status} /></td>
+                    <td className="px-3 py-2.5">
                       {ticket.urgency
                         ? <span className={`text-xs px-2 py-0.5 rounded-full ${URGENCY_STYLE[ticket.urgency] || 'text-gray-500 bg-gray-100 dark:bg-gray-800'}`}>{URGENCY_LBL[ticket.urgency] || ticket.urgency}</span>
                         : <span className="text-xs text-gray-400">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
+                    <td className="px-3 py-2.5 font-mono text-xs font-medium text-gray-900 dark:text-gray-100">
                       {cost ? money(cost) : '—'}
                     </td>
                     {/* Crédit fournisseur : en vert, c'est de l'argent récupéré. */}
-                    <td className="px-4 py-2.5 font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <td className="px-3 py-2.5 font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
                       {credit ? money(credit) : <span className="text-gray-400 font-normal">—</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{getCreator(ticket) || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{getCreator(ticket) || '—'}</td>
                     {/* Botão apagar — só admin/manager */}
                     {isManager && (
                       <td className="px-2 py-2.5">
