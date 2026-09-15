@@ -34,7 +34,6 @@ export default function UserModal({ user, plants, onClose }) {
   const [mode, setMode] = useState('invite')
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || null)
   const [avatarFile, setAvatarFile] = useState(null)
-  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
 
   const permDefaults = Object.fromEntries(
@@ -45,7 +44,6 @@ export default function UserModal({ user, plants, onClose }) {
     first_name: user?.full_name?.split(' ')[0] || '',
     last_name:  user?.full_name?.split(' ').slice(1).join(' ') || '',
     email:      user?.email      || '',
-    password:   '',
     role:       user?.role       || 'viewer',
     department: user?.department || '',
     plant_id:   user?.plant_id   || '',
@@ -73,10 +71,6 @@ export default function UserModal({ user, plants, onClose }) {
     setError(null)
     if (!form.first_name || !form.email || !form.role) {
       setError('Prenom, email et role sont obligatoires')
-      return
-    }
-    if (mode === 'password' && !isEdit && form.password.length < 6) {
-      setError('Mot de passe minimum 6 caracteres')
       return
     }
     setSaving(true)
@@ -107,7 +101,7 @@ export default function UserModal({ user, plants, onClose }) {
         onClose()
       } else {
         const payload = {
-          full_name, email: form.email, password: form.password,
+          full_name, email: form.email,
           role: form.role, department: form.department || null,
           plant_id: form.plant_id || null, language: form.language,
           avatar_url, mode,
@@ -134,7 +128,12 @@ export default function UserModal({ user, plants, onClose }) {
         try { result = await res.json() } catch { result = {} }
         if (!res.ok) throw new Error(result?.error || `Erreur serveur (${res.status})`)
         toast.success(mode === 'invite' ? 'Invitation envoyee avec succes' : 'Utilisateur cree avec succes')
-        onClose()
+        // Mode mot de passe : la fonction génère le mot de passe temporaire ; il
+        // est affiché une seule fois à l'administrateur (même fenêtre que la
+        // réinitialisation), l'utilisateur devra le changer à la connexion.
+        onClose(mode === 'password' && result?.temp_password
+          ? { userName: full_name, tempPassword: result.temp_password }
+          : undefined)
       }
     } catch (err) {
       console.error('UserModal error:', err)
@@ -163,7 +162,7 @@ export default function UserModal({ user, plants, onClose }) {
 
   const modeInfo = {
     invite:   { fr: 'Un email sera envoye avec un lien pour definir le mot de passe. Le lien expire apres 24h.', en: 'An email will be sent with a link to set the password. The link expires after 24h.' },
-    password: { fr: "L'utilisateur sera cree immediatement et pourra se connecter avec le mot de passe defini.", en: 'The user will be created immediately and can log in with the defined password.' },
+    password: { fr: "L'utilisateur sera cree immediatement avec un mot de passe temporaire genere automatiquement, affiche une seule fois apres la creation. Il devra le changer a sa premiere connexion.", en: 'The user will be created immediately with an automatically generated temporary password, shown once after creation. They will have to change it at first login.' },
   }
 
   return (
@@ -244,22 +243,6 @@ export default function UserModal({ user, plants, onClose }) {
               value={form.email} onChange={e => sf('email', e.target.value)}
               disabled={isEdit} />
           </div>
-
-          {/* Password */}
-          {!isEdit && mode === 'password' && (
-            <div style={{ marginBottom:10 }}>
-              <label style={{ fontSize:12, color:'#6b7280', display:'block', marginBottom:4 }}>{uiLang === 'fr' ? 'Mot de passe *' : 'Password *'}</label>
-              <div style={{ position:'relative' }}>
-                <input style={{ ...inp, paddingRight:36 }}
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={uiLang === 'fr' ? 'Minimum 6 caracteres' : 'Minimum 6 characters'}
-                  value={form.password} onChange={e => sf('password', e.target.value)} />
-                <button onClick={() => setShowPassword(s => !s)} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'#9ca3af', fontSize:14 }}>
-                  {showPassword ? '🙈' : '👁'}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Role */}
           <div style={{ marginBottom:10 }}>

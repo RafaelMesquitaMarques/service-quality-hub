@@ -112,7 +112,12 @@ export default function AdminPage() {
   })
 
   const handleEdit  = (user) => { setEditUser(user); setShowModal(true) }
-  const handleClose = () => { setShowModal(false); setEditUser(null); queryClient.invalidateQueries(['admin-users']) }
+  // `created` : { userName, tempPassword } après une création avec mot de passe
+  // temporaire (généré par la fonction invite-user) — affiché une seule fois.
+  const handleClose = (created) => {
+    setShowModal(false); setEditUser(null); queryClient.invalidateQueries(['admin-users'])
+    if (created?.tempPassword) setTempPwdData({ userName: created.userName, tempPassword: created.tempPassword })
+  }
 
   const handleResetPassword = async (user) => {
     if (!window.confirm(t('admin.reset_confirm', { name: user.full_name }))) return
