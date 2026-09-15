@@ -125,6 +125,7 @@ export default function Layout() {
     ...(canViewDashboard ? [{ to: '/', icon: 'ti-chart-bar', label: t('nav.dashboard'), end: true }] : []),
     { to: '/tickets', icon: 'ti-clipboard-list', label: t('nav.tickets') },
     ...(canMeetings ? [{ to: '/meetings', icon: 'ti-calendar-event', label: t('nav.weekly_review') }] : []),
+    { to: '/reports', icon: 'ti-report-analytics', label: t('nav.reports') },
   ]
 
   const bottomItems = [

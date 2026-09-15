@@ -3,64 +3,7 @@
 // STORED (uncompressed) zip with correct CRC32 headers around the OOXML parts.
 // Used to export a chart AS AN IMAGE inside an Excel file (not a data table).
 
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1)
-    t[n] = c >>> 0
-  }
-  return t
-})()
-function crc32(bytes) {
-  let c = 0xFFFFFFFF
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8)
-  return (c ^ 0xFFFFFFFF) >>> 0
-}
-
-const textEnc = new TextEncoder()
-const u16 = n => new Uint8Array([n & 0xFF, (n >>> 8) & 0xFF])
-const u32 = n => new Uint8Array([n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF])
-function concat(arrs) {
-  let len = 0
-  for (const a of arrs) len += a.length
-  const out = new Uint8Array(len)
-  let o = 0
-  for (const a of arrs) { out.set(a, o); o += a.length }
-  return out
-}
-const toBytes = d => (typeof d === 'string' ? textEnc.encode(d) : d)
-
-// files: [{ name, data: string | Uint8Array }] → Uint8Array (a valid .zip)
-function zipStore(files) {
-  const locals = [], central = []
-  let offset = 0
-  for (const f of files) {
-    const nameBytes = textEnc.encode(f.name)
-    const data = toBytes(f.data)
-    const crc = crc32(data)
-    const lfh = concat([
-      u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
-      u32(crc), u32(data.length), u32(data.length),
-      u16(nameBytes.length), u16(0), nameBytes, data,
-    ])
-    const localOffset = offset
-    locals.push(lfh)
-    offset += lfh.length
-    central.push(concat([
-      u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
-      u32(crc), u32(data.length), u32(data.length),
-      u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0),
-      u32(localOffset), nameBytes,
-    ]))
-  }
-  const centralBytes = concat(central)
-  const eocd = concat([
-    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
-    u32(centralBytes.length), u32(offset), u16(0),
-  ])
-  return concat([...locals, centralBytes, eocd])
-}
+import { zipStoreSync } from './zip.js'
 
 function base64ToBytes(b64) {
   const bin = atob(b64)
@@ -101,5 +44,5 @@ export function buildXlsxWithImage({ sheetName = 'Sheet1', title = '', pngBase64
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>` },
     { name: 'xl/media/image1.png', data: imgBytes },
   ]
-  return zipStore(files)
+  return zipStoreSync(files)
 }

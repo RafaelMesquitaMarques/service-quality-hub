@@ -285,6 +285,141 @@ export async function fetchOccurrenceLines(occurrenceIds, { withTextFields = fal
   return rows
 }
 
+// ─── Rapports : jeu de données (lecture seule) ───────────────────────────────
+// Tout est lu avec la session de l'utilisateur : la RLS appliquée à l'écran est
+// exactement celle de l'export (qui réutilise ces données en mémoire). Aucune
+// écriture sur les occurrences ni les référentiels.
+// Pagination .range() avec un ORDER BY déterministe (sans lui, Postgres renvoie
+// les pages dans un ordre arbitraire : doublons et lignes manquantes).
+const REPORT_TICKET_COLS = [
+  'id', 'occurrence_no', 'sc_number', 'status', 'urgency', 'issue_reception_date', 'delivery_date',
+  'wish_delivery_date', 'meeting_date', 'quality_issue', 'comment', 'service_desk_notes', 'original_so',
+  'created_by', 'installer_needed', 'ship_to', 'project_name', 'sold_to', 'brand', 'sd_completed_at',
+  'updated_at', 'corrective_action_no', 'legacy_link', 'item', 'material_number', 'ref_so', 'categories',
+  'department', 'plant', 'root_cause', 'corrective_action', 'affected_qty', 'total_qty', 'cost_approx',
+  'supplier_credit', 'fiscal_year',
+].join(', ')
+const REPORT_LINE_COLS = [
+  'id', 'occurrence_id', 'sort_order', 'quality_issue', 'description', 'line_item', 'foliot_id', 'ref_so',
+  'plant', 'categories', 'department', 'root_cause', 'corrective_action', 'affected_qty', 'total_qty',
+  'completion_type', 'cost_approx', 'cost_furniture', 'cost_freight', 'cost_install', 'supplier_credit', 'created_at',
+].join(', ')
+const LINE_COST_HISTORY_FIELDS = ['line:cost_furniture', 'line:cost_freight', 'line:cost_install', 'line:cost_approx', 'line:supplier_credit']
+
+async function fetchAllPages(build, onPage) {
+  const PAGE = 1000
+  const out = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1)
+    if (error) throw error
+    out.push(...(data || []))
+    onPage?.(out.length)
+    if (!data || data.length < PAGE) break
+  }
+  // Une insertion pendant la lecture décale les pages : une ligne peut revenir
+  // deux fois. On dédoublonne par id ; une suppression, elle, peut en faire
+  // manquer une — d'où la comparaison au nombre attendu par l'appelant.
+  const seen = new Set()
+  return out.filter(r => (r?.id === undefined ? true : seen.has(r.id) ? false : (seen.add(r.id), true)))
+}
+
+export async function fetchReportDataset({ onProgress } = {}) {
+  const progress = (step, loaded, total = null) => onProgress?.({ step, loaded, total })
+
+  // Nombre attendu d'occurrences : vérifié après chargement pour ne jamais
+  // présenter (ni exporter) un jeu tronqué sans le dire.
+  const { count: expectedTickets, error: countErr } = await supabase
+    .from('tickets_with_cost').select('id', { count: 'exact', head: true })
+  if (countErr) throw countErr
+
+  progress('tickets', 0, expectedTickets)
+  const tickets = await fetchAllPages(
+    () => supabase.from('tickets_with_cost').select(REPORT_TICKET_COLS).order('id', { ascending: true }),
+    n => progress('tickets', n, expectedTickets))
+  if (typeof expectedTickets === 'number' && tickets.length < expectedTickets) {
+    const err = new Error(`incomplete:${tickets.length}/${expectedTickets}`)
+    err.code = 'REPORT_INCOMPLETE'
+    throw err
+  }
+
+  const { count: expectedLines } = await supabase.from('occurrence_lines').select('id', { count: 'exact', head: true })
+  progress('lines', 0, expectedLines)
+  const lines = await fetchAllPages(
+    () => supabase.from('occurrence_lines').select(REPORT_LINE_COLS).order('id', { ascending: true }),
+    n => progress('lines', n, expectedLines))
+  if (typeof expectedLines === 'number' && lines.length < expectedLines) {
+    const err = new Error(`incomplete:${lines.length}/${expectedLines}`)
+    err.code = 'REPORT_INCOMPLETE'
+    throw err
+  }
+
+  progress('context', 0)
+  const [profilesRes, meetingLinks, costHistory, depts, cats, plants] = await Promise.all([
+    supabase.from('user_profiles').select('id, full_name'),
+    fetchAllPages(() => supabase.from('meeting_tickets').select('id, ticket_id, meetings(meeting_date)').order('id', { ascending: true })),
+    fetchAllPages(() => supabase.from('ticket_history').select('id, ticket_id').in('field', LINE_COST_HISTORY_FIELDS).order('id', { ascending: true })),
+    supabase.from('departments').select('name, active'),
+    supabase.from('categories').select('name, active'),
+    supabase.from('plants').select('name, active'),
+  ])
+  if (profilesRes.error) throw profilesRes.error
+
+  return {
+    tickets,
+    lines,
+    profiles: profilesRes.data || [],
+    meetingLinks: meetingLinks.map(m => ({ ticket_id: m.ticket_id, meeting_date: m.meetings?.meeting_date || null })),
+    costEditedIds: [...new Set(costHistory.map(h => h.ticket_id))],
+    // Référentiels : pour signaler les valeurs « hors référentiel » dans les filtres.
+    referentials: {
+      departments: (depts.data || []).filter(r => r.active !== false).map(r => r.name),
+      categories:  (cats.data  || []).filter(r => r.active !== false).map(r => r.name),
+      plants:      (plants.data || []).filter(r => r.active !== false).map(r => r.name),
+    },
+    loadedAt: new Date().toISOString(),
+  }
+}
+
+// ─── Rapports enregistrés (table saved_reports, migration 2026-09-15) ────────
+// La RLS réserve la lecture aux rapports de l'utilisateur et aux rapports
+// partagés ; le partage est réservé aux rôles admin / manager. Une configuration
+// ne contient AUCUNE donnée : l'exécuter relit les occurrences avec les droits
+// de la personne qui l'ouvre.
+const SAVED_REPORT_COLS = 'id, name, description, visibility, template_id, config, owner_id, created_at, updated_at'
+
+export const reportApi = {
+  list: async () => {
+    const { data, error } = await supabase.from('saved_reports').select(SAVED_REPORT_COLS).order('updated_at', { ascending: false })
+    if (error) throw error
+    return data || []
+  },
+  get: async (id) => {
+    const { data, error } = await supabase.from('saved_reports').select(SAVED_REPORT_COLS).eq('id', id).single()
+    if (error) throw error
+    return data
+  },
+  create: async ({ name, description, visibility, template_id, config }) => {
+    const owner_id = useAuthStore.getState().user?.id
+    const { data, error } = await supabase.from('saved_reports')
+      .insert({ name, description: description || null, visibility, template_id: template_id || null, config, owner_id })
+      .select(SAVED_REPORT_COLS).single()
+    if (error) throw error
+    return data
+  },
+  update: async (id, { name, description, visibility, config }) => {
+    const { data, error } = await supabase.from('saved_reports')
+      .update({ name, description: description || null, visibility, config, updated_at: new Date().toISOString() })
+      .eq('id', id).select(SAVED_REPORT_COLS).single()
+    if (error) throw error
+    return data
+  },
+  remove: async (id) => {
+    const { error, count } = await supabase.from('saved_reports').delete({ count: 'exact' }).eq('id', id)
+    if (error) throw error
+    if (count === 0) { const e = new Error('not_allowed'); e.code = 'REPORT_NOT_ALLOWED'; throw e }
+  },
+}
+
 // ─── Revenus mensuels (par année fiscale, ventilés par usine) ────────────────
 export const revenueApi = {
   // Toutes les lignes. plant NULL = montant « non ventilé » (anciennes saisies

@@ -17,9 +17,12 @@ npm run dev:server
 
 # Build frontend for production
 npm run build
+
+# Tests of the Reports module engine (filters, aggregations, xlsx/csv export, permissions, i18n)
+npm run test:reports
 ```
 
-No linting or test scripts are configured.
+No linting is configured; `test:reports` is the only automated test suite (Node ≥ 22, no dependency).
 
 ## Architecture
 

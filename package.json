@@ -9,7 +9,8 @@
     "build": "cd client && npm run build",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
     "quality:import": "node server/scripts/import-quality.js",
-    "quality:import:test": "node server/scripts/import-quality.test.js"
+    "quality:import:test": "node server/scripts/import-quality.test.js",
+    "test:reports": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test client/src/pages/Reports/engine/tests/reports.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

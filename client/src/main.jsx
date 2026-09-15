@@ -19,6 +19,8 @@ import ImportPage from './pages/Import'
 import AdminPage from './pages/Admin'
 import PlantsPage from './pages/Plants'
 import ReferentialsPage from './pages/Referentials'
+import ReportsPage from './pages/Reports'
+import ReportBuilder from './pages/Reports/ReportBuilder'
 import MobileLayout from './pages/Mobile/MobileLayout'
 import MobileLogin from './pages/Mobile/MobileLogin'
 import MobileNewOccurrence from './pages/Mobile/MobileNewOccurrence'
@@ -100,6 +102,9 @@ function App() {
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="tickets/new" element={<Navigate to="/tickets" replace />} />
             <Route path="tickets/:id" element={<TicketDetail />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/template/:templateId" element={<ReportBuilder />} />
+            <Route path="reports/saved/:savedId" element={<ReportBuilder />} />
             <Route path="meetings" element={
               <ProtectedRoute perm="canMeetings"><MeetingsPage /></ProtectedRoute>
             } />
