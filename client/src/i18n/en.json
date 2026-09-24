@@ -92,6 +92,7 @@
     "line_removed": "Line removed",
     "sd_notes": "Service Desk notes",
     "sd_notes_placeholder": "Observations, additional details...",
+    "notification_sent": "Notification sent",
     "root_cause_placeholder": "Describe the root cause...",
     "corrective_placeholder": "Corrective action implemented...",
     "drag_photos": "Drag or click to add photos and files",
@@ -147,6 +148,7 @@
     "video": "Video",
     "file": "File",
     "new_badge": "New",
+    "readonly_notice": "You can view this occurrence but not edit it.",
     "readonly_no_create": "⚠️ Read-only access — you don't have permission to create occurrences."
   },
   "dashboard": {

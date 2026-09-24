@@ -22,18 +22,21 @@ const URGENCY_STYLE = {
 
 // Champs jamais indexés pour la recherche : identifiants techniques et
 // horodatages internes. Un UUID correspondrait à presque n'importe quelle
-// frappe et noierait les résultats.
+// frappe et noierait les résultats. Même chose pour notification_sent, vrai ou
+// faux sur toutes les occurrences : « true » / « false » indexés, taper « fal »
+// ou « rue » les ramènerait toutes.
 const NON_SEARCHABLE = new Set([
   'id', 'occurrence_id', 'created_by', 'assigned_to',
   'created_at', 'updated_at', 'submitted_at', 'sd_completed_at',
   'sort_order', 'fiscal_year', 'fiscal_month', 'date_yyyy_mm',
+  'notification_sent',
 ])
 // Séparateur entre champs indexés : un caractère non saisissable, pour qu'une
 // recherche ne puisse pas correspondre à cheval sur deux champs.
 const SEP = String.fromCharCode(1)
 
 // ── Column Filter Dropdown ─────────────────────────────────────────────────
-function ColumnFilter({ label, values, selected, onChange, onClear, renderValue }) {
+function ColumnFilter({ label, title, values, selected, onChange, onClear, renderValue }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -50,6 +53,7 @@ function ColumnFilter({ label, values, selected, onChange, onClear, renderValue 
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
+        title={title}
         className="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 transition-colors group"
       >
         {label}
@@ -59,7 +63,7 @@ function ColumnFilter({ label, values, selected, onChange, onClear, renderValue 
       {open && (
         <div className="absolute top-full left-0 mt-1 bg-white dark:bg-[#161B22] border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 min-w-40 max-w-56 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{label}</span>
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{title || label}</span>
             {isActive && (
               <button onClick={() => { onClear(); setOpen(false) }}
                 className="text-xs text-red-500 hover:text-red-700 bg-transparent border-0 cursor-pointer">
@@ -176,6 +180,7 @@ export default function TicketsPage() {
   const [fSC,     setFSC]       = useState(() => urlParamSet('sc'))
   const [fDate,   setFDate]     = useState(() => urlParamSet('date'))
   const [fCreator, setFCreator] = useState(() => urlParamSet('by'))
+  const [fNotif,  setFNotif]    = useState(() => urlParamSet('notif'))   // 'yes' | 'no' — notification envoyée
   const [costSort, setCostSort] = useState(() => ['desc', 'asc'].includes(urlParam('cost')) ? urlParam('cost') : null)  // null | 'desc' | 'asc' — trier par coût (worst offenders)
   const [creditSort, setCreditSort] = useState(() => ['desc', 'asc'].includes(urlParam('credit')) ? urlParam('credit') : null)  // idem pour le crédit fournisseur
   const [fQuality, setFQuality] = useState(() => urlParam('issue') || '')    // filtre « contient » sur le problème qualité
@@ -347,8 +352,9 @@ export default function TicketsPage() {
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
+    if (fNotif.size  > 0) result = result.filter(tk => fNotif.has(tk.notification_sent ? 'yes' : 'no'))
     return result
-  }, [allTickets, search, searchIndex, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, profileMap, NO_DEPT, lineAgg])
+  }, [allTickets, search, searchIndex, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fNotif, profileMap, NO_DEPT, lineAgg])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
   // Valeurs du filtre Département — dérivées des lignes (repli en-tête), avec
@@ -424,7 +430,7 @@ export default function TicketsPage() {
       if (search)   p.set('q', search)
       if (fQuality) p.set('issue', fQuality)
       if (fiscalYear !== CURRENT_FISCAL_YEAR) p.set('fy', String(fiscalYear))
-      const sets = { st: fStatus, urg: fUrgency, brand: fBrand, dept: fDept, plant: fPlant, proj: fProject, sc: fSC, date: fDate, by: fCreator }
+      const sets = { st: fStatus, urg: fUrgency, brand: fBrand, dept: fDept, plant: fPlant, proj: fProject, sc: fSC, date: fDate, by: fCreator, notif: fNotif }
       for (const [key, set] of Object.entries(sets)) [...set].forEach(v => p.append(key, v))
       if (costSort) p.set('cost', costSort)
       if (creditSort) p.set('credit', creditSort)
@@ -440,20 +446,20 @@ export default function TicketsPage() {
     if (elapsed >= 350) { write(); return }
     const id = setTimeout(write, 350 - elapsed)
     return () => clearTimeout(id)
-  }, [location, search, fQuality, fiscalYear, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, costSort, creditSort, page])
+  }, [location, search, fQuality, fiscalYear, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fNotif, costSort, creditSort, page])
 
-  const hasActiveFilters = search || fQuality || fStatus.size || fUrgency.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size
+  const hasActiveFilters = search || fQuality || fStatus.size || fUrgency.size || fBrand.size || fDept.size || fPlant.size || fProject.size || fSC.size || fDate.size || fCreator.size || fNotif.size
 
   const clearAll = () => {
     setSearch(''); setFQuality(''); setFStatus(new Set()); setFUrgency(new Set()); setFBrand(new Set())
     setFDept(new Set()); setFPlant(new Set()); setFProject(new Set())
-    setFSC(new Set()); setFDate(new Set()); setFCreator(new Set())
+    setFSC(new Set()); setFDate(new Set()); setFCreator(new Set()); setFNotif(new Set())
     setPage(1)
   }
 
   const handleExport = () => {
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'supplier_credit', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'supplier_credit', 'notification_sent', 'created_by_name']
       const rows    = filtered
         // `cost_approx` et `supplier_credit` viennent des lignes agrégées, pas
         // des colonnes de l'en-tête : on les injecte pour l'export.
@@ -569,6 +575,14 @@ export default function TicketsPage() {
                   <AmountSortHeader label={t('ticket.credit_total')} sort={creditSort}
                     onCycle={() => { setCreditSort(nextSort); setCostSort(null); setPage(1) }} />
                 </th>
+                {/* Notification envoyée : une cloche plutôt qu'un libellé — le
+                    tableau est déjà à sa largeur minimale vers 1920 px, chaque
+                    colonne s'ajoute au défilement horizontal. Libellé complet
+                    en infobulle et en titre du filtre. */}
+                <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
+                  <ColumnFilter label={<i className="ti ti-bell text-sm" aria-hidden="true" />} title={t('ticket.notification_sent')} values={['yes', 'no']} selected={fNotif} onChange={resetPage(setFNotif)} onClear={() => { setFNotif(new Set()); setPage(1) }}
+                    renderValue={v => v === 'yes' ? t('common.yes') : t('common.no')} />
+                </th>
                 <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.created_by')} values={creatorNames} selected={fCreator} onChange={resetPage(setFCreator)} onClear={() => { setFCreator(new Set()); setPage(1) }} />
                 </th>
@@ -627,6 +641,11 @@ export default function TicketsPage() {
                     {/* Crédit fournisseur : en vert, c'est de l'argent récupéré. */}
                     <td className="px-3 py-2.5 font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
                       {credit ? money(credit) : <span className="text-gray-400 font-normal">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {ticket.notification_sent
+                        ? <i className="ti ti-bell-check text-base text-emerald-600 dark:text-emerald-400" role="img" title={t('ticket.notification_sent')} aria-label={t('ticket.notification_sent')} />
+                        : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[120px] truncate">{getCreator(ticket) || '—'}</td>
                     {/* Botão apagar — só admin/manager */}

@@ -987,6 +987,30 @@ export default function TicketDetail() {
     onError: (e) => toast.error(errMsg(t, e)),
   })
 
+  // Case « Notification envoyée » : enregistrée dès le clic, comme un
+  // changement de statut, et non par le bouton Sauvegarder — cochée puis
+  // oubliée, elle ferait lire « non envoyée » dans la liste. Mise à jour
+  // optimiste : la case bascule tout de suite et revient si l'écriture échoue.
+  const notifMut = useMutation({
+    mutationFn: (sent) => ticketApi.update(id, { notification_sent: sent }),
+    onMutate: async (sent) => {
+      await queryClient.cancelQueries({ queryKey: ['ticket', id] })
+      const before = queryClient.getQueryData(['ticket', id])?.notification_sent
+      queryClient.setQueryData(['ticket', id], old => old && { ...old, notification_sent: sent })
+      return { before }
+    },
+    onError: (e, _sent, ctx) => {
+      queryClient.setQueryData(['ticket', id], old => old && { ...old, notification_sent: ctx?.before })
+      toast.error(errMsg(t, e))
+    },
+    onSuccess: () => toast.success(t('common.save')),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['ticket', id] })
+      queryClient.invalidateQueries({ queryKey: ['ticket-history', id] })
+      queryClient.invalidateQueries({ queryKey: ['tickets'] })
+    },
+  })
+
   const addLineMut = useMutation({
     mutationFn: async () => {
       const maxOrder = (lines || []).reduce((m, l) => Math.max(m, l.sort_order), -1)
@@ -1119,6 +1143,7 @@ export default function TicketDetail() {
     installer_needed: t('ticket.installer_needed'), urgency: t('ticket.urgency'),
     comment: t('ticket.comment'),                  root_cause: t('ticket.root_cause'),
     corrective_action: t('ticket.corrective_action'), service_desk_notes: t('ticket.step2'),
+    notification_sent: t('ticket.notification_sent'),
     categories: t('ticket.categories'),            department: t('ticket.department'),
     cost_approx: t('ticket.cost'),                 cost_final: t('ticket.cost_final'),
     status: t('ticket.status'),                    quality_issue: t('ticket.issue'),
@@ -1142,7 +1167,7 @@ export default function TicketDetail() {
     const f = isLineField(field) ? field.slice(5) : field
     if (val === null || val === undefined || val === '') return '—'
     if (f === 'urgency') return URGENCY_LBL[val] || val
-    if (f === 'installer_needed') return val === 'true' ? t('common.yes') : val === 'false' ? t('common.no') : val
+    if (f === 'installer_needed' || f === 'notification_sent') return val === 'true' ? t('common.yes') : val === 'false' ? t('common.no') : val
     if (['issue_reception_date','delivery_date','wish_delivery_date','sd_completed_at'].includes(f)) return formatDate(val)
     if (f === 'status') return t(`status.${val}`)
     if (MONEY_FIELDS.includes(f)) { const n = Number(val); return Number.isFinite(n) ? money(n) : val }
@@ -1172,7 +1197,7 @@ export default function TicketDetail() {
       {!canEdit && (
         <div className="mx-5 mt-3 flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs">
           <i className="ti ti-lock text-sm" aria-hidden="true" />
-          {t('ticket.readonly_notice') || 'Vous pouvez consulter cette occurrence, mais pas la modifier.'}
+          {t('ticket.readonly_notice')}
         </div>
       )}
 
@@ -1361,6 +1386,14 @@ export default function TicketDetail() {
                       <input value={scNumber} onChange={e => setScNumber(e.target.value)}
                         disabled={!canEdit} placeholder="SC#..."
                         className="input text-xs disabled:opacity-60 disabled:cursor-not-allowed" />
+                      {/* Enregistrée au clic (notifMut) ; un clic pendant
+                          l'écriture est ignoré plutôt que de griser la case. */}
+                      <label className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0D1117] text-xs text-gray-700 dark:text-gray-300 ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
+                        <input type="checkbox" className="accent-blue-600 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed"
+                          checked={!!ticket.notification_sent} disabled={!canEdit}
+                          onChange={e => { if (!notifMut.isPending) notifMut.mutate(e.target.checked) }} />
+                        {t('ticket.notification_sent')}
+                      </label>
                     </div>
                     <div>
                       <label className="label">{t('ticket.cost')}</label>
@@ -1381,7 +1414,10 @@ export default function TicketDetail() {
               </div>
             )}
 
-            {/* History — piste d'audit append-only : chaque modification (même annulée) */}
+            {/* History — piste d'audit append-only : chaque modification (même annulée).
+                Colonne date : flex-shrink-0 + largeur mini de l'horodatage le plus large
+                (« 2026-06-28 00 h 00 » ≈ 121 px). Avec un simple min-w-20, une entrée
+                longue écrasait la colonne à 80 px et l'heure débordait sur le texte. */}
             <div className="card">
               <SectionHeader icon="ti-history" title={t('ticket.history')}
                 right={<span className="text-xs text-gray-400">{(history || []).length}</span>} />
@@ -1392,7 +1428,7 @@ export default function TicketDetail() {
                   return (
                   <div key={h.id} className="flex gap-3 py-2 border-b border-gray-50 dark:border-gray-800 text-xs">
                     <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background: dot }} />
-                    <div className="text-gray-400 min-w-20 whitespace-nowrap">{formatDateTime(h.changed_at)}</div>
+                    <div className="text-gray-400 min-w-32 flex-shrink-0 whitespace-nowrap">{formatDateTime(h.changed_at)}</div>
                     <div className="text-gray-600 dark:text-gray-300 min-w-0">
                       <span className="font-medium text-gray-700 dark:text-gray-200">{fieldLabel(h.field)}</span>
                       {isEvent ? (
@@ -1412,7 +1448,7 @@ export default function TicketDetail() {
                 {/* Ligne de création — toujours en bas */}
                 <div className="flex gap-3 py-2 text-xs">
                   <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ background:'#9ca3af' }} />
-                  <div className="text-gray-400 min-w-20 whitespace-nowrap">{formatDate(ticket.issue_reception_date)}</div>
+                  <div className="text-gray-400 min-w-32 flex-shrink-0 whitespace-nowrap">{formatDate(ticket.issue_reception_date)}</div>
                   <div className="text-gray-600 dark:text-gray-300">
                     {t('ticket.created')}{creator?.full_name ? ` · ${creator.full_name}` : ''} · SC# {ticket.sc_number || '—'}
                   </div>
