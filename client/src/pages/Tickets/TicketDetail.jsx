@@ -369,7 +369,7 @@ function PhotoAnnotator({ photo, onSave, onClose }) {
 }
 
 // ── Line Card (display + edit) ─────────────────────────────────────────────
-function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp, onView }) {
+function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, canEdit: canEditProp, onView, highlighted }) {
   const queryClient = useQueryClient()
   const categoryOptions   = useCategories()
   const departmentOptions = useDepartments()
@@ -589,7 +589,10 @@ function LineCard({ line, occurrenceId, onUpdate, onDelete, plants, status, t, c
   ].filter(([, v]) => v)
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-3 overflow-hidden">
+    <div id={`line-${line.id}`}
+      className={`border rounded-lg mb-3 overflow-hidden transition-shadow duration-500 ${highlighted
+        ? 'border-blue-400 dark:border-blue-500 ring-2 ring-blue-400/60'
+        : 'border-gray-200 dark:border-gray-700'}`}>
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-[#161B22] border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-900 dark:text-gray-100">{t('ticket.line_n')} {line.sort_order + 1}</span>
@@ -1127,6 +1130,26 @@ export default function TicketDetail() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [isDirty])
 
+  // Arrivée depuis une ligne précise (revue hebdo, `?line=`) : l'amener à
+  // l'écran et la surligner quelques secondes. Une seule fois, dès que la
+  // carte est rendue (occurrence et lignes chargées).
+  const focusLineId = searchParams.get('line')
+  const [highlightLineId, setHighlightLineId] = useState(null)
+  const lineFocused = useRef(false)
+  useEffect(() => {
+    if (!focusLineId || lineFocused.current) return
+    const el = document.getElementById(`line-${focusLineId}`)
+    if (!el) return
+    lineFocused.current = true
+    el.scrollIntoView({ block: 'center' })
+    setHighlightLineId(focusLineId)
+  }, [focusLineId, ticket, lines])
+  useEffect(() => {
+    if (!highlightLineId) return
+    const timer = setTimeout(() => setHighlightLineId(null), 3000)
+    return () => clearTimeout(timer)
+  }, [highlightLineId])
+
   if (isLoading) return <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
   if (!ticket) return null
 
@@ -1524,7 +1547,8 @@ export default function TicketDetail() {
                 {(lines || []).map(line => (
                   <LineCard key={line.id} line={line} occurrenceId={id}
                     onUpdate={refreshCostViews} onDelete={(lineId) => deleteLineMut.mutate(lineId)}
-                    plants={plants} status={ticket.status} t={t} canEdit={canEdit} onView={setLightbox} />
+                    plants={plants} status={ticket.status} t={t} canEdit={canEdit} onView={setLightbox}
+                    highlighted={highlightLineId != null && String(line.id) === highlightLineId} />
                 ))}
                 {(lines || []).length === 0 && !addingLine && (
                   <div className="text-center py-6 text-xs text-gray-400">{t('common.no_results')}</div>
