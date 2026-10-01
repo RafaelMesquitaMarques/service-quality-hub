@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# docker compose's .env (local machine or Azure VM), template in .env.example
+/.env

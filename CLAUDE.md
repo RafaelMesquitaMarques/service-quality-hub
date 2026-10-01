@@ -20,6 +20,10 @@ npm run build
 
 # Tests of the Reports module engine (filters, aggregations, xlsx/csv export, permissions, i18n)
 npm run test:reports
+
+# Production container (Vite build served by nginx) on http://localhost:8080
+# needs a root .env (template: .env.example; gitignored)
+docker compose up --build -d
 ```
 
 No linting is configured; `test:reports` is the only automated test suite (Node ≥ 22, no dependency).
@@ -66,3 +70,4 @@ Five roles: `admin > manager > cpm > service_desk > viewer`. The `usePermissions
 - Frontend: Vercel (auto-deploy from `main`) — `client/vercel.json` configures SPA routing
 - Backend: Railway
 - Database + Storage + Auth: Supabase (project `kbunsdmpesivntujvuzi`)
+- Container (planned move to an Azure VM, not live yet): `docker-compose.yml` runs a single `web` service built from `client/Dockerfile` (Vite build → nginx; `client/nginx.conf` does the SPA fallback and caching that `vercel.json` does on Vercel). `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are **build args** read from the root `.env`, so changing them needs a rebuild; the build fails if they are missing. Supabase stays hosted; the Express server is not in the stack. `client/package-lock.json` must be committed (`npm ci`).

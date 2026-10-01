@@ -1,0 +1,21 @@
+# Container stack for the Azure VM: the deployment pipeline unpacks the repo
+# on the VM and runs
+#   docker compose -p <PROJECT_NAME> up --build -d
+# with the server's own .env next to this file (template: .env.example).
+#
+# Only the web container runs. The browser talks straight to Supabase
+# (database, auth, storage, edge functions), which stays hosted by Supabase.
+# The Express server in server/ is not called by the frontend, so it is not
+# part of the stack.
+name: service-quality-hub
+
+services:
+  web:
+    build:
+      context: ./client
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
