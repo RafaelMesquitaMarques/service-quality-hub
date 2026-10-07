@@ -1,21 +1,26 @@
 # Container stack for the Azure VM: the deployment pipeline unpacks the repo
 # on the VM and runs
-#   docker compose -p <PROJECT_NAME> up --build -d
-# with the server's own .env next to this file (template: .env.example).
+#   docker compose -p ai_checkmate up --build -d
+# Only nginx is published, on 15105 (the range IT gave this app is 15105-15109).
 #
 # Only the web container runs. The browser talks straight to Supabase
 # (database, auth, storage, edge functions), which stays hosted by Supabase.
 # The Express server in server/ is not called by the frontend, so it is not
 # part of the stack.
-name: service-quality-hub
+#
+# The server needs no .env: the defaults below are the public values the
+# frontend already ships (same as client/.env.local; the anon key is meant to
+# be public, access is enforced by RLS). A .env next to this file overrides
+# them (template: .env.example).
+name: ai_checkmate
 
 services:
   web:
     build:
       context: ./client
       args:
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://kbunsdmpesivntujvuzi.supabase.co}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtidW5zZG1wZXNpdm50dWp2dXppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNzQ2ODUsImV4cCI6MjA5NTY1MDY4NX0.c4AZ8y5pMnNn0lH98EzEO9J9mMykPmDY7fiR-Tk7Tt8}
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-15105}:80"
