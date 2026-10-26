@@ -1,15 +1,19 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
 import { ticketApi, fetchOccurrenceLines, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { fiscalYearsDown } from '../../utils/fiscal'
+import { customerOf } from '../../utils/customer'
 import { usePermissions } from '../../hooks/usePermissions'
 import { StatusBadge, BrandTag, PageHeader, Spinner, EmptyState } from '../../components/ui'
 import TicketModal from './TicketModal'
 import toast from 'react-hot-toast'
 
-const FISCAL_YEARS = ['all', 2026, 2025, 2024]
+// De l'année fiscale en cours à FY2024 — calculé : codée en dur, la liste
+// n'aurait pas proposé FY2027 à partir du 1er décembre 2026.
+const FISCAL_YEARS = ['all', ...fiscalYearsDown(2024)]
 const PAGE_SIZE    = 100
 
 // Urgence (champ « Statut » de la fiche) — overnight / urgent / normal
@@ -185,11 +189,13 @@ export default function TicketsPage() {
   const [creditSort, setCreditSort] = useState(() => ['desc', 'asc'].includes(urlParam('credit')) ? urlParam('credit') : null)  // idem pour le crédit fournisseur
   const [fQuality, setFQuality] = useState(() => urlParam('issue') || '')    // filtre « contient » sur le problème qualité
 
-  const { data, isLoading, isError: ticketsError, refetch } = useQuery({
+  const { data, isLoading, isError: ticketsError, isPlaceholderData: ticketsPlaceholder, refetch } = useQuery({
     queryKey: ['tickets', fiscalYear],
     queryFn: () => ticketApi.list({ fiscal_year: fiscalYear }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
-    keepPreviousData: true,
+    // v5 : l'option `keepPreviousData: true` n'existe plus (ignorée sans erreur) ;
+    // c'est placeholderData qui garde la liste affichée pendant un changement d'année.
+    placeholderData: keepPreviousData,
   })
 
   const allTickets = data?.tickets || []
@@ -217,27 +223,30 @@ export default function TicketsPage() {
   const NO_PLANT = '__none__'   // même sentinelle, paramètre d'URL distinct
   const noDeptLabel = t('dashboard.unclassified')  // « (Non défini) »
 
-  // Lignes des occurrences affichées : coût ET département vivent au niveau de
-  // la ligne. Clé ['line-costs'] conservée — c'est elle que le détail invalide
-  // après une sauvegarde (refreshCostViews).
-  const { data: lineRows, isError: linesError } = useQuery({
+  // Lignes des occurrences affichées : crédit, département et usine vivent au
+  // niveau de la ligne (le coût, lui, arrive déjà agrégé : real_cost), et la
+  // recherche porte sur leurs champs. Clé ['line-costs'] conservée — c'est elle
+  // que le détail invalide après une sauvegarde (refreshCostViews).
+  const { data: lineRows, isError: linesError, isPlaceholderData: linesPlaceholder, refetch: refetchLines } = useQuery({
     queryKey: ['line-costs', allTickets.map(t => t.id)],
     queryFn: () => fetchOccurrenceLines(allTickets.map(t => t.id), { withTextFields: true }),
     enabled: allTickets.length > 0,
+    // La clé change dès qu'une occurrence est créée ou supprimée : les lignes
+    // précédentes restent affichées le temps du rechargement, sans valoir
+    // « chargées » pour autant (voir linesSettled).
+    placeholderData: keepPreviousData,
   })
 
   const lineAgg = useMemo(() => {
-    const costs = {}, credits = {}, chiffree = {}, creditee = {}, depts = {}, plants = {}
+    const credits = {}, creditee = {}, depts = {}, plants = {}
     for (const l of lineRows || []) {
-      costs[l.occurrence_id] = (costs[l.occurrence_id] || 0) + Number(l.cost_approx || 0)
-      if (l.cost_approx != null) chiffree[l.occurrence_id] = true
       // Crédit fournisseur : cumulé à part du coût, qui en est déjà net.
       credits[l.occurrence_id] = (credits[l.occurrence_id] || 0) + Number(l.supplier_credit || 0)
       if (l.supplier_credit != null) creditee[l.occurrence_id] = true
       ;(depts[l.occurrence_id]  = depts[l.occurrence_id]  || []).push(l.department || null)
       ;(plants[l.occurrence_id] = plants[l.occurrence_id] || []).push(l.plant || null)
     }
-    return { costs, credits, chiffree, creditee, depts, plants }
+    return { credits, creditee, depts, plants }
   }, [lineRows])
 
   // ── Index de recherche ───────────────────────────────────────────────────
@@ -275,13 +284,14 @@ export default function TicketsPage() {
     return index
   }, [allTickets, lineRows, profileMap, t])
 
-  const getCost = (ticket) => {
-    // Une ligne chiffrée fait référence, même si le net est nul ou négatif
-    // (crédit fournisseur ≥ coûts). Sans aucune ligne chiffrée, repli sur
-    // l'en-tête (occurrences importées, sans lignes).
-    if (lineAgg.chiffree[ticket.id]) return lineAgg.costs[ticket.id]
-    return ticket.cost_approx ? Number(ticket.cost_approx) : null
-  }
+  // Coût = real_cost de la vue tickets_with_cost : somme des lignes dès qu'une
+  // ligne est chiffrée (net du crédit fournisseur, nul ou négatif légitime),
+  // sinon coût de l'en-tête (imports sans lignes). Même règle que l'ancien
+  // calcul sur les lignes chargées à part (vérifié identique sur les 2 525
+  // occurrences, tous statuts), mais livrée avec l'occurrence : ce calcul
+  // affichait les coûts d'en-tête tant que les lignes chargeaient — et pour de
+  // bon si leur requête échouait (−41 % du coût FY2026).
+  const getCost = (ticket) => ticket.real_cost == null ? null : Number(ticket.real_cost)
 
   // Crédit total obtenu des fournisseurs sur l'occurrence : somme des lignes,
   // repli sur l'en-tête (colonne héritée `tickets.supplier_credit`, venue des
@@ -348,7 +358,7 @@ export default function TicketsPage() {
     if (fBrand.size  > 0) result = result.filter(tk => fBrand.has(tk.brand))
     if (fDept.size   > 0) result = result.filter(tk => getDepts(tk).some(d => fDept.has(d)))
     if (fPlant.size  > 0) result = result.filter(tk => getPlants(tk).some(p => fPlant.has(p)))
-    if (fProject.size > 0) result = result.filter(tk => fProject.has(tk.project_name))
+    if (fProject.size > 0) result = result.filter(tk => fProject.has(customerOf(tk)))
     if (fSC.size     > 0) result = result.filter(tk => fSC.has(tk.sc_number))
     if (fDate.size   > 0) result = result.filter(tk => fDate.has(tk.issue_reception_date))
     if (fCreator.size > 0) result = result.filter(tk => fCreator.has(getCreator(tk)))
@@ -357,6 +367,13 @@ export default function TicketsPage() {
   }, [allTickets, search, searchIndex, fQuality, fStatus, fUrgency, fBrand, fDept, fPlant, fProject, fSC, fDate, fCreator, fNotif, profileMap, NO_DEPT, lineAgg])
 
   const uniq = (key) => [...new Set(allTickets.map(t => t[key]).filter(Boolean))].sort()
+  // Client : project_name, sinon ship_to — les occurrences importées n'ont que
+  // ship_to et restaient sans client (colonne, filtre) sur project_name seul.
+  // Filtre sur ce même libellé : les URL « proj » existantes restent valides.
+  const customerValues = useMemo(
+    () => [...new Set(allTickets.map(customerOf).filter(Boolean))].sort(),
+    [allTickets]
+  )
   // Valeurs du filtre Département — dérivées des lignes (repli en-tête), avec
   // « (Non défini) » en tête s'il existe des occurrences sans département.
   const filterValues = (getter, none) => {
@@ -403,13 +420,23 @@ export default function TicketsPage() {
   // les filtres département / créé par voient un jeu transitoire réduit et la
   // borne perdrait à tort la page restaurée. Setter fonctionnel (min) : jamais
   // d'augmentation de page, et insensible aux fermetures périmées.
-  const linesSettled    = lineRows !== undefined || linesError || allTickets.length === 0
+  // Les données « placeholder » (liste ou lignes précédentes, gardées pendant un
+  // rechargement) ne comptent pas comme chargées.
+  const linesSettled    = (lineRows !== undefined && !linesPlaceholder) || linesError || allTickets.length === 0
   const profilesSettled = profiles !== undefined || profilesError
   useEffect(() => {
-    if ((!data && !ticketsError) || !linesSettled || !profilesSettled) return
+    if ((!data && !ticketsError) || ticketsPlaceholder || !linesSettled || !profilesSettled) return
     const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
     setPage(p => Math.min(p, pageCount))
-  }, [data, ticketsError, linesSettled, profilesSettled, sorted.length])
+  }, [data, ticketsError, ticketsPlaceholder, linesSettled, profilesSettled, sorted.length])
+
+  // Export CSV seulement sur des données définitives : pas pendant qu'une autre
+  // année charge (la précédente reste affichée), ni avant les lignes, dont
+  // viennent le crédit, les départements et les usines exportés — sinon ce sont
+  // les valeurs d'en-tête qui partaient dans le fichier — ni avant les profils
+  // (colonne created_by_name vide). Lignes en échec : l'export reste possible,
+  // le bandeau signale le repli sur l'en-tête.
+  const exportReady = !!data && !ticketsPlaceholder && linesSettled && profilesSettled
 
   // Reflète les filtres actifs dans l'URL sans empiler l'historique — c'est
   // cette URL que le retour depuis le détail d'une occurrence restaure.
@@ -458,12 +485,14 @@ export default function TicketsPage() {
   }
 
   const handleExport = () => {
+    if (!exportReady) return
     try {
-      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'supplier_credit', 'notification_sent', 'created_by_name']
+      const headers = ['occurrence_no', 'sc_number', 'issue_reception_date', 'quality_issue', 'project_name', 'customer', 'brand', 'department', 'plant', 'status', 'urgency', 'cost_approx', 'supplier_credit', 'notification_sent', 'created_by_name']
       const rows    = filtered
-        // `cost_approx` et `supplier_credit` viennent des lignes agrégées, pas
-        // des colonnes de l'en-tête : on les injecte pour l'export.
-        .map(t => ({ ...t, cost_approx: getCost(t) ?? '', supplier_credit: getCredit(t) || '', created_by_name: getCreator(t) || '', department: named(getDepts(t), NO_DEPT).join(', '), plant: named(getPlants(t), NO_PLANT).join(', ') }))
+        // `cost_approx` (real_cost de la vue) et `supplier_credit` (lignes
+        // agrégées) remplacent les colonnes de l'en-tête pour l'export ;
+        // `customer` = project_name, sinon ship_to (valeur de la colonne Projet).
+        .map(t => ({ ...t, customer: customerOf(t) || '', cost_approx: getCost(t) ?? '', supplier_credit: getCredit(t) || '', created_by_name: getCreator(t) || '', department: named(getDepts(t), NO_DEPT).join(', '), plant: named(getPlants(t), NO_PLANT).join(', ') }))
         .map(t => headers.map(h => `"${(t[h] ?? '').toString().replace(/"/g, '""')}"`).join(','))
       const csv     = [headers.join(','), ...rows].join('\n')
       // BOM UTF-8 pour que les accents s'affichent correctement dans Excel
@@ -479,7 +508,8 @@ export default function TicketsPage() {
         subtitle={`${filtered.length} / ${allTickets.length} occurrences · FY${fiscalYear}`}
         actions={
           <>
-            <button className="btn-ghost" onClick={handleExport}>
+            <button className="btn-ghost disabled:opacity-40 disabled:cursor-not-allowed" onClick={handleExport}
+              disabled={!exportReady} title={exportReady ? undefined : t('common.loading')}>
               <i className="ti ti-download" aria-hidden="true" /> {t('common.export')}
             </button>
             <button className="btn-primary" onClick={() => setShowModal(true)}>
@@ -520,11 +550,26 @@ export default function TicketsPage() {
         )}
       </div>
 
+      {/* Lignes non chargées : crédit, départements, usines et recherche dans
+          les lignes retombent sur l'en-tête. Le dire, plutôt que de laisser
+          lire ces valeurs comme définitives. */}
+      {linesError && (
+        <div role="alert" className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-5 py-2 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+          <i className="ti ti-alert-triangle text-sm" aria-hidden="true" />
+          <span className="flex-1">{t('ticket.lines_load_error')}</span>
+          <button onClick={() => refetchLines()}
+            className="text-xs border border-amber-300 dark:border-amber-700 rounded-lg px-2.5 py-1 bg-transparent cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40">
+            {t('reports.data.retry')}
+          </button>
+        </div>
+      )}
+
       {/* ── Table ── */}
       {/* Cellules en px-3 : avec les pastilles de statut sur une seule ligne,
           le px-4 d'origine faisait déborder le tableau (défilement horizontal
-          de ~70 px à 1920 px de large). */}
-      <div className="flex-1 overflow-auto bg-white dark:bg-[#0D1117]">
+          de ~70 px à 1920 px de large). Atténué tant que la liste affichée est
+          celle de l'année précédemment choisie (placeholder). */}
+      <div className={`flex-1 overflow-auto bg-white dark:bg-[#0D1117] transition-opacity ${ticketsPlaceholder ? 'opacity-50' : ''}`}>
         {isLoading && !data ? (
           <div className="flex items-center justify-center h-40"><Spinner /></div>
         ) : tickets.length === 0 ? (
@@ -546,7 +591,7 @@ export default function TicketsPage() {
                   <TextColumnFilter label={t('ticket.issue')} value={fQuality} onChange={resetPage(setFQuality)} placeholder={t('ticket.filter_issue_ph')} />
                 </th>
                 <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
-                  <ColumnFilter label={t('ticket.project_name')} values={uniq('project_name')} selected={fProject} onChange={resetPage(setFProject)} onClear={() => { setFProject(new Set()); setPage(1) }} />
+                  <ColumnFilter label={t('ticket.project_name')} values={customerValues} selected={fProject} onChange={resetPage(setFProject)} onClear={() => { setFProject(new Set()); setPage(1) }} />
                 </th>
                 <th className="px-3 py-2.5 text-left border-b border-gray-200 dark:border-gray-700/60">
                   <ColumnFilter label={t('ticket.brand')} values={uniq('brand')} selected={fBrand} onChange={resetPage(setFBrand)} onClear={() => { setFBrand(new Set()); setPage(1) }} />
@@ -612,7 +657,7 @@ export default function TicketsPage() {
                     <td className="px-3 py-2.5 font-mono text-xs text-gray-400">{ticket.sc_number || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400">{ticket.issue_reception_date}</td>
                     <td className="px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs"><div className="truncate">{ticket.quality_issue}</div></td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{ticket.project_name || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{customerOf(ticket) || '—'}</td>
                     <td className="px-3 py-2.5"><BrandTag brand={ticket.brand} /></td>
                     <td className="px-3 py-2.5">
                       {depts.length

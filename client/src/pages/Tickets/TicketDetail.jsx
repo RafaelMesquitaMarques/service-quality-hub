@@ -32,6 +32,8 @@ const STATUS_CLR_DARK = {
 const ROOT_CAUSES = ['Fabrication','Matériau','Conception/design','Assemblage','Transport/manutention','Fournisseur','Installation','Commande/spécification','Autre']
 const URGENCIES   = ['overnight','urgent','normal']
 const URGENCY_LBL = { overnight:'Overnight', urgent:'Urgent', normal:'Normal' }
+// Repli si le référentiel des marques est vide — même liste que TicketModal.
+const BRANDS      = ['HIEX','HOME 2','INDEP','ResHall','SBG','STWD','Other']
 const COLORS  = ['#E24B4A','#185FA5','#1D9E75','#BA7517','#888780','#ffffff']
 const TOOLS   = [
   { id:'select',  icon:'ti-cursor-text',    key:'ticket.annot_select' },
@@ -882,7 +884,6 @@ export default function TicketDetail() {
 
   const [sdNotes,     setSdNotes]     = useState('')
   const [scNumber,    setScNumber]    = useState('')
-  const [costApprox,  setCostApprox]  = useState('')
   const [initialized, setInitialized] = useState(false)
   const [lightbox,    setLightbox]    = useState(null)
   const [addingLine,  setAddingLine]  = useState(false)
@@ -904,7 +905,6 @@ export default function TicketDetail() {
     if (ticket && !initialized) {
       setSdNotes(ticket.service_desk_notes || '')
       setScNumber(ticket.sc_number || '')
-      setCostApprox(ticket.cost_approx != null ? String(ticket.cost_approx) : '')
       setInitialized(true)
     }
   }, [ticket, initialized])
@@ -912,7 +912,10 @@ export default function TicketDetail() {
   const { data: lines, refetch: refetchLines } = useQuery({
     queryKey: ['occurrence-lines', id],
     queryFn: async () => {
-      const { data } = await supabase.from('occurrence_lines').select('*').eq('occurrence_id', id).order('sort_order')
+      // Erreur levée (et non liste vide) : React Query réessaie, et une panne ne
+      // se fait plus passer pour une occurrence sans ligne.
+      const { data, error } = await supabase.from('occurrence_lines').select('*').eq('occurrence_id', id).order('sort_order')
+      if (error) throw error
       return data || []
     },
     enabled: !!id,
@@ -926,7 +929,10 @@ export default function TicketDetail() {
   // l'en-tête et masquerait le crédit.
   const lineCostSum   = (lines || []).reduce((s, l) => s + Number(l.cost_approx || 0), 0)
   const hasLineCost   = (lines || []).some(l => l.cost_approx != null)
-  const occurrenceCost = hasLineCost ? lineCostSum : Number(ticket?.cost_approx || 0)
+  // Lignes pas encore lues : real_cost de la vue (même règle, calculée en base).
+  const occurrenceCost = lines
+    ? (hasLineCost ? lineCostSum : Number(ticket?.cost_approx || 0))
+    : Number(ticket?.real_cost || 0)
 
   // Après une modification de coût/ligne, rafraîchir le détail ET les vues qui
   // agrègent les coûts par ligne : la liste (['tickets']) + son total de lignes
@@ -959,6 +965,17 @@ export default function TicketDetail() {
       return data || []
     },
   })
+
+  // Marques du référentiel, comme le formulaire de création (TicketModal) : même
+  // clé et même forme en cache, repli sur la liste codée en dur si vide.
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const { data } = await supabase.from('brands').select('name').eq('active', true).order('name')
+      return data || []
+    },
+  })
+  const brandOptions = brands?.length ? brands.map(b => b.name) : BRANDS
 
   const { data: creator } = useQuery({
     queryKey: ['ticket-creator', ticket?.created_by],
@@ -1056,23 +1073,49 @@ export default function TicketDetail() {
     onError: (e) => toast.error(errMsg(t, e)),
   })
 
-  const handleSave = () => updateMut.mutate({
-    service_desk_notes: sdNotes    || null,
-    sc_number:          scNumber   || null,
-    cost_approx:        costApprox !== '' ? Number(costApprox) : null,
-  })
+  // Le coût d'en-tête (cost_approx) n'est plus envoyé : il n'est modifiable nulle
+  // part (case en lecture seule = somme des lignes). Renvoyé depuis la valeur lue
+  // à l'ouverture, il pouvait écraser un coût modifié entre-temps.
+  const handleSave = () => {
+    const sc = scNumber.trim()
+    updateMut.mutate({
+      service_desk_notes: sdNotes || null,
+      sc_number:          sc      || null,
+    }, {
+      onSuccess: () => setScNumber(sc),   // sinon le champ resterait « modifié »
+    })
+  }
 
   // Salvar edição dos campos de informação
   const handleSaveInfo = () => {
+    // Date de réception obligatoire (NOT NULL en base ; elle fixe aussi l'année
+    // et le mois fiscaux) : vidée, l'écriture échouait sur une erreur SQL brute.
+    if (!infoDraft.issue_reception_date) {
+      toast.error(t('referentials.required', { field: t('ticket.reception_date') }))
+      return
+    }
+    // Texte libre : espaces de bord retirés, vide → NULL. Une chaîne vide en base
+    // formait une valeur distincte de NULL dans les filtres et regroupements.
+    const sc = (infoDraft.sc_number || '').trim()
     updateMut.mutate({
       ...infoDraft,
+      project_name:       (infoDraft.project_name || '').trim() || null,
+      brand:              infoDraft.brand || null,
+      sc_number:          sc || null,
       delivery_date:      infoDraft.delivery_date || null,
       wish_delivery_date: infoDraft.wish_delivery_date || null,
       installer_needed:   infoDraft.installer_needed === '' ? null : infoDraft.installer_needed === 'yes',
       urgency:            infoDraft.urgency || null,
       comment:            infoDraft.comment || null,
     }, {
-      onSuccess: () => setEditingInfo(false)
+      // Le SC# est aussi éditable dans la carte Service Desk (scNumber) : sans
+      // réalignement, il y paraîtrait modifié et « Enregistrer » y remettrait
+      // l'ancienne valeur. Seulement si ce panneau l'a changé : sinon une saisie
+      // en cours dans la carte (non enregistrée) serait effacée sans prévenir.
+      onSuccess: () => {
+        if (sc !== (ticket.sc_number || '').trim()) setScNumber(sc)
+        setEditingInfo(false)
+      },
     })
   }
 
@@ -1081,14 +1124,12 @@ export default function TicketDetail() {
   const resetFields = (tk) => {
     setSdNotes(tk.service_desk_notes || '')
     setScNumber(tk.sc_number || '')
-    setCostApprox(tk.cost_approx != null ? String(tk.cost_approx) : '')
     setEditingInfo(false)
   }
 
   const fieldsDirty = initialized && !!ticket && (
     (ticket.service_desk_notes || '') !== sdNotes    ||
-    (ticket.sc_number          || '') !== scNumber   ||
-    (ticket.cost_approx != null ? String(ticket.cost_approx) : '') !== costApprox
+    (ticket.sc_number          || '') !== scNumber
   )
   const isDirty = fieldsDirty || editingInfo
 
@@ -1334,7 +1375,19 @@ export default function TicketDetail() {
                     ].map(([key, label]) => (
                       <div key={key}>
                         <label className="label">{label}</label>
-                        <input className="input text-xs" value={infoDraft[key] || ''} onChange={e => setInfoDraft(d => ({ ...d, [key]: e.target.value }))} />
+                        {key === 'brand' ? (
+                          // Liste du référentiel, comme à la création (texte libre
+                          // avant : fautes de frappe = marques en double). La marque
+                          // enregistrée reste proposée même absente du référentiel
+                          // (code historique importé), pour ne pas être perdue.
+                          <select className="input text-xs" value={infoDraft.brand || ''} onChange={e => setInfoDraft(d => ({ ...d, brand: e.target.value }))}>
+                            <option value="">—</option>
+                            {ticket.brand && !brandOptions.includes(ticket.brand) && <option value={ticket.brand}>{ticket.brand}</option>}
+                            {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        ) : (
+                          <input className="input text-xs" value={infoDraft[key] || ''} onChange={e => setInfoDraft(d => ({ ...d, [key]: e.target.value }))} />
+                        )}
                       </div>
                     ))}
                     <div>

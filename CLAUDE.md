@@ -21,12 +21,15 @@ npm run build
 # Tests of the Reports module engine (filters, aggregations, xlsx/csv export, permissions, i18n)
 npm run test:reports
 
+# Tests of the Dashboard calculations (event = line, cost rule, YoY to date, SC%, fiscal calendar)
+npm run test:dashboard
+
 # Production container (Vite build served by nginx) on http://localhost:8080
 # needs a root .env (template: .env.example; gitignored)
 docker compose up --build -d
 ```
 
-No linting is configured; `test:reports` is the only automated test suite (Node ≥ 22, no dependency).
+No linting is configured; `test:reports` and `test:dashboard` are the automated test suites (Node ≥ 22, no dependency).
 
 ## Architecture
 
@@ -53,7 +56,11 @@ Core tables: `tickets`, `user_profiles`, `meetings`, `ticket_photos`, `ticket_hi
 
 ### Fiscal calendar
 
-Foliot's fiscal year starts in December. December = fiscal month 1 of the **next** calendar year. The helpers `getFiscalYear()` and `getFiscalMonth()` in `api.js` implement this. `CURRENT_FISCAL_YEAR` is a hardcoded constant that needs updating annually.
+Foliot's fiscal year starts in December. December = fiscal month 1 of the **next** calendar year. The helpers `getFiscalYear()` and `getFiscalMonth()` live in `utils/fiscal.js` (re-exported by `api.js`). `CURRENT_FISCAL_YEAR` / `currentFiscalYear()` are computed from today's date — never hardcode a year. `tickets.fiscal_year` / `fiscal_month` / `date_yyyy_mm` are derived from `issue_reception_date` (recomputed by `ticketApi.update` and by the DB trigger of migration 2026-10-26).
+
+### Dashboard calculations
+
+All dashboard numbers come from the pure module `client/src/pages/Dashboard/metrics.js` (tested by `test:dashboard`); `index.jsx` only loads and renders. Rules: scope = statuses `quality_meeting` + `completed`; **1 event = 1 occurrence line** (an occurrence without lines counts 1, an untitled line 0) so app data compares with the imported Excel history; cost = Σ line `cost_approx` as soon as one line is costed, else the header cost; department/plant/category from the line with header fallback; client = `project_name || ship_to`; YoY for the current FY compares with the previous FY cut at the same date.
 
 ### Roles & permissions
 

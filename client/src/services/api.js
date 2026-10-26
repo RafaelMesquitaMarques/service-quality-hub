@@ -1,35 +1,16 @@
 import { supabase } from './supabase'
 import { useAuthStore } from '../store/authStore'
+import { getFiscalYear, getFiscalMonth, fiscalFieldsOf, currentFiscalYear } from '../utils/fiscal'
 
 // ─── Fiscal Year helpers ────────────────────────────────────────────────────
-export const CURRENT_FISCAL_YEAR = 2026
+// Implémentés dans utils/fiscal.js (module pur, testable sous Node) ; ré-exportés
+// ici pour les imports existants.
+export { getFiscalYear, getFiscalMonth, currentFiscalYear, FISCAL_MONTH_ORDER } from '../utils/fiscal'
 
-export function getFiscalYear(dateYYYYMM) {
-  if (!dateYYYYMM) return null
-  const [year, month] = dateYYYYMM.split('-').map(Number)
-  return month === 12 ? year + 1 : year
-}
-
-export function getFiscalMonth(dateYYYYMM) {
-  if (!dateYYYYMM) return null
-  const [, month] = dateYYYYMM.split('-').map(Number)
-  return month === 12 ? 1 : month + 1
-}
-
-export const FISCAL_MONTH_ORDER = [
-  { fiscal: 1,  name: 'December',  nameShort: 'Dec' },
-  { fiscal: 2,  name: 'January',   nameShort: 'Jan' },
-  { fiscal: 3,  name: 'February',  nameShort: 'Feb' },
-  { fiscal: 4,  name: 'March',     nameShort: 'Mar' },
-  { fiscal: 5,  name: 'April',     nameShort: 'Apr' },
-  { fiscal: 6,  name: 'May',       nameShort: 'May' },
-  { fiscal: 7,  name: 'June',      nameShort: 'Jun' },
-  { fiscal: 8,  name: 'July',      nameShort: 'Jul' },
-  { fiscal: 9,  name: 'August',    nameShort: 'Aug' },
-  { fiscal: 10, name: 'September', nameShort: 'Sep' },
-  { fiscal: 11, name: 'October',   nameShort: 'Oct' },
-  { fiscal: 12, name: 'November',  nameShort: 'Nov' },
-]
+// Année fiscale en cours, calculée au chargement de l'app à partir de la date du
+// jour — n'est plus une constante à mettre à jour chaque année : codée en dur à
+// 2026, elle aurait masqué toutes les occurrences FY2027 à partir du 2026-12-01.
+export const CURRENT_FISCAL_YEAR = currentFiscalYear()
 
 // ─── Ticket API ─────────────────────────────────────────────────────────────
 export const ticketApi = {
@@ -97,9 +78,15 @@ export const ticketApi = {
       before = data
     } catch { /* pas de snapshot → sauvegarde quand même, sans trace */ }
 
+    // Date de réception modifiée → mois et année fiscaux recalculés. Sans ça,
+    // une occurrence dont on corrigeait la date restait dans son ancien mois (voire
+    // son ancienne année fiscale) au tableau de bord et dans la liste. Champs
+    // dérivés : pas de ligne d'historique à part (la date elle-même est tracée).
+    const derived = payload.issue_reception_date ? fiscalFieldsOf(payload.issue_reception_date) : null
+
     const { data, error } = await supabase
       .from('tickets')
-      .update({ ...payload, updated_at: new Date().toISOString() })
+      .update({ ...payload, ...(derived || {}), updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single()
@@ -237,20 +224,26 @@ export async function syncOccurrenceTitle(occurrenceId) {
 export async function fetchLineCostTotals(occurrenceIds) {
   const ids = [...new Set((occurrenceIds || []).filter(Boolean))]
   const totals = {}
-  const CHUNK = 150
+  const CHUNK = 150, PAGE = 1000
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('occurrence_lines')
-      .select('occurrence_id, cost_approx')
-      .in('occurrence_id', ids.slice(i, i + CHUNK))
-    if (error) throw error
-    for (const l of data || []) {
-      // Les lignes pas encore chiffrées ne créent pas d'entrée : l'absence de
-      // clé signifie « aucun coût saisi sur les lignes » et l'appelant peut
-      // alors se replier sur le coût de l'en-tête. Un total nul ou négatif
-      // (crédit fournisseur ≥ coûts) reste, lui, une valeur légitime.
-      if (l.cost_approx == null) continue
-      totals[l.occurrence_id] = (totals[l.occurrence_id] || 0) + Number(l.cost_approx)
+    // Paginé dans le lot : PostgREST tronque sans erreur à 1000 lignes.
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('occurrence_lines')
+        .select('occurrence_id, cost_approx')
+        .in('occurrence_id', ids.slice(i, i + CHUNK))
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      for (const l of data || []) {
+        // Les lignes pas encore chiffrées ne créent pas d'entrée : l'absence de
+        // clé signifie « aucun coût saisi sur les lignes » et l'appelant peut
+        // alors se replier sur le coût de l'en-tête. Un total nul ou négatif
+        // (crédit fournisseur ≥ coûts) reste, lui, une valeur légitime.
+        if (l.cost_approx == null) continue
+        totals[l.occurrence_id] = (totals[l.occurrence_id] || 0) + Number(l.cost_approx)
+      }
+      if (!data || data.length < PAGE) break
     }
   }
   return totals
@@ -269,20 +262,47 @@ const LINE_TEXT_COLS = 'line_item, foliot_id, quality_issue, description, root_c
 // Lignes d'occurrence avec leurs attributs par ligne. Batché comme
 // fetchLineCostTotals pour ne pas dépasser la limite d'URL de PostgREST.
 // `withTextFields` ajoute les champs libres, pour la recherche de la liste.
-export async function fetchOccurrenceLines(occurrenceIds, { withTextFields = false } = {}) {
+// `withTitle` ajoute l'intitulé et l'ordre des lignes : le tableau de bord compte
+// les événements par ligne et une ligne sans intitulé (réclamation annulée) ne
+// compte pas.
+// Chaque lot est lui-même paginé (ORDER BY id + .range) : PostgREST tronque
+// SILENCIEUSEMENT à 1000 lignes par requête — 150 occurrences multi-lignes
+// pourraient un jour dépasser ce plafond.
+export async function fetchOccurrenceLines(occurrenceIds, { withTextFields = false, withTitle = false } = {}) {
   const ids = [...new Set((occurrenceIds || []).filter(Boolean))]
-  const cols = withTextFields ? `${LINE_AGG_COLS}, ${LINE_TEXT_COLS}` : LINE_AGG_COLS
+  let cols = withTextFields ? `${LINE_AGG_COLS}, ${LINE_TEXT_COLS}` : LINE_AGG_COLS
+  if (withTitle && !withTextFields) cols += ', quality_issue'
+  if (withTitle) cols += ', id, sort_order'
   const rows = []
-  const CHUNK = 150
+  const CHUNK = 150, PAGE = 1000
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const { data, error } = await supabase
-      .from('occurrence_lines')
-      .select(cols)
-      .in('occurrence_id', ids.slice(i, i + CHUNK))
-    if (error) throw error
-    rows.push(...(data || []))
+    const chunk = ids.slice(i, i + CHUNK)
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('occurrence_lines')
+        .select(cols)
+        .in('occurrence_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      rows.push(...(data || []))
+      if (!data || data.length < PAGE) break
+    }
   }
   return rows
+}
+
+// Données du tableau de bord pour une année fiscale : les occurrences (vue
+// tickets_with_cost, tous statuts) ET les lignes de celles du périmètre, lues
+// ensemble dans une seule requête React Query. Avant, les lignes avaient leur
+// propre requête, clé sur la liste des ids : à chaque changement de statut, tant
+// qu'elles rechargeaient, tous les coûts retombaient sur l'en-tête (−41 % sur
+// FY2026) — un total faux pouvait être lu ou capturé.
+export async function fetchDashboardYear(fiscalYear, inScope) {
+  const { data } = await ticketApi.list({ fiscal_year: fiscalYear })
+  const ids = data.tickets.filter(inScope).map(t => t.id)
+  const lines = ids.length ? await fetchOccurrenceLines(ids, { withTitle: true }) : []
+  return { tickets: data.tickets, lines }
 }
 
 // ─── Rapports : jeu de données (lecture seule) ───────────────────────────────
@@ -424,31 +444,41 @@ export const reportApi = {
 export const revenueApi = {
   // Toutes les lignes. plant NULL = montant « non ventilé » (anciennes saisies
   // globales, d'avant la ventilation par usine).
+  // Une erreur de lecture est levée (et non plus convertie en liste vide) : le
+  // tableau de bord affichait alors « pas de revenu » et un SC % absent, sans
+  // pouvoir distinguer une panne d'un revenu non saisi.
   all: async () => {
     const { data, error } = await supabase
       .from('monthly_revenue')
       .select('fiscal_year, fiscal_month, plant, revenue')
-    if (error) { console.warn('monthly_revenue indisponible:', error.message); return [] }
+      .order('fiscal_year').order('fiscal_month').order('plant')
+    if (error) throw error
     return data || []
   },
   // Remplace toutes les lignes d'une année fiscale.
   // entries: [{ fiscal_month, plant|null, revenue }] — seules les valeurs > 0
   // sont écrites (un mois sans revenu n'apparaît pas sur le graphique SC Cost %).
+  // En une transaction via la fonction save_revenue_year (migration 2026-10-26) :
+  // l'ancien « DELETE puis INSERT » en deux requêtes effaçait l'année entière si
+  // l'insertion échouait. Repli sur l'ancien chemin tant que la migration n'est
+  // pas appliquée (fonction absente → PGRST202).
   saveYear: async (fiscalYear, entries) => {
+    const rows = entries
+      .filter(e => Number(e.revenue) > 0)
+      .map(e => ({ fiscal_month: e.fiscal_month, plant: e.plant || null, revenue: Number(e.revenue) }))
+    const { error: rpcError } = await supabase.rpc('save_revenue_year', { p_fiscal_year: fiscalYear, p_rows: rows })
+    if (!rpcError) return true
+    if (rpcError.code !== 'PGRST202') throw rpcError
+
     const { error: delError } = await supabase
       .from('monthly_revenue')
       .delete()
       .eq('fiscal_year', fiscalYear)
     if (delError) throw delError
-    const rows = entries
-      .filter(e => Number(e.revenue) > 0)
-      .map(e => ({
-        fiscal_year: fiscalYear, fiscal_month: e.fiscal_month,
-        plant: e.plant || null, revenue: Number(e.revenue),
-        updated_at: new Date().toISOString(),
-      }))
     if (rows.length === 0) return true
-    const { error } = await supabase.from('monthly_revenue').insert(rows)
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('monthly_revenue')
+      .insert(rows.map(r => ({ ...r, fiscal_year: fiscalYear, updated_at: now })))
     if (error) throw error
     return true
   },

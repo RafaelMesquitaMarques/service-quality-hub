@@ -201,7 +201,16 @@ function EntityManager({ config }) {
 }
 
 // ── Revenus mensuels par année fiscale, ventilés par usine ─────────────────
-const REVENUE_YEARS = [CURRENT_FISCAL_YEAR + 1, CURRENT_FISCAL_YEAR, CURRENT_FISCAL_YEAR - 1, CURRENT_FISCAL_YEAR - 2]
+// Années saisissables : la suivante (revenus saisis d'avance), l'année en cours,
+// puis les précédentes jusqu'à FY2025, première année de revenus en base. Avec
+// CURRENT_FISCAL_YEAR désormais calculé, FY2028 et FY2027 s'ajoutent d'elles-
+// mêmes au 1er décembre 2026 ; la fenêtre fixe de 4 ans aurait fini par retirer
+// FY2025 de la liste.
+const OLDEST_REVENUE_YEAR = 2025
+const REVENUE_YEARS = Array.from(
+  { length: CURRENT_FISCAL_YEAR + 2 - OLDEST_REVENUE_YEAR },
+  (_, i) => CURRENT_FISCAL_YEAR + 1 - i,
+)
 
 function RevenueManager() {
   const { t } = useTranslation()
@@ -209,7 +218,12 @@ function RevenueManager() {
   const [fy, setFy]       = useState(CURRENT_FISCAL_YEAR)
   const [draft, setDraft] = useState({}) // clé `${mois fiscal}|${usine}` ('' = non ventilé)
 
-  const { data: allRev, isLoading } = useQuery({ queryKey: ['monthly-revenue'], queryFn: revenueApi.all })
+  // revenueApi.all lève en cas d'échec de lecture (au lieu de rendre []).
+  const { data: allRev, isPending, isError: revError, refetch: refetchRev } = useQuery({ queryKey: ['monthly-revenue'], queryFn: revenueApi.all })
+  // Enregistrer remplace TOUTE l'année par la grille : sans les revenus existants
+  // (chargement en cours, ou lecture en échec → grille vide), ce serait effacer
+  // l'année. Bloqué aussi après un échec de relecture : la grille peut être périmée.
+  const canSave = allRev !== undefined && !revError
   const { data: plants } = useQuery({
     queryKey: ['plants'],
     queryFn: async () => {
@@ -269,12 +283,20 @@ function RevenueManager() {
             {REVENUE_YEARS.map(y => <option key={y} value={y}>FY{y}</option>)}
           </select>
         </div>
-        <button className="btn-primary text-sm" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+        <button className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={() => { if (canSave) saveMut.mutate() }} disabled={!canSave || saveMut.isPending}>
           <i className="ti ti-device-floppy" aria-hidden="true" /> {saveMut.isPending ? t('common.loading') : t('common.save')}
         </button>
       </div>
       <p className="text-xs text-gray-400 mb-3">{t('referentials.revenues_hint')}</p>
-      {isLoading ? <div className="flex justify-center p-6"><Spinner /></div> : (
+      {revError ? (
+        // Pas de grille : vide, elle se lirait comme « aucun revenu saisi ».
+        <div role="alert" className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-sm text-red-700 dark:text-red-300">
+          <i className="ti ti-alert-triangle text-base" aria-hidden="true" />
+          <span className="flex-1">{t('referentials.revenues_load_error')}</span>
+          <button onClick={() => refetchRev()} className="btn-ghost text-xs py-1 px-2.5">{t('reports.data.retry')}</button>
+        </div>
+      ) : isPending ? <div className="flex justify-center p-6"><Spinner /></div> : (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

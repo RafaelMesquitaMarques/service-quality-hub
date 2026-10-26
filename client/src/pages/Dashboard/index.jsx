@@ -1,25 +1,30 @@
-import { useState, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useRef, useMemo, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, Cell, CartesianGrid, LabelList,
 } from 'recharts'
-import { ticketApi, fetchOccurrenceLines, revenueApi, FISCAL_MONTH_ORDER, CURRENT_FISCAL_YEAR, getFiscalMonth } from '../../services/api'
+import { fetchDashboardYear, revenueApi, FISCAL_MONTH_ORDER, currentFiscalYear } from '../../services/api'
+import { localISODate, currentFiscalMonth } from '../../utils/fiscal'
 import { StatusBadge, BrandTag, PageHeader, Spinner } from '../../components/ui'
 import { useThemeStore } from '../../store/themeStore'
 import { buildXlsxWithImage } from '../../utils/xlsxImage'
 import toast from 'react-hot-toast'
+import {
+  computeDashboard, sanitizeFilters, inDashboardScope,
+  ALL, TOLERANCE_PCT, SC_EXCLUDED_DEPT,
+} from './metrics'
 
-// Les revenus mensuels sont désormais éditables (table monthly_revenue), via
-// Référentiels › Revenus. Voir revenueApi + la requête ['monthly-revenue'].
+// Tous les calculs vivent dans ./metrics.js (module pur, testé par
+// `npm run test:dashboard`) ; ce composant charge les données et affiche.
+// Les revenus mensuels sont éditables via Référentiels › Revenus.
 
-const TOLERANCE_PCT = 0.003
 const BRAND_COLORS  = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA']
+const OTHERS_COLOR  = '#94A3B8'
 const DEPT_COLORS   = ['#2563EB', '#7C3AED', '#0891B2', '#D97706', '#DC2626', '#059669', '#DB2777', '#9333EA',
   '#0EA5E9', '#F59E0B', '#10B981', '#EF4444', '#6366F1', '#14B8A6', '#F97316', '#EC4899', '#22C55E', '#A855F7']
-const STATUS_ORDER  = ['not_started', 'service_desk', 'sd_waiting_info', 'quality_meeting', 'wip', 'completed', 'cancelled']
 const STATUS_COLORS = {
   not_started:     '#94A3B8',
   service_desk:    '#3B82F6',
@@ -30,19 +35,30 @@ const STATUS_COLORS = {
   cancelled:       '#EF4444',
 }
 
-// Périmètre du tableau de bord : seules les occurrences arrivées à la Réunion
-// qualité (donc classées) ou complétées sont prises en compte. Les étapes amont
-// (non démarré, Service Desk, info en attente) et les annulées sont exclues de
-// TOUS les calculs — KPI, coûts, graphiques, tableau des récentes.
-const DASHBOARD_STATUSES = ['quality_meeting', 'completed']
-const inDashboardScope = tk => DASHBOARD_STATUSES.includes(tk.status)
+// Rafraîchissement : un tableau de bord resté ouvert (en réunion, par exemple)
+// se met à jour au retour sur l'onglet et toutes les 5 minutes ; avant, rien ne
+// le rechargeait pendant 10 minutes, ni ensuite tant qu'on ne changeait pas de page.
+const LIVE_QUERY = { staleTime: 60 * 1000, refetchOnWindowFocus: true, refetchInterval: 5 * 60 * 1000 }
 
-const money  = v => `$${Math.round(Number(v) || 0).toLocaleString()}`
-const moneyK = v => `$${Math.round((Number(v) || 0) / 1000)}k`
-const signedMoney = v => {
+// Montants arrondis à l'affichage seulement ; négatif (crédit fournisseur) signé.
+const money  = v => {
   const n = Math.round(Number(v) || 0)
   return `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
 }
+// Milliers : signe devant le $ (comme money) et une décimale sous 10 k$, sinon un
+// crédit de −36 $ ou un client à 150 $ s'affichaient « $0k ».
+const moneyK = v => {
+  const k = (Number(v) || 0) / 1000
+  const a = Math.abs(k)
+  const s = a === 0 ? '0' : a < 10 ? a.toFixed(1).replace(/\.0$/, '') : String(Math.round(a))
+  return `${k < 0 && s !== '0' ? '−' : ''}$${s}k`
+}
+const signedMoney = v => {
+  const n = Math.round(Number(v) || 0)
+  return `${n > 0 ? '+' : n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
+}
+const signedPct = p => `${p >= 0 ? '+' : '−'}${Math.abs(Math.round(p))}%`
+const truncate = (s, n = 28) => (s && s.length > n ? s.slice(0, n) + '…' : s)
 
 // ── Custom tooltip (theme-aware) ───────────────────────────────
 function ChartTooltip({ active, payload, label, dark, fmt }) {
@@ -71,7 +87,7 @@ function ChartTooltip({ active, payload, label, dark, fmt }) {
 }
 
 // ── KPI card with sparkline ────────────────────────────────────
-function StatCard({ icon, iconBg, iconColor, label, value, sub, subColor, trend, spark, sparkColor }) {
+function StatCard({ icon, iconBg, iconColor, label, value, sub, subColor, sub2, trend, spark, sparkColor }) {
   const gid = `spark-${(sparkColor || '#2563EB').replace('#', '')}`
   return (
     <div className="card p-4 relative overflow-hidden">
@@ -81,10 +97,10 @@ function StatCard({ icon, iconBg, iconColor, label, value, sub, subColor, trend,
           <i className={`ti ${icon}`} style={{ fontSize: 18, color: iconColor }} aria-hidden="true" />
         </div>
         {trend && (
-          <span style={{
+          <span title={trend.title} style={{
             fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
-            background: (trend.positive ? '#16a34a' : '#dc2626') + '1A',
-            color: trend.positive ? '#16a34a' : '#dc2626',
+            background: trend.neutral ? '#64748B1A' : (trend.positive ? '#16a34a' : '#dc2626') + '1A',
+            color: trend.neutral ? '#64748B' : trend.positive ? '#16a34a' : '#dc2626',
           }}>
             {trend.label}
           </span>
@@ -93,6 +109,7 @@ function StatCard({ icon, iconBg, iconColor, label, value, sub, subColor, trend,
       <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 leading-tight">{value}</div>
       <div className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mt-0.5">{label}</div>
       {sub && <div className={`text-xs mt-1 ${subColor || 'text-gray-400'}`}>{sub}</div>}
+      {sub2 && <div className="text-[11px] mt-0.5 text-amber-600 dark:text-amber-400">{sub2}</div>}
       {spark && spark.length > 1 && (
         <div style={{ height: 36, margin: '6px -16px -16px' }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -127,7 +144,7 @@ function ChartCard({ icon, color, title, subtitle, right, children }) {
           )}
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">{title}</div>
-            {subtitle && <div className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</div>}
+            {subtitle && <div className="text-xs text-gray-400 mt-0.5 truncate" title={typeof subtitle === 'string' ? subtitle : undefined}>{subtitle}</div>}
           </div>
         </div>
         {right}
@@ -138,8 +155,9 @@ function ChartCard({ icon, color, title, subtitle, right, children }) {
 }
 
 // ── Filter dropdown ────────────────────────────────────────────
-function FilterSelect({ icon, value, onChange, options, allLabel, includeAll = true, optionLabel = (o) => o, highlight }) {
-  const isActive = highlight != null ? highlight : value !== 'all'
+// options : [{ value, label }]
+function FilterSelect({ icon, value, onChange, options, allLabel, includeAll = true, highlight }) {
+  const isActive = highlight != null ? highlight : value !== ALL
   return (
     <div className="relative inline-flex items-center">
       {icon && <i className={`ti ${icon} text-sm text-gray-400 absolute left-2.5 pointer-events-none`} aria-hidden="true" />}
@@ -152,387 +170,259 @@ function FilterSelect({ icon, value, onChange, options, allLabel, includeAll = t
             : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] text-gray-600 dark:text-gray-300'}
           ${icon ? 'pl-7' : 'pl-2.5'} pr-7 py-1.5`}
       >
-        {includeAll && <option value="all">{allLabel}</option>}
-        {options.map(o => <option key={o} value={o}>{optionLabel(o)}</option>)}
+        {includeAll && <option value={ALL}>{allLabel}</option>}
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <i className="ti ti-chevron-down text-xs text-gray-400 absolute right-2 pointer-events-none" aria-hidden="true" />
     </div>
   )
 }
 
+const timeOf = ms => (ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')
+
 export default function Dashboard() {
-  const { t }    = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { dark } = useThemeStore()
 
   const deptPieRef = useRef(null)
-  const [filters, setFilters] = useState({
-    fy: CURRENT_FISCAL_YEAR, department: 'all', brand: 'all', plant: 'all', status: 'all',
-  })
+  const today = localISODate()
+  const thisFY = currentFiscalYear()
+  const [filters, setFilters] = useState(() => ({
+    fy: thisFY, department: ALL, brand: ALL, plant: ALL, status: ALL,
+  }))
   const setFilter = (k, v) => setFilters(f => ({ ...f, [k]: v }))
-  const resetFilters = () => setFilters(f => ({ fy: f.fy, department: 'all', brand: 'all', plant: 'all', status: 'all' }))
+  const resetFilters = () => setFilters(f => ({ fy: f.fy, department: ALL, brand: ALL, plant: ALL, status: ALL }))
 
-  // Plage de mois fiscaux (1 = Déc … 12 = Nov) pour la table « comparaison
-  // annuelle » : les DEUX années sont agrégées sur la même période, ce qui
-  // permet une vraie comparaison « à ce jour » (sinon l'année précédente
-  // complète est comparée à une année courante partielle).
+  // Plage de mois fiscaux (1 = Déc … 12 = Nov) de la table « comparaison
+  // annuelle », appliquée aux DEUX années. L'année en cours est en plus comparée
+  // à date égale (N-1 arrêtée au même jour) — voir metrics.js.
   const [deptCmp, setDeptCmp] = useState({ from: 1, to: 12 })
   const setDeptCmpFrom = v => setDeptCmp(r => ({ from: Number(v), to: Math.max(Number(v), r.to) }))
   const setDeptCmpTo   = v => setDeptCmp(r => ({ from: Math.min(Number(v), r.from), to: Number(v) }))
-  const now = new Date()
-  const currentFiscalMonth = getFiscalMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`) || 12
+  const todayFM = currentFiscalMonth()
   const cmpFull = deptCmp.from === 1 && deptCmp.to === 12
-  const cmpYtdActive = deptCmp.from === 1 && deptCmp.to === currentFiscalMonth && currentFiscalMonth !== 12
-  const toggleCmpYtd = () => setDeptCmp(cmpYtdActive ? { from: 1, to: 12 } : { from: 1, to: currentFiscalMonth })
+  const cmpYtdActive = deptCmp.from === 1 && deptCmp.to === todayFM && todayFM !== 12
+  const toggleCmpYtd = () => setDeptCmp(cmpYtdActive ? { from: 1, to: 12 } : { from: 1, to: todayFM })
   const fmShort = f => (FISCAL_MONTH_ORDER.find(m => m.fiscal === Number(f)) || {}).nameShort || String(f)
 
-  const { data: currentYearTickets, isLoading: loadingCurrent } = useQuery({
+  // Occurrences + lignes d'une année dans UNE requête (cf. fetchDashboardYear) :
+  // plus de chiffres calculés sur l'en-tête pendant que les lignes chargent.
+  // Clé sous ['tickets'] : toute invalidation des occurrences (fiche, liste,
+  // création) rafraîchit aussi le tableau de bord.
+  const curQ = useQuery({
     queryKey: ['tickets', 'dashboard', filters.fy],
-    queryFn: () => ticketApi.list({ fiscal_year: filters.fy }).then(r => r.data.tickets),
-    staleTime: 10 * 60 * 1000,
-    keepPreviousData: true,
+    queryFn: () => fetchDashboardYear(filters.fy, inDashboardScope),
+    ...LIVE_QUERY,
   })
-
-  const { data: prevYearTickets } = useQuery({
+  const prevQ = useQuery({
     queryKey: ['tickets', 'dashboard', filters.fy - 1],
-    queryFn: () => ticketApi.list({ fiscal_year: filters.fy - 1 }).then(r => r.data.tickets),
-    staleTime: 10 * 60 * 1000,
-    keepPreviousData: true,
+    queryFn: () => fetchDashboardYear(filters.fy - 1, inDashboardScope),
+    ...LIVE_QUERY,
   })
-
-  // Per-line rows for the current & previous fiscal year — costs are aggregated
-  // from these (occurrence_lines), not the occurrence-level fields.
-  const curIds  = (currentYearTickets || []).filter(inDashboardScope).map(t => t.id)
-  const prevIds = (prevYearTickets    || []).filter(inDashboardScope).map(t => t.id)
-  const { data: curLinesRaw } = useQuery({
-    queryKey: ['dashboard-lines', curIds],
-    queryFn: () => fetchOccurrenceLines(curIds),
-    enabled: curIds.length > 0,
-    staleTime: 10 * 60 * 1000,
-    keepPreviousData: true,
-  })
-  const { data: prevLinesRaw } = useQuery({
-    queryKey: ['dashboard-lines', prevIds],
-    queryFn: () => fetchOccurrenceLines(prevIds),
-    enabled: prevIds.length > 0,
-    staleTime: 10 * 60 * 1000,
-    keepPreviousData: true,
-  })
-
-  // Revenus mensuels (éditables via Référentiels › Revenus).
-  const { data: revenueRows } = useQuery({
+  const revQ = useQuery({
     queryKey: ['monthly-revenue'],
     queryFn: revenueApi.all,
-    staleTime: 10 * 60 * 1000,
+    ...LIVE_QUERY,
   })
 
-  if (loadingCurrent && !currentYearTickets) return (
-    <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
-  )
-
-  const rawTickets = (currentYearTickets || []).filter(inDashboardScope)
-  const rawPrev    = (prevYearTickets    || []).filter(inDashboardScope)
-
-  // Filter option lists (from the unfiltered year so they never disappear)
-  const uniq = (arr, key) => [...new Set(arr.map(t => t[key]).filter(Boolean))].sort()
-
-  // Département ET usine d'une occurrence : ceux de ses LIGNES, avec repli sur
-  // l'en-tête pour une ligne non renseignée — exactement getDepts()/getPlants()
-  // de la liste des occurrences, et les unités de la revue hebdo. Indispensable :
-  // la classification vit sur les lignes depuis 2026-06-25 et la grande majorité
-  // des occurrences n'a AUCUN département/usine au niveau en-tête. Filtrer sur
-  // tk.department revenait donc à ignorer presque toutes les occurrences
-  // classées (ex. « Ext. Sales » : 3 occurrences vues au lieu de 8) ; filtrer les
-  // compteurs sur tk.plant tout en valorisant les coûts au niveau ligne faisait
-  // diverger le nombre d'occurrences et le coût d'une même usine.
-  const lineValuesByOcc = { department: {}, plant: {} }
-  ;[...(curLinesRaw || []), ...(prevLinesRaw || [])].forEach(l => {
-    for (const key of ['department', 'plant']) {
-      (lineValuesByOcc[key][l.occurrence_id] = lineValuesByOcc[key][l.occurrence_id] || []).push(l[key] || null)
-    }
-  })
-  // « (Non défini) » : valeur de filtre pour isoler le coût/les occurrences sans
-  // département (ou sans usine) — elle correspond à la part « (Non défini) » du
-  // camembert et du graphique par usine. Sans elle, ce coût n'était isolable par
-  // aucune valeur du filtre. Une valeur est non définie quand ni la ligne ni
-  // l'occurrence ne la porte.
-  const NO_DEPT = t('dashboard.unclassified')
-  // Une ligne qui reste non classifiée met « (Non défini) » dans l'ensemble :
-  // une occurrence partiellement classée relève à la fois de ses départements
-  // et de « (Non défini) ». Sans ça, le coût (qui vit sur la LIGNE) et le
-  // nombre d'occurrences divergeaient pour cette valeur de filtre : FY2026,
-  // filtre « (Non défini) » → 45 120 $ mais 15 occurrences seulement, les
-  // 35 287 $ portés par des lignes non classées d'occurrences classées
-  // n'étant rattachés à aucune occurrence affichable.
-  const occValues = (tk, key) => {
-    const lineVals = lineValuesByOcc[key][tk.id]
-    const source = lineVals?.length ? lineVals.map(v => v || tk[key]) : [tk[key]]
-    return [...new Set(source.map(v => v || NO_DEPT))]
-  }
-  const occDepts  = (tk) => occValues(tk, 'department')
-  const occPlants = (tk) => occValues(tk, 'plant')
-
-  const derivedOptions = (getter) => {
-    const all = new Set()
-    rawTickets.forEach(tk => getter(tk).forEach(v => all.add(v)))
-    const hasNone = all.delete(NO_DEPT)
-    const sorted = [...all].sort()
-    return hasNone ? [NO_DEPT, ...sorted] : sorted
-  }
-  const deptOptions   = derivedOptions(occDepts)
-  const plantOptions  = derivedOptions(occPlants)
-  const brandOptions  = uniq(rawTickets, 'brand')
-  const statusOptions = STATUS_ORDER.filter(s => rawTickets.some(t => t.status === s))
-  // Par valeur (pour les unités de coût, qui portent déjà dépt/usine de leur ligne)…
-  const valMatch  = (sel, v) => sel === 'all' || v === sel || (sel === NO_DEPT && !v)
-  const deptMatch  = (dep) => valMatch(filters.department, dep)
-  const plantMatch = (p)   => valMatch(filters.plant, p)
-  // …et par occurrence (pour les compteurs), qui peut relever de plusieurs valeurs.
-  const occMatch = (sel, vs) => sel === 'all' || vs.includes(sel)
-
-  const match = (tk) =>
-    occMatch(filters.department, occDepts(tk)) &&
-    (filters.brand      === 'all' || tk.brand      === filters.brand) &&
-    occMatch(filters.plant, occPlants(tk)) &&
-    (filters.status     === 'all' || tk.status     === filters.status)
-
-  const tickets     = rawTickets.filter(match)
-  const prevTickets = rawPrev.filter(match)
-  const activeCount = ['department', 'brand', 'plant', 'status'].filter(k => filters[k] !== 'all').length
-
-  // Revenus par mois fiscal, pour l'année courante et la précédente. Les lignes
-  // sont ventilées par usine (plant NULL = totaux non ventilés) : on somme.
-  // Avec un filtre usine actif, seul le revenu de cette usine compte — un mois
-  // sans revenu pour cette usine disparaît du graphique « SC Cost % ».
-  const revByFY = {}
-  ;(revenueRows || []).forEach(r => {
-    // « (Non défini) » = les revenus non ventilés (plant NULL), en regard du coût
-    // dont l'usine n'est renseignée ni sur la ligne ni sur l'occurrence.
-    if (filters.plant !== 'all' && (filters.plant === NO_DEPT ? r.plant != null : r.plant !== filters.plant)) return
-    const m = (revByFY[r.fiscal_year] = revByFY[r.fiscal_year] || {})
-    m[r.fiscal_month] = (m[r.fiscal_month] || 0) + (Number(r.revenue) || 0)
-  })
-  const revenueByFM     = revByFY[filters.fy]     || {}
-  const prevRevenueByFM = revByFY[filters.fy - 1] || {}
-  const revenueAvailable = Object.values(revenueByFM).some(v => v > 0)
-
-  // ── Cost units (per line) ──────────────────────────────────
-  // Le coût vient des lignes (occurrence_lines). Chaque ligne devient une
-  // « unité de coût » portant sa valeur/dépt/usine/catégorie + les attributs de
-  // l'occurrence parente (mois fiscal, marque, statut, client). Repli sur le
-  // coût au niveau occurrence pour les occurrences sans ligne (comme la liste).
-  const groupByOcc = (rows) => {
-    const m = {}
-    ;(rows || []).forEach(l => { (m[l.occurrence_id] = m[l.occurrence_id] || []).push(l) })
-    return m
-  }
-  const curByOcc  = groupByOcc(curLinesRaw)
-  const prevByOcc = groupByOcc(prevLinesRaw)
-  const buildUnits = (occs, byOcc) => {
-    const units = []
-    occs.forEach(tk => {
-      const ls = byOcc[tk.id] || []
-      const parent = { fiscal_month: tk.fiscal_month, brand: tk.brand, status: tk.status, ship_to: tk.ship_to, occId: tk.id }
-      // Détail par ligne SEULEMENT si les lignes portent un coût saisi, sinon repli
-      // sur le coût + dépt/usine/catégorie au niveau occurrence — exactement comme
-      // la liste (getCost). Sans ça, les occurrences dont le coût est au niveau
-      // occurrence (lignes non chiffrées) comptaient pour $0 et le total s'effondrait.
-      // Le test porte sur la PRÉSENCE d'un coût, pas sur « > 0 » : depuis le crédit
-      // fournisseur, une ligne chiffrée peut nettoyer à zéro ou en négatif, et un
-      // test « > 0 » retomberait à tort sur l'en-tête en ignorant le crédit.
-      if (ls.some(l => l.cost_approx != null)) {
-        // Une ligne non classée hérite de la classification de l'occurrence
-        // (sinon son coût tomberait dans « non défini » alors que l'occurrence
-        // a bien un département) — sans ça, le détail ne totalise pas le KPI.
-        ls.forEach(l => units.push({ cost: Number(l.cost_approx || 0),
-          department: l.department || tk.department || null,
-          plant: l.plant || tk.plant || null,
-          categories: l.categories || tk.categories || null, ...parent }))
-      } else {
-        units.push({ cost: Number(tk.cost_approx || 0),
-          department: tk.department || null, plant: tk.plant || null, categories: tk.categories || null, ...parent })
-      }
+  // Prêt quand l'année affichée est chargée et que N-1 et les revenus sont soit
+  // chargés soit en erreur (la page s'affiche alors sans comparaison / sans SC %).
+  const ready = !!curQ.data && (!!prevQ.data || prevQ.isError) && (!!revQ.data || revQ.isError)
+  const d = useMemo(() => {
+    if (!ready) return null
+    return computeDashboard({
+      cur: curQ.data,
+      prev: prevQ.data || null,
+      revenueRows: revQ.data || null,
+      filters, today, cmpRange: deptCmp,
+      labels: { none: t('dashboard.unclassified'), others: t('dashboard.others') },
     })
-    return units
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, curQ.data, prevQ.data, revQ.data, filters, today, deptCmp, i18n.language])
+
+  // Un filtre dont la valeur n'existe pas dans l'année choisie est remis à « tous ».
+  useEffect(() => {
+    if (!d) return
+    const next = sanitizeFilters(filters, d.options)
+    if (['department', 'plant', 'brand', 'status'].some(k => next[k] !== filters[k])) setFilters(next)
+  }, [d, filters])
+
+  const refreshAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['tickets', 'dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['monthly-revenue'] })
   }
-  // Coût : dépt/usine filtrés au niveau LIGNE ; marque/statut au niveau occurrence.
-  const unitMatch = (u) =>
-    deptMatch(u.department) &&
-    (filters.brand      === 'all' || u.brand      === filters.brand) &&
-    plantMatch(u.plant) &&
-    (filters.status     === 'all' || u.status     === filters.status)
-  const costUnits = buildUnits(rawTickets, curByOcc).filter(unitMatch)
-  const prevUnits = buildUnits(rawPrev,    prevByOcc).filter(unitMatch)
+  const fetching = curQ.isFetching || prevQ.isFetching || revQ.isFetching
+  const updatedAt = Math.min(...[curQ.dataUpdatedAt, prevQ.dataUpdatedAt, revQ.dataUpdatedAt].filter(Boolean))
+  // Erreur d'actualisation alors que des données sont affichées : on garde les
+  // chiffres, mais on dit de quand ils datent.
+  const refreshFailed = !!curQ.data && (curQ.isRefetchError || prevQ.isRefetchError || revQ.isRefetchError)
+  // N-1 jamais chargée : la page s'affiche sans comparaison, et le dit (sinon
+  // les barres N-1 vides se liraient « 0 événement l'an dernier »).
+  const prevFailed = prevQ.isError && !prevQ.data
 
-  // Coût par occurrence (tableau « récentes ») = somme de ses lignes, repli sur le header.
-  // Clé absente = aucune ligne chiffrée → repli sur l'en-tête. Un total nul ou
-  // négatif (crédit fournisseur ≥ coûts) reste une valeur légitime.
-  const occLineCost = {}
-  ;(curLinesRaw || []).forEach(l => {
-    if (l.cost_approx == null) return
-    occLineCost[l.occurrence_id] = (occLineCost[l.occurrence_id] || 0) + Number(l.cost_approx)
-  })
-  const getTicketCost = (tk) => (occLineCost[tk.id] !== undefined ? occLineCost[tk.id] : Number(tk.cost_approx || 0))
-
-  // ── KPIs ───────────────────────────────────────────────────
-  const totalCost = costUnits.reduce((s, u) => s + u.cost, 0)
-  const scCost    = costUnits.filter(u => u.department !== 'Client').reduce((s, u) => s + u.cost, 0)
-  const open      = tickets.filter(tk => !['completed', 'cancelled'].includes(tk.status)).length
-  const completed = tickets.filter(tk => tk.status === 'completed').length
-  const completionPct = tickets.length > 0 ? Math.round(completed / tickets.length * 100) : 0
-
-  const prevTotalCost = prevUnits.reduce((s, u) => s + u.cost, 0)
-  const prevCompletionPct = prevTickets.length > 0
-    ? Math.round(prevTickets.filter(tk => tk.status === 'completed').length / prevTickets.length * 100) : 0
-
-  const vsLabel = `vs FY${filters.fy - 1}`
-  const pctTrend = (cur, prev, lowerIsBetter) => {
-    if (!prev) return null
-    const diff = cur - prev
-    const pct  = Math.round(Math.abs(diff) / prev * 100)
-    return { label: `${diff >= 0 ? '+' : '−'}${pct}% ${vsLabel}`, positive: lowerIsBetter ? diff <= 0 : diff >= 0 }
-  }
-  const ticketTrend = pctTrend(tickets.length, prevTickets.length, true)
-  const costTrend   = pctTrend(totalCost, prevTotalCost, true)
-  const completionTrend = prevCompletionPct
-    ? { label: `${completionPct - prevCompletionPct >= 0 ? '+' : '−'}${Math.abs(completionPct - prevCompletionPct)}% ${vsLabel}`,
-        positive: completionPct - prevCompletionPct >= 0 }
-    : null
-
-  const ytdRevenue     = Object.values(revenueByFM).reduce((s, v) => s + v, 0)
-  const ytdPct         = ytdRevenue > 0 ? scCost / ytdRevenue * 100 : null
-  const aboveTolerance = ytdPct != null && ytdPct > 0.3
-
-  // ── Per-month series (charts + sparklines) ─────────────────
-  const monthCount = fiscal => tickets.filter(t => t.fiscal_month === fiscal).length
-  const monthCost  = fiscal => costUnits.filter(u => u.fiscal_month === fiscal).reduce((s, u) => s + u.cost, 0)
-  const monthDone  = fiscal => tickets.filter(t => t.fiscal_month === fiscal && t.status === 'completed').length
-
-  const sparkCounts = FISCAL_MONTH_ORDER.map(m => monthCount(m.fiscal))
-  const sparkCost   = FISCAL_MONTH_ORDER.map(m => Math.round(monthCost(m.fiscal)))
-  const sparkDone   = FISCAL_MONTH_ORDER.map(m => monthDone(m.fiscal))
-
-  // SC cost as % of revenue — current FY (dark) vs previous FY (pale), side by side.
-  // Client is excluded from the numerator. Revenue is per fiscal month (table
-  // monthly_revenue). A month shows only if it has a revenue > 0 → renseigner un
-  // mois le fait apparaître. La barre pâle (année N-1) utilise le revenu de N-1
-  // s'il existe, sinon celui de l'année courante en repli.
-  const scMonthCost = (units, fiscal) => units
-    .filter(u => u.fiscal_month === fiscal && u.department !== 'Client')
-    .reduce((sum, u) => sum + u.cost, 0)
-  const scPctData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
-    const revenue     = revenueByFM[fiscal] || 0
-    const prevRevenue = prevRevenueByFM[fiscal] || revenue
-    const pct     = revenue > 0 ? +(scMonthCost(costUnits, fiscal) / revenue * 100).toFixed(3) : null
-    const prevPct = prevRevenue > 0 ? +(scMonthCost(prevUnits, fiscal) / prevRevenue * 100).toFixed(3) : null
-    return { name: nameShort, pct, prevPct }
-  }).filter(d => d.pct !== null)
-  const sparkScPct = scPctData.map(d => d.pct)
-
-  const eventsByMonthData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => ({
-    name:    nameShort,
-    current: tickets.filter(t => t.fiscal_month === fiscal).length || null,
-    prev:    prevTickets.filter(t => t.fiscal_month === fiscal).length || null,
-  }))
-
-  const byCount = (map) => Object.entries(map).sort((a, b) => b[1] - a[1])
-  const clientKey = s => (s.length > 28 ? s.slice(0, 28) + '…' : s)
-  // Coûts par dépt / usine / client : agrégés depuis les unités de coût (par ligne).
-  // Le coût sans département/usine va dans un bucket « non défini » pour que le
-  // détail totalise EXACTEMENT le KPI (rien n'est perdu). Client garde ship_to.
-  const UNCLASSIFIED = t('dashboard.unclassified')
-  const deptCostMap = {}, plantCostMap = {}, clientCostMap = {}
-  costUnits.forEach(u => {
-    // « !== 0 » et non « > 0 » : une unité au net négatif (crédit fournisseur
-    // supérieur aux coûts) doit rester dans le détail, sinon la ventilation ne
-    // totalise plus exactement le KPI.
-    if (u.cost !== 0) {
-      deptCostMap[u.department || UNCLASSIFIED]  = (deptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
-      plantCostMap[u.plant || UNCLASSIFIED]      = (plantCostMap[u.plant || UNCLASSIFIED] || 0) + u.cost
-      if (u.ship_to) clientCostMap[clientKey(u.ship_to)] = (clientCostMap[clientKey(u.ship_to)] || 0) + u.cost
-    }
-  })
-  // Comptes (catégorie, nb par client) : restent au niveau occurrence.
-  const catMap = {}, clientMap = {}
-  tickets.forEach(tk => {
-    if (tk.categories) catMap[tk.categories] = (catMap[tk.categories] || 0) + 1
-    if (tk.ship_to)    clientMap[clientKey(tk.ship_to)] = (clientMap[clientKey(tk.ship_to)] || 0) + 1
-  })
-  const deptCostData  = byCount(deptCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
-  // Total « année fiscale entière » pour le camembert et son export Excel —
-  // indépendant de la plage de mois de la table de comparaison.
-  const deptPieTotal  = deptCostData.reduce((s, d) => s + d.cost, 0)
-  const plantCostData = byCount(plantCostMap).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
-  const catData       = byCount(catMap).map(([name, count]) => ({ name, count }))
-  const topClientsData = byCount(clientMap).slice(0, 10).map(([name, count]) => ({ name, count }))
-  const topClientsCostData = byCount(clientCostMap).slice(0, 10).map(([name, cost]) => ({ name, cost: Math.round(cost) }))
-
-  // Cost by department — current fiscal year vs previous (respects active filters).
-  // Borné à la plage de mois fiscaux deptCmp, appliquée aux DEUX années pour une
-  // comparaison à périmètre égal. Plage pleine = aucun filtre de mois, afin de ne
-  // pas exclure les unités sans mois fiscal (comportement historique).
-  const inCmpRange = u => cmpFull || (u.fiscal_month >= deptCmp.from && u.fiscal_month <= deptCmp.to)
-  const cmpDeptCostMap = {}, prevDeptCostMap = {}
-  costUnits.forEach(u => {
-    if (u.cost !== 0 && inCmpRange(u)) cmpDeptCostMap[u.department || UNCLASSIFIED] = (cmpDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
-  })
-  prevUnits.forEach(u => {
-    if (u.cost !== 0 && inCmpRange(u)) prevDeptCostMap[u.department || UNCLASSIFIED] = (prevDeptCostMap[u.department || UNCLASSIFIED] || 0) + u.cost
-  })
-  const deptCompareData = [...new Set([...Object.keys(cmpDeptCostMap), ...Object.keys(prevDeptCostMap)])]
-    .map(name => {
-      const cur = Math.round(cmpDeptCostMap[name] || 0)
-      const prev = Math.round(prevDeptCostMap[name] || 0)
-      const gap = cur - prev
-      const pct = prev > 0 ? Math.round(gap / prev * 100) : null
-      return { name, cur, prev, gap, pct }
-    })
-    .sort((a, b) => b.cur - a.cur)
-  const deptCompareTotals = deptCompareData.reduce((acc, d) => {
-    acc.cur += d.cur; acc.prev += d.prev; return acc
-  }, { cur: 0, prev: 0 })
-  deptCompareTotals.gap = deptCompareTotals.cur - deptCompareTotals.prev
-  deptCompareTotals.pct = deptCompareTotals.prev > 0
-    ? Math.round(deptCompareTotals.gap / deptCompareTotals.prev * 100) : null
-
-  const brands = brandOptions
-  const brandTrendData = FISCAL_MONTH_ORDER.map(({ fiscal, nameShort }) => {
-    const row = { name: nameShort }
-    let total = 0
-    brands.forEach(b => {
-      const n = tickets.filter(t => t.fiscal_month === fiscal && t.brand === b).length
-      row[b] = n || null
-      total += n
-    })
-    row.total = total || null
-    return row
-  }).filter(row => brands.some(b => row[b]))
-
-  const statusData = STATUS_ORDER
-    .map(key => ({ key, name: t(`status.${key}`), value: tickets.filter(t => t.status === key).length }))
-    .filter(d => d.value > 0)
+  const activeCount = ['department', 'brand', 'plant', 'status'].filter(k => filters[k] !== ALL).length
+  const fyOptions = [0, 1, 2].map(i => ({ value: String(thisFY - i), label: `FY${thisFY - i}` }))
 
   // chart helpers
   const axisColor = dark ? '#94A3B8' : '#64748B'
   const gridColor = dark ? '#1F2937' : '#EEF2F7'
   const palePrev  = dark ? '#334155' : '#CBD5E1'
   const pctLabel  = v => (v ? `${Number(v).toFixed(2)}%` : '')
+  const tip   = (fmt) => <Tooltip cursor={{ fill: dark ? '#ffffff08' : '#00000006' }} content={(p) => <ChartTooltip {...p} dark={dark} fmt={fmt} />} />
+  const NoData = () => (
+    <div className="flex flex-col items-center justify-center text-gray-300 dark:text-gray-600" style={{ height: 180 }}>
+      <i className="ti ti-chart-bar-off text-3xl mb-2" aria-hidden="true" />
+      <span className="text-xs">{t('dashboard.no_data')}</span>
+    </div>
+  )
+
+  const toolbar = (
+    <div className="flex items-center gap-2 flex-wrap px-5 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] flex-shrink-0 z-10">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 pr-1">
+        <i className="ti ti-adjustments-horizontal text-base" aria-hidden="true" />
+        {t('dashboard.filters')}
+      </div>
+      <FilterSelect icon="ti-calendar" includeAll={false} highlight={false}
+        value={String(filters.fy)} onChange={v => setFilter('fy', Number(v))} options={fyOptions} />
+      {d && <>
+        <FilterSelect icon="ti-building-factory" value={filters.plant} onChange={v => setFilter('plant', v)} options={d.options.plants} allLabel={t('ticket.plant')} />
+        <FilterSelect icon="ti-tag" value={filters.brand} onChange={v => setFilter('brand', v)} options={d.options.brands} allLabel={t('ticket.brand')} />
+        <FilterSelect icon="ti-building" value={filters.department} onChange={v => setFilter('department', v)} options={d.options.departments} allLabel={t('ticket.department')} />
+        <FilterSelect icon="ti-flag" value={filters.status} onChange={v => setFilter('status', v)}
+          options={d.options.statuses.map(s => ({ value: s, label: t(`status.${s}`) }))} allLabel={t('ticket.status')} />
+      </>}
+      <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
+        {d && <span>{t('dashboard.showing_of', { n: d.kpi.occurrences, total: d.kpi.inScopeOccurrences })}</span>}
+        {activeCount > 0 && (
+          <button onClick={resetFilters} className="btn-ghost text-xs py-1 px-2.5 inline-flex items-center gap-1">
+            <i className="ti ti-x text-xs" aria-hidden="true" /> {t('dashboard.clear')}
+          </button>
+        )}
+        {d && prevFailed && (
+          <span className="text-amber-600 dark:text-amber-400">{t('dashboard.prev_unavailable', { fy: filters.fy - 1 })}</span>
+        )}
+        {d && updatedAt > 0 && Number.isFinite(updatedAt) && (
+          <span className={refreshFailed ? 'text-amber-600 dark:text-amber-400' : ''}>
+            {refreshFailed ? t('dashboard.refresh_error', { time: timeOf(updatedAt) }) : t('dashboard.updated_at', { time: timeOf(updatedAt) })}
+          </span>
+        )}
+        <button onClick={refreshAll} disabled={fetching} title={t('dashboard.refresh')}
+          className="btn-ghost text-xs py-1 px-2 inline-flex items-center gap-1 disabled:opacity-60">
+          <i className={`ti ti-refresh text-sm ${fetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <span className="hidden sm:inline">{t('dashboard.refresh')}</span>
+        </button>
+      </div>
+    </div>
+  )
+
+  const header = <PageHeader title={t('nav.dashboard')} subtitle={`FY${filters.fy} — ${t('dashboard.overview_subtitle')}`} />
+
+  // Échec du chargement initial : jamais un tableau de bord vide présenté comme
+  // une année parfaite (0 occurrence, 0 $, « ✓ En dessous limite »).
+  if (!curQ.data && curQ.isError) return (
+    <>
+      {header}{toolbar}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <i className="ti ti-alert-triangle text-3xl text-red-500" aria-hidden="true" />
+        <div className="text-sm text-gray-700 dark:text-gray-300">{t('dashboard.load_error')}</div>
+        <div className="text-xs text-gray-400 max-w-md break-words">{curQ.error?.message}</div>
+        <button className="btn-primary text-sm" onClick={() => curQ.refetch()}>{t('dashboard.retry')}</button>
+      </div>
+    </>
+  )
+  if (!d) return (
+    <>
+      {header}{toolbar}
+      <div className="flex-1 flex items-center justify-center"><Spinner size="lg" /></div>
+    </>
+  )
+
+  const { kpi, trends, months, sc, breakdowns, deptCompare, recent, comparison } = d
+  const prevFY = filters.fy - 1
+  const hasPrev = !!prevQ.data
+  const cutoff = comparison.cutoff
+  const vsLabel = cutoff ? t('dashboard.vs_to_date', { fy: prevFY }) : `vs FY${prevFY}`
+  const noCmpTitle = comparison.reason === 'coverage'
+    ? t('dashboard.no_comparison', { fy: prevFY })
+    : t('dashboard.comparison_unavailable')
+  const trendBadge = (tr, lowerIsBetter) => {
+    if (!comparison.available) return { label: t('dashboard.no_trend'), neutral: true, title: noCmpTitle }
+    if (!tr) return null
+    const better = lowerIsBetter ? tr.pct <= 0 : tr.pct >= 0
+    return { label: `${signedPct(tr.pct)} ${vsLabel}`, positive: better }
+  }
+  const completionBadge = trends.completionPts
+    ? { label: `${trends.completionPts.pts >= 0 ? '+' : '−'}${Math.abs(Math.round(trends.completionPts.pts))} pts ${vsLabel}`,
+        positive: trends.completionPts.pts >= 0 }
+    : null
+
+  const inPeriod = months.filter(m => m.inPeriod)
+  const partialMonth = months.find(m => m.partial)
+  const sparkEvents = inPeriod.map(m => m.events)
+  const sparkCost   = inPeriod.map(m => Math.round(m.cost))
+  const sparkDone   = inPeriod.map(m => m.done)
+  const sparkScPct  = sc.months.map(m => m.pct)
+  const eventsByMonthData = months.map(m => ({
+    name: m.partial ? `${m.name}*` : m.name,
+    current: m.events || null,
+    prev: m.prevEvents || null,
+  }))
+  const scPctData = sc.months.map(m => ({ name: m.partial ? `${m.name}*` : m.name, pct: m.pct, prevPct: m.prevPct }))
+  const coveredRange = sc.coveredMonths.length
+    ? `${fmShort(sc.coveredMonths[0])}–${fmShort(sc.coveredMonths[sc.coveredMonths.length - 1])}` : ''
+
+  const deptCostData = breakdowns.deptCost
+  const plantCostData = breakdowns.plantCost
+  const catData = breakdowns.categoryEvents
+  const topClientsData = breakdowns.topCustomersEvents
+  const topClientsCostData = breakdowns.topCustomersCost
+  const statusData = breakdowns.status.map(s => ({ ...s, name: t(`status.${s.key}`) }))
+  const brandSeries = breakdowns.brand.series
+  const brandTrendData = breakdowns.brand.rows
+  // Σ des départements = coût total exactement (aucun arrondi avant la somme).
+  const deptPieTotal = deptCostData.reduce((s, x) => s + x.cost, 0)
+  // Départements au net négatif (crédit > coûts) : sans surface dans le
+  // camembert, nommés dans son sous-titre et le titre de l'export pour que les
+  // parts dessinées et le total annoncé se réconcilient.
+  const pieExcluded = deptCostData.filter(x => x.cost < 0)
+  const pieExcludedNote = pieExcluded.length
+    ? t('dashboard.pie_excluded', { list: pieExcluded.map(x => `${x.name} ${money(x.cost)}`).join(', ') }) : ''
+  const partialNote = partialMonth ? t('dashboard.partial_month', { month: partialMonth.name, date: today }) : ''
+
+  // Résumé des filtres actifs (sous-titres, export Excel) : un chiffre exporté
+  // ou capturé doit dire sur quoi il porte.
+  const optionLabel = (list, v) => (list.find(o => o.value === v) || {}).label || v
+  const filterSummary = [
+    filters.plant !== ALL && `${t('ticket.plant')} ${optionLabel(d.options.plants, filters.plant)}`,
+    filters.brand !== ALL && `${t('ticket.brand')} ${optionLabel(d.options.brands, filters.brand)}`,
+    filters.department !== ALL && `${t('ticket.department')} ${optionLabel(d.options.departments, filters.department)}`,
+    filters.status !== ALL && t(`status.${filters.status}`),
+  ].filter(Boolean).join(' · ')
+
+  const deptHeight  = Math.max(220, deptCostData.length * 34)
+  const plantHeight = Math.max(180, plantCostData.length * 34)
+  const catHeight   = Math.max(180, catData.length * 34)
 
   // ── Dept-cost pie: always-on labels with collision-avoided leader lines ──
   // Geometry is fixed so the label y-positions can be de-collided up front, then
   // stacked down each side (Excel-style) instead of piling up near 12 o'clock.
+  // Parts négatives (crédit > coûts) : sans surface dans un camembert, elles
+  // restent dans le total et l'export mais ne sont pas dessinées.
+  const pieData = deptCostData.filter(x => x.cost > 0)
   const PIE_H = 520, PIE_R = 140, PIE_MARGIN_Y = 12
   const PIE_CY = PIE_MARGIN_Y + (PIE_H - 2 * PIE_MARGIN_Y) / 2
   const pieInk = dark ? '#e6edf3' : '#111827'
   const pieLabelLayout = (() => {
     const RAD = Math.PI / 180
-    const total = deptCostData.reduce((s, d) => s + d.cost, 0) || 1
+    const total = pieData.reduce((s, x) => s + x.cost, 0) || 1
     let acc = 0
-    const items = deptCostData.map(d => {
-      const a = -(90 - (acc + d.cost / total / 2) * 360) * RAD   // slice mid-angle (start 12 o'clock, clockwise)
-      acc += d.cost / total
+    const items = pieData.map(x => {
+      const a = -(90 - (acc + x.cost / total / 2) * 360) * RAD   // slice mid-angle (start 12 o'clock, clockwise)
+      acc += x.cost / total
       const cos = Math.cos(a), sin = Math.sin(a)
-      return { name: d.name, value: d.cost, cos, sin, side: cos >= 0 ? 1 : -1,
+      return { name: x.name, value: x.cost, cos, sin, side: cos >= 0 ? 1 : -1,
         idealY: PIE_CY + (PIE_R + 18) * sin, y: 0 }
     })
     const GAP = 15, MIN_Y = 12, MAX_Y = PIE_H - 12
@@ -542,7 +432,7 @@ export default function Dashboard() {
       arr.forEach(it => { it.y = Math.max(it.idealY, prev + GAP); prev = it.y })       // push apart downward
       const over = arr.length ? arr[arr.length - 1].y - MAX_Y : 0
       if (over > 0) arr.forEach(it => { it.y -= over })                                // pull back if past bottom
-      if (arr.length && arr[0].y < MIN_Y) { const d = MIN_Y - arr[0].y; arr.forEach(it => { it.y += d }) }
+      if (arr.length && arr[0].y < MIN_Y) { const dd = MIN_Y - arr[0].y; arr.forEach(it => { it.y += dd }) }
     })
     return Object.fromEntries(items.map(it => [it.name, it]))
   })()
@@ -565,9 +455,7 @@ export default function Dashboard() {
   }
 
   // Export the department pie AS AN IMAGE embedded in an .xlsx (not a table).
-  // The chart SVG is rasterized to PNG, then embedded via exceljs (SheetJS can't
-  // embed images). exceljs is dynamically imported so it never affects the main
-  // bundle/build and only loads when the button is clicked.
+  // The chart SVG is rasterized to PNG, then embedded via buildXlsxWithImage.
   const exportDeptCosts = async () => {
     try {
       const svgEl = deptPieRef.current?.querySelector('svg')
@@ -599,12 +487,14 @@ export default function Dashboard() {
 
       const bytes = buildXlsxWithImage({
         sheetName: `Dept FY${filters.fy}`,
-        title: `Coût par département — FY${filters.fy} — ${money(deptPieTotal)}`,
+        title: t('dashboard.export_title', {
+          fy: filters.fy, filters: filterSummary ? ` — ${filterSummary}` : '', total: money(deptPieTotal),
+        }) + (pieExcludedNote ? ` (${pieExcludedNote})` : ''),
         pngBase64, imgWidth: w, imgHeight: h,
       })
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
       const a = document.createElement('a')
-      a.href = url; a.download = `cout-par-departement-FY${filters.fy}.xlsx`; a.click()
+      a.href = url; a.download = `${t('dashboard.export_file')}-FY${filters.fy}.xlsx`; a.click()
       URL.revokeObjectURL(url)
       toast.success(t('common.save'))
     } catch (e) {
@@ -612,67 +502,50 @@ export default function Dashboard() {
       toast.error(t('common.error'))
     }
   }
-  const tip   = (fmt) => <Tooltip cursor={{ fill: dark ? '#ffffff08' : '#00000006' }} content={(p) => <ChartTooltip {...p} dark={dark} fmt={fmt} />} />
-  const NoData = () => (
-    <div className="flex flex-col items-center justify-center text-gray-300 dark:text-gray-600" style={{ height: 180 }}>
-      <i className="ti ti-chart-bar-off text-3xl mb-2" aria-hidden="true" />
-      <span className="text-xs">{t('dashboard.no_data')}</span>
-    </div>
-  )
-  const deptHeight  = Math.max(220, deptCostData.length * 34)
-  const plantHeight = Math.max(180, plantCostData.length * 34)
-  const catHeight   = Math.max(180, catData.length * 34)
+
+  // SC % : verdict de tolérance seulement pour l'ensemble (ou une usine).
+  const scSub = sc.ytdPct == null
+    ? (sc.revenueAvailable ? t('dashboard.revenue_missing') : t('dashboard.revenue_unavailable'))
+    : sc.verdict
+      ? `${t('dashboard.tolerance')} ${TOLERANCE_PCT.toFixed(2)}% · ${coveredRange}`
+      : t('dashboard.sc_filtered')
+  const scUncovered = sc.ytdPct != null && Math.round(sc.uncoveredScCost) !== 0
+    ? t('dashboard.sc_uncovered', { amount: money(sc.uncoveredScCost) }) : null
+  const cmpRangeLabel = cmpFull ? '' : ` · ${fmShort(deptCmp.from)}–${fmShort(deptCmp.to)}`
+  const cmpSubtitle = `FY${filters.fy} vs FY${prevFY}${cmpRangeLabel} · ${cutoff ? t('dashboard.to_date', { date: today }) : (cmpFull ? t('dashboard.full_year') : '')}`
 
   return (
     <>
-      <PageHeader title={t('nav.dashboard')} subtitle={`FY${filters.fy} — ${t('dashboard.overview_subtitle')}`} />
+      {header}
       {/* Sticky filter toolbar — lives outside the scroll area so it stays put while charts scroll */}
-      <div className="flex items-center gap-2 flex-wrap px-5 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161B22] flex-shrink-0 z-10">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 pr-1">
-            <i className="ti ti-adjustments-horizontal text-base" aria-hidden="true" />
-            {t('dashboard.filters')}
-          </div>
-          <FilterSelect icon="ti-calendar" includeAll={false} highlight={false}
-            value={String(filters.fy)} onChange={v => setFilter('fy', Number(v))}
-            options={[CURRENT_FISCAL_YEAR, CURRENT_FISCAL_YEAR - 1, CURRENT_FISCAL_YEAR - 2].map(y => String(y))}
-            optionLabel={y => `FY${y}`} />
-          <FilterSelect icon="ti-building-factory" value={filters.plant} onChange={v => setFilter('plant', v)} options={plantOptions} allLabel={t('ticket.plant')} />
-          <FilterSelect icon="ti-tag" value={filters.brand} onChange={v => setFilter('brand', v)} options={brandOptions} allLabel={t('ticket.brand')} />
-          <FilterSelect icon="ti-building" value={filters.department} onChange={v => setFilter('department', v)} options={deptOptions} allLabel={t('ticket.department')} />
-          <FilterSelect icon="ti-flag" value={filters.status} onChange={v => setFilter('status', v)}
-            options={statusOptions} optionLabel={o => t(`status.${o}`)} allLabel={t('ticket.status')} />
-          <div className="ml-auto flex items-center gap-2 text-xs text-gray-400">
-            <span>{t('dashboard.showing_of', { n: tickets.length, total: rawTickets.length })}</span>
-            {activeCount > 0 && (
-              <button onClick={resetFilters} className="btn-ghost text-xs py-1 px-2.5 inline-flex items-center gap-1">
-                <i className="ti ti-x text-xs" aria-hidden="true" /> {t('dashboard.clear')}
-              </button>
-            )}
-          </div>
-      </div>
+      {toolbar}
 
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard icon="ti-clipboard-list" iconBg="#EFF6FF" iconColor="#2563EB"
-            label={t('dashboard.occurrences')} value={tickets.length}
-            sub={`${open} ${t('dashboard.open')}`} trend={ticketTrend}
-            spark={sparkCounts} sparkColor="#2563EB" />
+            label={t('dashboard.events')} value={kpi.events.toLocaleString()}
+            sub={t('dashboard.events_kpi_sub', { occ: kpi.occurrences, open: kpi.open })}
+            trend={trendBadge(trends.events, true)}
+            spark={sparkEvents} sparkColor="#2563EB" />
           <StatCard icon="ti-currency-dollar" iconBg="#FFFBEB" iconColor="#D97706"
-            label={t('dashboard.total_cost_label')} value={money(totalCost)}
-            sub={`SC ${money(scCost)} (excl. Client)`} trend={costTrend}
+            label={t('dashboard.total_cost_label')} value={money(kpi.totalCost)}
+            sub={`SC ${money(kpi.scCost)} (excl. ${SC_EXCLUDED_DEPT})`}
+            sub2={kpi.uncosted ? t('dashboard.uncosted', { count: kpi.uncosted }) : null}
+            trend={trendBadge(trends.cost, true)}
             spark={sparkCost} sparkColor="#D97706" />
           <StatCard icon="ti-chart-line"
-            iconBg={aboveTolerance ? '#FEF2F2' : '#F0FDF4'} iconColor={aboveTolerance ? '#DC2626' : '#16A34A'}
-            label={t('dashboard.sc_cost_ytd')} value={ytdPct != null ? `${ytdPct.toFixed(2)}%` : '—'}
-            sub={ytdPct != null ? `${t('dashboard.tolerance')} 0.30%` : t('dashboard.revenue_note', { fy: CURRENT_FISCAL_YEAR })}
-            subColor="text-gray-400"
-            trend={ytdPct != null ? { label: aboveTolerance ? t('dashboard.above_limit') : t('dashboard.within_limit'), positive: !aboveTolerance } : null}
-            spark={revenueAvailable ? sparkScPct : null} sparkColor={aboveTolerance ? '#DC2626' : '#16A34A'} />
+            iconBg={!sc.verdict || sc.ytdPct == null ? '#F1F5F9' : sc.above ? '#FEF2F2' : '#F0FDF4'}
+            iconColor={!sc.verdict || sc.ytdPct == null ? '#64748B' : sc.above ? '#DC2626' : '#16A34A'}
+            label={t('dashboard.sc_cost_ytd')} value={sc.ytdPct != null ? `${sc.ytdPct.toFixed(2)}%` : '—'}
+            sub={scSub} subColor="text-gray-400" sub2={scUncovered}
+            trend={sc.verdict && sc.ytdPct != null ? { label: sc.above ? t('dashboard.above_limit') : t('dashboard.within_limit'), positive: !sc.above } : null}
+            spark={sparkScPct.length > 1 ? sparkScPct : null} sparkColor={sc.verdict && sc.above ? '#DC2626' : '#16A34A'} />
           <StatCard icon="ti-circle-check" iconBg="#F0FDF4" iconColor="#16A34A"
-            label={t('dashboard.completion_rate')} value={`${completionPct}%`}
-            sub={`${completed} ${t('dashboard.completed')}`} subColor="text-green-500" trend={completionTrend}
+            label={t('dashboard.completion_rate')} value={kpi.completionPct != null ? `${Math.round(kpi.completionPct)}%` : '—'}
+            sub={`${kpi.completed} ${t('dashboard.completed')} / ${kpi.occurrences} occurrences`} subColor="text-green-500"
+            trend={completionBadge}
             spark={sparkDone} sparkColor="#16A34A" />
         </div>
 
@@ -680,7 +553,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <ChartCard icon="ti-chart-line" color="#2563EB"
-              title={t('dashboard.sc_cost_chart')} subtitle={t('dashboard.sc_cost_subtitle')}>
+              title={t('dashboard.sc_cost_chart')}
+              subtitle={sc.verdict ? t('dashboard.sc_cost_subtitle') : t('dashboard.sc_filtered')}>
               {scPctData.length ? (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={scPctData} margin={{ top: 24 }} barCategoryGap="22%">
@@ -694,19 +568,28 @@ export default function Dashboard() {
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={v => `${v.toFixed(1)}%`} tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} domain={[0, 'auto']} />
                     {tip(v => `${Number(v).toFixed(3)}%`)}
-                    <ReferenceLine y={TOLERANCE_PCT * 100} stroke="#EF4444" strokeDasharray="4 4"
-                      label={{ value: '0.3%', position: 'right', fontSize: 10, fill: '#EF4444' }} />
+                    {sc.verdict && (
+                      <ReferenceLine y={TOLERANCE_PCT} stroke="#EF4444" strokeDasharray="4 4"
+                        label={{ value: `${TOLERANCE_PCT}%`, position: 'right', fontSize: 10, fill: '#EF4444' }} />
+                    )}
                     <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="prevPct" name={`FY${filters.fy - 1}`} fill={palePrev} radius={[5, 5, 0, 0]} maxBarSize={40}>
-                      <LabelList dataKey="prevPct" position="top" offset={6} fontSize={9} fill={axisColor} formatter={pctLabel} />
-                    </Bar>
-                    <Bar dataKey="pct" name={`FY${filters.fy}`} radius={[5, 5, 0, 0]} maxBarSize={40}>
-                      {scPctData.map((entry, i) => <Cell key={i} fill={entry.pct > 0.3 ? '#DC2626' : 'url(#gradSc)'} />)}
+                    {hasPrev && (
+                      <Bar dataKey="prevPct" name={`FY${prevFY}`} fill={palePrev} radius={[5, 5, 0, 0]} maxBarSize={40}>
+                        <LabelList dataKey="prevPct" position="top" offset={6} fontSize={9} fill={axisColor} formatter={pctLabel} />
+                      </Bar>
+                    )}
+                    <Bar dataKey="pct" name={`FY${filters.fy}`} fill="#3B82F6" radius={[5, 5, 0, 0]} maxBarSize={40}>
+                      {scPctData.map((entry, i) => <Cell key={i} fill={sc.verdict && entry.pct > TOLERANCE_PCT ? '#DC2626' : 'url(#gradSc)'} />)}
                       <LabelList dataKey="pct" position="top" offset={6} fontSize={9} fontWeight={700} fill={axisColor} formatter={pctLabel} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              ) : <NoData />}
+              ) : (
+                <div className="flex flex-col items-center justify-center text-gray-400 text-xs" style={{ height: 180 }}>
+                  <i className="ti ti-chart-bar-off text-3xl mb-2 text-gray-300 dark:text-gray-600" aria-hidden="true" />
+                  {sc.revenueAvailable ? t('dashboard.revenue_missing') : t('dashboard.revenue_unavailable')}
+                </div>
+              )}
             </ChartCard>
           </div>
 
@@ -717,14 +600,14 @@ export default function Dashboard() {
                   <PieChart>
                     <Pie data={statusData} dataKey="value" nameKey="name" cx="50%" cy="50%"
                       innerRadius={58} outerRadius={88} paddingAngle={2} stroke="none">
-                      {statusData.map(d => <Cell key={d.key} fill={STATUS_COLORS[d.key]} />)}
+                      {statusData.map(s => <Cell key={s.key} fill={STATUS_COLORS[s.key]} />)}
                     </Pie>
                     {tip()}
                     <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-x-0 flex flex-col items-center pointer-events-none" style={{ top: 84 }}>
-                  <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">{tickets.length}</span>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">{kpi.occurrences}</span>
                   <span className="text-[10px] uppercase tracking-wide text-gray-400">{t('dashboard.occurrences')}</span>
                 </div>
               </div>
@@ -735,7 +618,8 @@ export default function Dashboard() {
         {/* Events by month + Brand trend — 2 per row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard icon="ti-calendar-stats" color="#2563EB"
-          title={t('dashboard.events_chart')} subtitle={`FY${filters.fy} vs FY${filters.fy - 1}`}>
+          title={t('dashboard.events_chart')}
+          subtitle={`${hasPrev ? t('dashboard.events_subtitle', { fy: filters.fy, prev: prevFY }) : t('dashboard.events_subtitle_single', { fy: filters.fy })}${partialNote ? ` · ${partialNote}` : ''}`}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={eventsByMonthData} margin={{ top: 22 }} barCategoryGap="20%">
               <CartesianGrid vertical={false} stroke={gridColor} />
@@ -743,9 +627,11 @@ export default function Dashboard() {
               <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
               {tip()}
               <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="prev" name={`FY${filters.fy - 1}`} fill={palePrev} radius={[4, 4, 0, 0]} maxBarSize={30}>
-                <LabelList dataKey="prev" position="top" offset={6} fontSize={9} fill={axisColor} formatter={v => v || ''} />
-              </Bar>
+              {hasPrev && (
+                <Bar dataKey="prev" name={`FY${prevFY}`} fill={palePrev} radius={[4, 4, 0, 0]} maxBarSize={30}>
+                  <LabelList dataKey="prev" position="top" offset={6} fontSize={9} fill={axisColor} formatter={v => v || ''} />
+                </Bar>
+              )}
               <Bar dataKey="current" name={`FY${filters.fy}`} fill="#2563EB" radius={[4, 4, 0, 0]} maxBarSize={30}>
                 <LabelList dataKey="current" position="top" offset={6} fontSize={9} fontWeight={700} fill={axisColor} formatter={v => v || ''} />
               </Bar>
@@ -765,10 +651,11 @@ export default function Dashboard() {
                   domain={[0, dataMax => Math.ceil(dataMax * 1.05)]} />
                 {tip()}
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                {brands.map((brand, i) => (
-                  <Bar key={brand} dataKey={brand} stackId="a" fill={BRAND_COLORS[i % BRAND_COLORS.length]} maxBarSize={46}
-                    radius={i === brands.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}>
-                    {i === brands.length - 1 && (
+                {brandSeries.map((s, i) => (
+                  <Bar key={s.dataKey} dataKey={s.dataKey} name={s.name} stackId="a"
+                    fill={s.dataKey === 'b_others' ? OTHERS_COLOR : BRAND_COLORS[i % BRAND_COLORS.length]} maxBarSize={46}
+                    radius={i === brandSeries.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}>
+                    {i === brandSeries.length - 1 && (
                       <LabelList dataKey="total" position="top" offset={8}
                         fill={axisColor} fontSize={11} fontWeight={700} />
                     )}
@@ -825,9 +712,9 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        {/* Top clients — by occurrences + by cost */}
+        {/* Top clients — by events + by cost */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <ChartCard icon="ti-users" color="#0891B2" title={t('dashboard.top_clients')}>
+          <ChartCard icon="ti-users" color="#0891B2" title={t('dashboard.top_clients')} subtitle={t('dashboard.top_clients_subtitle')}>
             {topClientsData.length ? (
               <ResponsiveContainer width="100%" height={Math.max(220, topClientsData.length * 34)}>
                 <BarChart data={topClientsData} layout="vertical" margin={{ left: 140, right: 24 }}>
@@ -838,9 +725,9 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid horizontal={false} stroke={gridColor} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={140} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={140} tickFormatter={s => truncate(s)} />
                   {tip()}
-                  <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradCyan)" radius={[0, 5, 5, 0]} maxBarSize={24}
+                  <Bar dataKey="count" name={t('dashboard.events')} fill="url(#gradCyan)" radius={[0, 5, 5, 0]} maxBarSize={24}
                     label={{ position: 'right', fontSize: 10, fill: axisColor }} />
                 </BarChart>
               </ResponsiveContainer>
@@ -859,7 +746,7 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid horizontal={false} stroke={gridColor} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={moneyK} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={140} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={140} tickFormatter={s => truncate(s)} />
                   {tip(money)}
                   <Bar dataKey="cost" name={t('ticket.cost')} fill="url(#gradEmerald)" radius={[0, 5, 5, 0]} maxBarSize={24}>
                     <LabelList dataKey="cost" position="right" offset={6} fontSize={10} fill={axisColor} formatter={moneyK} />
@@ -887,7 +774,7 @@ export default function Dashboard() {
                   <XAxis type="number" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} width={110} />
                   {tip()}
-                  <Bar dataKey="count" name={t('dashboard.occurrences')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
+                  <Bar dataKey="count" name={t('dashboard.events')} fill="url(#gradBlue)" radius={[0, 5, 5, 0]} maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <NoData />}
@@ -895,22 +782,22 @@ export default function Dashboard() {
 
           <ChartCard icon="ti-chart-pie" color="#F59E0B"
           title={t('dashboard.by_department')}
-          subtitle={`FY${filters.fy} · ${money(deptPieTotal)}`}
-          right={deptCostData.length ? (
+          subtitle={`FY${filters.fy}${filterSummary ? ` · ${filterSummary}` : ''} · ${money(deptPieTotal)}${pieExcludedNote ? ` · ${pieExcludedNote}` : ''}`}
+          right={pieData.length ? (
             <button onClick={exportDeptCosts}
               className="btn-ghost text-xs py-1 px-2.5 inline-flex items-center gap-1">
               <i className="ti ti-file-spreadsheet text-sm" aria-hidden="true" /> {t('dashboard.export_excel')}
             </button>
           ) : null}>
-          {deptCostData.length ? (
+          {pieData.length ? (
             <div ref={deptPieRef}>
               <ResponsiveContainer width="100%" height={PIE_H}>
                 <PieChart margin={{ top: PIE_MARGIN_Y, right: 120, bottom: PIE_MARGIN_Y, left: 120 }}>
-                  <Pie data={deptCostData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
+                  <Pie data={pieData} dataKey="cost" nameKey="name" cx="50%" cy="50%"
                     outerRadius={PIE_R} paddingAngle={0} startAngle={90} endAngle={-270}
                     stroke={dark ? '#0D1117' : '#ffffff'} strokeWidth={1}
                     labelLine={false} label={renderPieLabel} isAnimationActive={false}>
-                    {deptCostData.map((d, i) => <Cell key={d.name} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
+                    {pieData.map((x, i) => <Cell key={x.key} fill={DEPT_COLORS[i % DEPT_COLORS.length]} />)}
                   </Pie>
                   {tip(money)}
                 </PieChart>
@@ -924,9 +811,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 gap-4">
           <ChartCard icon="ti-table" color="#F59E0B"
             title={t('dashboard.dept_comparison')}
-            subtitle={cmpFull
-              ? `FY${filters.fy} ${t('dashboard.ytd')} vs FY${filters.fy - 1} ${t('dashboard.ytd')}`
-              : `FY${filters.fy} vs FY${filters.fy - 1} · ${fmShort(deptCmp.from)} – ${fmShort(deptCmp.to)}`}
+            subtitle={cmpSubtitle}
             right={
               <div className="flex items-center gap-1.5 flex-wrap justify-end">
                 <button onClick={toggleCmpYtd} title={t('dashboard.cmp_ytd_tip')}
@@ -937,41 +822,43 @@ export default function Dashboard() {
                 </button>
                 <FilterSelect icon="ti-calendar" includeAll={false} highlight={deptCmp.from !== 1}
                   value={String(deptCmp.from)} onChange={setDeptCmpFrom}
-                  options={FISCAL_MONTH_ORDER.map(m => String(m.fiscal))} optionLabel={fmShort} />
+                  options={FISCAL_MONTH_ORDER.map(m => ({ value: String(m.fiscal), label: m.nameShort }))} />
                 <span className="text-xs text-gray-400">–</span>
                 <FilterSelect includeAll={false} highlight={deptCmp.to !== 12}
                   value={String(deptCmp.to)} onChange={setDeptCmpTo}
-                  options={FISCAL_MONTH_ORDER.map(m => String(m.fiscal))} optionLabel={fmShort} />
+                  options={FISCAL_MONTH_ORDER.map(m => ({ value: String(m.fiscal), label: m.nameShort }))} />
               </div>
             }>
-          {deptCompareData.length ? (
+          {!deptCompare.available ? (
+            <div className="text-xs text-gray-400 py-6 text-center">{noCmpTitle}</div>
+          ) : deptCompare.rows.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700 text-xs text-gray-400 uppercase tracking-wide">
                     <th className="text-left font-medium py-2 pr-4">{t('ticket.department')}</th>
-                    <th className="text-right font-medium py-2 px-4">{cmpFull ? `FY${filters.fy} ${t('dashboard.ytd')}` : `FY${filters.fy} · ${fmShort(deptCmp.from)}–${fmShort(deptCmp.to)}`}</th>
-                    <th className="text-right font-medium py-2 px-4">{cmpFull ? `FY${filters.fy - 1} ${t('dashboard.ytd')}` : `FY${filters.fy - 1} · ${fmShort(deptCmp.from)}–${fmShort(deptCmp.to)}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{`FY${filters.fy}${cmpRangeLabel}`}</th>
+                    <th className="text-right font-medium py-2 px-4">{`FY${prevFY}${cmpRangeLabel}${cutoff ? ` · ≤ ${cutoff}` : ''}`}</th>
                     <th className="text-right font-medium py-2 px-4">{t('dashboard.gap')}</th>
                     <th className="text-right font-medium py-2 pl-4">+/-%</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {deptCompareData.map(d => (
-                    <tr key={d.name} className="border-b border-gray-100 dark:border-gray-800 text-gray-900 dark:text-gray-100">
-                      <td className="text-left py-2 pr-4">{d.name}</td>
-                      <td className="text-right py-2 px-4 font-mono">{money(d.cur)}</td>
-                      <td className="text-right py-2 px-4 font-mono text-gray-500 dark:text-gray-400">{money(d.prev)}</td>
-                      <td className="text-right py-2 px-4 font-mono">{signedMoney(d.gap)}</td>
-                      <td className="text-right py-2 pl-4 font-bold">{d.pct != null ? `${d.pct >= 0 ? '+' : '−'}${Math.abs(d.pct)}%` : '—'}</td>
+                  {deptCompare.rows.map(r => (
+                    <tr key={r.key} className="border-b border-gray-100 dark:border-gray-800 text-gray-900 dark:text-gray-100">
+                      <td className="text-left py-2 pr-4">{r.name}</td>
+                      <td className="text-right py-2 px-4 font-mono">{money(r.cur)}</td>
+                      <td className="text-right py-2 px-4 font-mono text-gray-500 dark:text-gray-400">{money(r.prev)}</td>
+                      <td className="text-right py-2 px-4 font-mono">{signedMoney(r.gap)}</td>
+                      <td className="text-right py-2 pl-4 font-bold">{r.pct != null ? signedPct(r.pct) : '—'}</td>
                     </tr>
                   ))}
                   <tr className="border-t-2 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 font-semibold">
                     <td className="text-left py-2 pr-4">{t('dashboard.total')}</td>
-                    <td className="text-right py-2 px-4 font-mono">{money(deptCompareTotals.cur)}</td>
-                    <td className="text-right py-2 px-4 font-mono">{money(deptCompareTotals.prev)}</td>
-                    <td className="text-right py-2 px-4 font-mono">{signedMoney(deptCompareTotals.gap)}</td>
-                    <td className="text-right py-2 pl-4 font-bold">{deptCompareTotals.pct != null ? `${deptCompareTotals.pct >= 0 ? '+' : '−'}${Math.abs(deptCompareTotals.pct)}%` : '—'}</td>
+                    <td className="text-right py-2 px-4 font-mono">{money(deptCompare.totals.cur)}</td>
+                    <td className="text-right py-2 px-4 font-mono">{money(deptCompare.totals.prev)}</td>
+                    <td className="text-right py-2 px-4 font-mono">{signedMoney(deptCompare.totals.gap)}</td>
+                    <td className="text-right py-2 pl-4 font-bold">{deptCompare.totals.pct != null ? signedPct(deptCompare.totals.pct) : '—'}</td>
                   </tr>
                 </tbody>
               </table>
@@ -992,33 +879,37 @@ export default function Dashboard() {
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-[#161B22]">
                 <tr className="border-b border-gray-100 dark:border-gray-800">
-                  {['SC#', 'Issue', 'Project', 'Brand', 'Dept.', 'Status', 'Cost'].map(h => (
+                  {[t('ticket.sc_number'), t('dashboard.col_issue'), t('dashboard.col_client'), t('ticket.brand'),
+                    t('ticket.department'), t('ticket.status'), t('ticket.cost')].map(h => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {tickets.length === 0 && (
+                {recent.length === 0 && (
                   <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">{t('dashboard.no_data')}</td></tr>
                 )}
-                {tickets.slice(0, 8).map(tk => {
-                  const cost = getTicketCost(tk)
-                  return (
-                    <tr key={tk.id}
-                      className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/tickets/${tk.id}`)}>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{tk.sc_number || '—'}</td>
-                      <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">{tk.quality_issue}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-32 truncate">{tk.project_name}</td>
-                      <td className="px-4 py-2.5"><BrandTag brand={tk.brand} /></td>
-                      <td className="px-4 py-2.5"><span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">{tk.department}</span></td>
-                      <td className="px-4 py-2.5"><StatusBadge status={tk.status} /></td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-gray-900 dark:text-gray-100">
-                        {cost ? money(cost) : '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
+                {recent.map(r => (
+                  <tr key={r.id}
+                    className="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/tickets/${r.id}`)}>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{r.ticket.sc_number || '—'}</td>
+                    <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 max-w-xs truncate">{r.ticket.quality_issue}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-gray-400 max-w-32 truncate">{r.customer || '—'}</td>
+                    <td className="px-4 py-2.5"><BrandTag brand={r.ticket.brand} /></td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {r.depts.map(dep => (
+                          <span key={dep} className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full whitespace-nowrap">{dep}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-900 dark:text-gray-100">
+                      {r.cost != null ? money(r.cost) : '—'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

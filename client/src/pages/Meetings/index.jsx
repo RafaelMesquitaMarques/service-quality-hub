@@ -3,11 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../../services/supabase'
-import { ticketApi, fetchLineCostTotals, CURRENT_FISCAL_YEAR } from '../../services/api'
+import { ticketApi, fetchLineCostTotals, fetchOccurrenceLines, getFiscalYear, CURRENT_FISCAL_YEAR } from '../../services/api'
 import { useThemeStore } from '../../store/themeStore'
 import { PageHeader, Spinner } from '../../components/ui'
-import { useDepartments } from '../../hooks/useTaxonomy'
 import { formatDate as formatDateValue, isPastDate } from '../../utils/date'
+import { customerOf } from '../../utils/customer'
 import toast from 'react-hot-toast'
 
 const STATUS_STYLE = {
@@ -36,6 +36,57 @@ function formatCost(v) {
   return n === 0 ? '—' : `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString()}`
 }
 
+// Sentinelle « (Non défini) » des filtres département / usine : valeur neutre
+// et stable dans l'URL quelle que soit la langue (comme la liste des
+// occurrences), traduite seulement à l'affichage.
+const NONE = '__none__'
+
+// Valeurs proposées par un filtre : celles présentes, « (Non défini) » en tête
+// s'il en manque une. Une valeur non classée est un membre comme un autre —
+// sinon le coût des lignes non classées n'est isolable par aucun filtre.
+function filterOptions(values) {
+  const isNone = v => !v || v === NONE
+  const named = [...new Set(values.filter(v => !isNone(v)))].sort()
+  return values.some(isNone) ? [NONE, ...named] : named
+}
+
+// Ordre des lignes dans l'occurrence (comme le détail et les Rapports) : il
+// décide quelle ligne porte le coût d'en-tête et l'ordre des lignes détaillées.
+const byLineOrder = (a, b) =>
+  (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+// Unités de coût / classement — même règle que le tableau de bord et les
+// Rapports. Occurrence AVEC lignes : une unité par ligne, département / usine
+// de la ligne (repli sur l'en-tête) ; coût de la ligne dès qu'UNE ligne est
+// chiffrée (net du crédit fournisseur : zéro et négatif sont légitimes), sinon
+// coût d'en-tête porté une seule fois, par la 1re ligne. Occurrence SANS lignes
+// (import) : une unité d'en-tête. L'ancien test « somme des lignes > 0 »
+// renvoyait sur le département d'en-tête les occurrences à lignes non chiffrées
+// ou nettes ≤ 0 : 10 occurrences FY2026 n'avaient pas le département du
+// tableau de bord.
+function buildUnits(tickets, lines) {
+  const byOcc = {}
+  for (const l of lines) (byOcc[l.occurrence_id] ||= []).push(l)
+  return tickets.flatMap(tk => {
+    const ls = (byOcc[tk?.id] || []).slice().sort(byLineOrder)
+    if (!ls.length) return [{
+      id: tk?.id, line_id: null, occurrence_id: tk?.id,
+      quality_issue: tk?.quality_issue,
+      cost_approx: Number(tk?.cost_approx || 0),
+      department: tk?.department || null,
+      plant: tk?.plant || null,
+    }]
+    const anyCosted = ls.some(l => l.cost_approx != null)
+    return ls.map((l, i) => ({
+      id: l.id, line_id: l.id, occurrence_id: tk?.id,
+      quality_issue: l.quality_issue || tk?.quality_issue,
+      cost_approx: anyCosted ? Number(l.cost_approx || 0) : i === 0 ? Number(tk?.cost_approx || 0) : 0,
+      department: l.department || tk?.department || null,
+      plant: l.plant || tk?.plant || null,
+    }))
+  })
+}
+
 
 // `meeting_date` et les échéances d'action sont des colonnes DATE : formatage
 // sans conversion de fuseau (voir utils/date.js).
@@ -51,7 +102,7 @@ function weekLabel(d) {
 // <select> du filtre : icône à gauche, chevron à droite, surbrillance bleue si actif.
 // Les options sont dérivées des occurrences de la réunion : le panneau explicite
 // les états « chargement » et « aucune valeur » plutôt que d'afficher du vide.
-function MultiSelect({ icon, allLabel, options, value, onChange, loading }) {
+function MultiSelect({ icon, allLabel, options, value, onChange, loading, failed, renderOption = v => v }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -70,12 +121,12 @@ function MultiSelect({ icon, allLabel, options, value, onChange, loading }) {
 
   const toggle = (opt) => onChange(value.includes(opt) ? value.filter(v => v !== opt) : [...value, opt])
   const active = value.length > 0
-  const label  = !active ? allLabel : value.length === 1 ? value[0] : `${value[0]} +${value.length - 1}`
+  const label  = !active ? allLabel : value.length === 1 ? renderOption(value[0]) : `${renderOption(value[0])} +${value.length - 1}`
 
   return (
     <div className="relative inline-flex items-center" ref={ref}>
       <i className={`ti ${icon} text-sm absolute left-2.5 pointer-events-none ${active ? 'text-blue-500' : 'text-gray-400'}`} aria-hidden="true" />
-      <button type="button" onClick={() => setOpen(o => !o)} title={active ? value.join(', ') : allLabel}
+      <button type="button" onClick={() => setOpen(o => !o)} title={active ? value.map(renderOption).join(', ') : allLabel}
         className={`text-xs font-medium rounded-lg border cursor-pointer pl-7 pr-7 py-1.5 transition-colors max-w-44 truncate
           ${active
             ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
@@ -92,12 +143,14 @@ function MultiSelect({ icon, allLabel, options, value, onChange, loading }) {
           <div className="border-t border-gray-100 dark:border-gray-800 my-1" />
           {options.length === 0 ? (
             <div className="px-3 py-1.5 text-xs text-gray-400 italic whitespace-nowrap">
-              {loading ? t('common.loading') : t('meeting.filter_no_options')}
+              {/* Lecture en échec : « aucune valeur » serait faux — il y en a,
+                  elles n'ont pas pu être lues. */}
+              {loading ? t('common.loading') : failed ? t('common.error') : t('meeting.filter_no_options')}
             </div>
           ) : options.map(opt => (
             <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 whitespace-nowrap">
               <input type="checkbox" className="accent-blue-600 cursor-pointer" checked={value.includes(opt)} onChange={() => toggle(opt)} />
-              {opt}
+              {renderOption(opt)}
             </label>
           ))}
         </div>
@@ -119,24 +172,77 @@ function SortHeader({ label, sortKey, sort, onToggle, right }) {
   )
 }
 
-function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
+// Échec de lecture : message + « Réessayer » à la place des données. Avant,
+// chaque requête se repliait sur une liste vide — une erreur réseau ou RLS se
+// lisait comme une réunion sans occurrence, à 0 $.
+function QueryError({ queries }) {
   const { t } = useTranslation()
+  const failed = queries.filter(q => q?.isError)
+  if (!failed.length) return null
+  const detail = failed.map(q => q.error?.message).find(Boolean)
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-2 py-3 text-xs text-red-600 dark:text-red-400">
+      <i className="ti ti-alert-triangle" aria-hidden="true" />
+      <span className="flex-1 min-w-0 break-words">{t('common.error')}{detail ? ` — ${detail.slice(0, 160)}` : ''}</span>
+      <button type="button" onClick={() => failed.forEach(q => q.refetch())} disabled={failed.some(q => q.isFetching)}
+        className="btn-ghost text-xs py-1 px-2">
+        <i className="ti ti-refresh" aria-hidden="true" /> {t('reports.data.retry')}
+      </button>
+    </div>
+  )
+}
+
+function TicketPicker({ ticketsQ, linksQ, selected, meetingMap, onAdd, onClose }) {
+  const { t } = useTranslation()
+  const tickets = ticketsQ.data
   const [search, setSearch]   = useState('')
-  const departmentOptions     = useDepartments()
   const [dept,   setDept]     = useState('')
   const [status, setStatus]   = useState('quality_meeting')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo,   setDateTo]   = useState('')
+
+  // Départements des candidats, dérivés de leurs LIGNES : le classement vit sur
+  // la ligne depuis 2026-06-25, et filtrer sur tk.department (en-tête hérité) ne
+  // trouvait presque plus rien. Clé sur tout le vivier, pas sur les candidats
+  // filtrés : elle reste stable pendant la saisie et les ajouts.
+  const poolIds = useMemo(() => (tickets || []).map(tk => tk.id), [tickets])
+  const linesQ = useQuery({
+    queryKey: ['tickets-picker-lines', poolIds],
+    queryFn: () => fetchOccurrenceLines(poolIds),
+    enabled: poolIds.length > 0,
+  })
+  // Départements d'une occurrence : ceux de ses lignes (repli en-tête pour une
+  // ligne non classée), l'en-tête seul sans lignes. Une ligne qui reste non
+  // classée met « (Non défini) » dans l'ensemble — convention de la liste des
+  // occurrences et du tableau de bord.
+  const deptsByOcc = useMemo(() => {
+    const lineDepts = {}
+    for (const l of linesQ.data || []) (lineDepts[l.occurrence_id] ||= []).push(l.department || null)
+    const m = {}
+    for (const tk of tickets || []) {
+      const lv = lineDepts[tk.id]
+      const source = lv?.length ? lv.map(v => v || tk.department) : [tk.department]
+      m[tk.id] = [...new Set(source.map(v => v || NONE))]
+    }
+    return m
+  }, [tickets, linesQ.data])
+  const deptOptions = useMemo(
+    () => (linesQ.data ? filterOptions(Object.values(deptsByOcc).flat()) : []),
+    [deptsByOcc, linesQ.data])
+  // « Chargement... » seulement pendant une lecture réelle : vivier en échec ou
+  // vide, la requête des lignes ne part jamais et le libellé restait figé.
+  const deptsPending = (!tickets && !ticketsQ.isError) || (poolIds.length > 0 && !linesQ.data && !linesQ.isError)
+
   const selectedIds = new Set((selected || []).map(t => t?.id))
   const filtered = (tickets || []).filter(tk => {
     if (selectedIds.has(tk.id)) return false
-    if (dept && tk.department !== dept) return false
+    if (dept && !deptsByOcc[tk.id]?.includes(dept)) return false
     if (status && tk.status !== status) return false
     if (dateFrom && tk.issue_reception_date < dateFrom) return false
     if (dateTo   && tk.issue_reception_date > dateTo)   return false
     if (search) {
       const q = search.toLowerCase()
-      return tk.quality_issue?.toLowerCase().includes(q) || tk.sc_number?.toLowerCase().includes(q) || tk.project_name?.toLowerCase().includes(q)
+      return tk.quality_issue?.toLowerCase().includes(q) || tk.sc_number?.toLowerCase().includes(q) || customerOf(tk)?.toLowerCase().includes(q)
     }
     return true
   })
@@ -154,10 +260,12 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
             <input className="outline-none text-xs w-full bg-transparent text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
               placeholder={t('meeting.search_tickets')} value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          {/* Désactivé tant que les lignes ne sont pas lues : sans elles, le
+              département d'une occurrence n'est pas connu. */}
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
-            value={dept} onChange={e => setDept(e.target.value)}>
-            <option value="">{t('meeting.all_depts')}</option>
-            {departmentOptions.map(d => <option key={d}>{d}</option>)}
+            value={dept} onChange={e => setDept(e.target.value)} disabled={!linesQ.data}>
+            <option value="">{deptsPending ? t('common.loading') : t('meeting.all_depts')}</option>
+            {deptOptions.map(d => <option key={d} value={d}>{d === NONE ? t('dashboard.unclassified') : d}</option>)}
           </select>
           <select className="border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 bg-white dark:bg-[#161B22] focus:outline-none min-w-36"
             value={status} onChange={e => setStatus(e.target.value)}>
@@ -174,8 +282,16 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
         <div className="px-5 py-1.5 text-xs text-gray-400 border-b border-gray-100 dark:border-gray-800">
           {filtered.length} — {selectedIds.size} {t('meeting.already_selected')}
         </div>
+        {/* Occurrences, réunions déjà liées (badge « En réunion ») ou lignes
+            (filtre département) illisibles : on le dit plutôt que d'afficher
+            une liste incomplète comme si elle était juste. */}
+        <div className="px-5">
+          <QueryError queries={[ticketsQ, linksQ, linesQ]} />
+        </div>
         <div className="max-h-[65vh] overflow-y-auto">
-          {filtered.length === 0 ? (
+          {!tickets ? (
+            ticketsQ.isError ? null : <div className="flex justify-center py-6"><Spinner /></div>
+          ) : filtered.length === 0 ? (
             <div className="py-6 text-center text-xs text-gray-400">{t('meeting.no_tickets_found')}</div>
           ) : filtered.map(tk => {
             const inMeetings = (meetingMap?.[tk.id] || []).filter(Boolean)
@@ -193,9 +309,12 @@ function TicketPicker({ tickets, selected, meetingMap, onAdd, onClose }) {
                   </span>
                 )}
               </div>
-              <div className="truncate text-gray-500 dark:text-gray-400">{tk.project_name || '—'}</div>
+              <div className="truncate text-gray-500 dark:text-gray-400">{customerOf(tk) || '—'}</div>
               <div className="text-gray-400">{tk.issue_reception_date?.slice(0,10) || '—'}</div>
-              <div className="font-mono text-gray-400 text-right">{tk.cost_approx ? `$${Math.round(Number(tk.cost_approx)).toLocaleString()}` : '—'}</div>
+              {/* real_cost (vue tickets_with_cost) : somme des lignes dès qu'une
+                  ligne est chiffrée, sinon en-tête — le coût d'en-tête seul est
+                  périmé depuis que le coût vit sur les lignes. */}
+              <div className="font-mono text-gray-400 text-right">{formatCost(tk.real_cost)}</div>
               <button
                 onClick={() => {
                   if (already && !window.confirm(t('meeting.confirm_add_duplicate', { dates: meetingDates }))) return
@@ -241,7 +360,7 @@ export default function MeetingsPage() {
   const { dark: isDark } = useThemeStore()
   const SS = isDark ? STATUS_STYLE : STATUS_STYLE_LIGHT
 
-const { data: meetings, isLoading: loadingMeetings } = useQuery({
+const meetingsQ = useQuery({
   queryKey: ['meetings-v2'],
   queryFn: async () => {
     const { data, error } = await supabase.from('meetings').select('*').order('meeting_date', { ascending: false })
@@ -251,6 +370,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
   staleTime: 10 * 60 * 1000, // 10 minutos
   refetchOnWindowFocus: false,
 })
+  const { data: meetings, isLoading: loadingMeetings } = meetingsQ
 
   useEffect(() => {
     if (!meetings) return
@@ -286,42 +406,49 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 
   const selMeeting = (meetings || []).find(m => m.id === selId)
 
-  const { data: meetingTickets } = useQuery({
+  // Les lectures LÈVENT leurs erreurs (plus de repli sur []) : React Query les
+  // expose et la page affiche un message avec « Réessayer » (QueryError).
+  const ticketsQ = useQuery({
     queryKey: ['meeting-tickets', selId],
     queryFn: async () => {
       if (!selId) return []
       const { data, error } = await supabase.from('meeting_tickets').select('ticket_id, tickets(*)').eq('meeting_id', selId)
-      if (error) return []
+      if (error) throw error
       return (data || []).map(r => r.tickets)
     },
     enabled: !!selId,
   })
+  const meetingTickets = ticketsQ.data
 
-  const { data: actions } = useQuery({
+  const actionsQ = useQuery({
     queryKey: ['meeting-actions', selId],
     queryFn: async () => {
       if (!selId) return []
       const { data, error } = await supabase.from('meeting_actions').select('*').eq('meeting_id', selId).order('created_at')
-      if (error) return []
+      if (error) throw error
       return data || []
     },
     enabled: !!selId,
   })
+  const actions = actionsQ.data
 
   const prevMeeting = (meetings || []).find((m, i) => i === (meetings || []).findIndex(x => x.id === selId) + 1)
 
-  const { data: prevActions } = useQuery({
+  const prevActionsQ = useQuery({
     queryKey: ['meeting-actions', prevMeeting?.id],
     queryFn: async () => {
       if (!prevMeeting?.id) return []
       const { data, error } = await supabase.from('meeting_actions').select('*').eq('meeting_id', prevMeeting.id).order('created_at')
-      if (error) return []
+      if (error) throw error
       return data || []
     },
     enabled: !!prevMeeting?.id,
   })
+  const prevActions = prevActionsQ.data
 
-  const { data: allTickets } = useQuery({
+  // Vivier du sélecteur « Ajouter occurrence » : vue tickets_with_cost (toutes
+  // années), qui porte real_cost.
+  const allTicketsQ = useQuery({
     queryKey: ['tickets-picker'],
     queryFn: () => ticketApi.list({ fiscal_year: 'all' }).then(r => r.data.tickets),
     enabled: showTicketPicker,
@@ -330,18 +457,19 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 
   // Occurrences déjà rattachées à une (autre) réunion — pour le badge + la
   // confirmation « déjà en réunion » dans le sélecteur.
-  const { data: meetingLinks } = useQuery({
+  const meetingLinksQ = useQuery({
     queryKey: ['all-meeting-tickets'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('meeting_tickets')
         .select('ticket_id, meeting_id, meetings(meeting_date)')
-      if (error) return []
+      if (error) throw error
       return data || []
     },
     enabled: showTicketPicker,
     staleTime: 60 * 1000,
   })
+  const meetingLinks = meetingLinksQ.data
 
   const meetingMap = useMemo(() => {
     const m = {}
@@ -357,11 +485,12 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
   const actList   = actions        || []
 
   // Fetch real costs from occurrence_lines
-  const { data: lineCosts } = useQuery({
+  const costsQ = useQuery({
     queryKey: ['line-costs-meeting', tickets.map(t => t?.id)],
     queryFn: () => fetchLineCostTotals(tickets.map(t => t?.id)),
     enabled: tickets.length > 0,
   })
+  const lineCosts = costsQ.data
 
   const getTicketCost = (tk) => {
     // Clé présente = au moins une ligne chiffrée : elle fait référence, même si
@@ -373,63 +502,39 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
 
   // Lignes (occurrence_lines) des occurrences de la réunion — pour la vue/filtre
   // par département (chaque ligne a son propre département + coût).
-  const { data: meetingLines } = useQuery({
+  // Ordre des lignes (sort_order) rétabli par buildUnits : c'est celui des
+  // lignes détaillées sous une occurrence dans la vue filtrée, hors tri.
+  const linesQ = useQuery({
     queryKey: ['meeting-lines', selId, tickets.map(t => t?.id).filter(Boolean).join(',')],
-    queryFn: async () => {
-      const ids = tickets.map(t => t?.id).filter(Boolean)
-      if (!ids.length) return []
-      // Ordre des lignes dans l'occurrence (comme le détail) : c'est celui des
-      // lignes détaillées sous une occurrence dans la vue filtrée, hors tri.
-      const { data, error } = await supabase.from('occurrence_lines')
-        .select('id, occurrence_id, quality_issue, cost_approx, department, plant')
-        .in('occurrence_id', ids)
-        .order('sort_order').order('id')
-      if (error) return []
-      return data || []
-    },
+    queryFn: () => fetchOccurrenceLines(tickets.map(t => t?.id), { withTitle: true }),
     enabled: tickets.length > 0,
   })
+  const meetingLines = linesQ.data
 
-  const allLines    = meetingLines || []
+  // Lignes, coûts ou occurrences illisibles : coûts, départements et export
+  // seraient faux — la section affiche l'erreur à la place.
+  const ticketDataError = ticketsQ.isError || costsQ.isError || linesQ.isError
 
-  // Unités de coût/problème par département, calquées sur le Dashboard : le
-  // département est porté par la LIGNE si elle a un coût, sinon on retombe sur
-  // le département au niveau OCCURRENCE. Sans ce repli, les occurrences classées
-  // au niveau header (ou sans lignes) n'affichaient aucun département.
-  const units = tickets.flatMap(tk => {
-    const ls = allLines.filter(l => l.occurrence_id === tk?.id)
-    const lineSum = ls.reduce((s, l) => s + Number(l.cost_approx || 0), 0)
-    if (lineSum > 0) {
-      return ls.map(l => ({
-        id: l.id, line_id: l.id, occurrence_id: tk?.id,
-        quality_issue: l.quality_issue || tk?.quality_issue,
-        cost_approx: Number(l.cost_approx || 0),
-        department: l.department || tk?.department || null,
-        plant: l.plant || tk?.plant || null,
-      }))
-    }
-    return [{
-      id: tk?.id, line_id: null, occurrence_id: tk?.id,
-      quality_issue: tk?.quality_issue,
-      cost_approx: getTicketCost(tk),
-      department: tk?.department || null,
-      plant: tk?.plant || null,
-    }]
-  })
+  // Unités calculées une fois les lignes lues seulement : avant, chaque
+  // occurrence retombait le temps du chargement sur son département d'en-tête.
+  const units = meetingLines ? buildUnits(tickets, meetingLines) : []
 
   // Occurrences pas encore chargées, ou lignes pas encore chargées → les
   // dropdowns affichent « Chargement... » plutôt qu'un panneau vide.
-  const filtersLoading = !meetingTickets || (tickets.length > 0 && !meetingLines)
+  const filtersLoading = (!meetingTickets && !ticketsQ.isError) || (tickets.length > 0 && !meetingLines && !linesQ.isError)
+  const filtersFailed  = ticketsQ.isError || linesQ.isError
 
-  const deptOptions = [...new Set(units.map(u => u.department).filter(Boolean))].sort()
+  const noneLabel   = t('dashboard.unclassified')  // « (Non défini) »
+  const showValue   = (v) => (v === NONE ? noneLabel : v)
+  const deptOptions = filterOptions(units.map(u => u.department))
   const deptFilter  = meetingDepts.filter(d => deptOptions.includes(d))    // ignore les absents
-  const plantOptions = [...new Set(units.map(u => u.plant).filter(Boolean))].sort()
+  const plantOptions = filterOptions(units.map(u => u.plant))
   const plantFilter  = meetingPlants.filter(p => plantOptions.includes(p)) // ignore les absentes
   const anyFilter    = deptFilter.length > 0 || plantFilter.length > 0
-  const filterLabel  = [...deptFilter, ...plantFilter].join(' · ')
+  const filterLabel  = [...deptFilter, ...plantFilter].map(showValue).join(' · ')
   const unitMatches = (u) =>
-    (!deptFilter.length  || deptFilter.includes(u.department)) &&
-    (!plantFilter.length || plantFilter.includes(u.plant))
+    (!deptFilter.length  || deptFilter.includes(u.department || NONE)) &&
+    (!plantFilter.length || plantFilter.includes(u.plant || NONE))
   const filteredUnits = units.filter(unitMatches)
 
   // Vue filtrée : une rangée par OCCURRENCE, coût = somme de ses lignes retenues
@@ -471,7 +576,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     key === 'cost'    ? getTicketCost(tk) :
     key === 'sc'      ? (tk?.sc_number || '') :
     key === 'issue'   ? (tk?.quality_issue || '') :
-    key === 'project' ? (tk?.project_name || '') :
+    key === 'project' ? (customerOf(tk) || '') :
     (ticketDept(tk?.id) || ''))
   // Vue filtrée : les occurrences se trient sur leurs propres valeurs (coût =
   // total retenu), puis leurs lignes entre elles — SC# et projet étant communs
@@ -480,7 +585,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     key === 'cost'    ? g.cost :
     key === 'sc'      ? (g.ticket?.sc_number || '') :
     key === 'issue'   ? (g.title || '') :
-    key === 'project' ? (g.ticket?.project_name || '') :
+    key === 'project' ? (customerOf(g.ticket) || '') :
     g.department
   ).map(g => ({
     ...g,
@@ -530,6 +635,9 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries(['meeting-actions', selId]),
+    // Sans onError, un échec passait inaperçu : le sélecteur revenait à son
+    // ancienne valeur au prochain rendu, sans explication.
+    onError: (e) => toast.error(e?.message || t('common.error')),
   })
 
   const addTicketMut = useMutation({
@@ -538,6 +646,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       if (error) throw error
     },
     onSuccess: () => { queryClient.invalidateQueries(['meeting-tickets', selId]); toast.success(t('meeting.add_ticket')) },
+    onError: (e) => toast.error(e?.message || t('common.error')),
   })
 
   const removeTicketMut = useMutation({
@@ -546,6 +655,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries(['meeting-tickets', selId]),
+    onError: (e) => toast.error(e?.message || t('common.error')),
   })
 
   const deleteMeetingMut = useMutation({
@@ -622,6 +732,19 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
     const filterSuffix = filterLabel ? `-${filterLabel.replace(/[^a-z0-9]+/gi, '_')}` : ''
     el.href = url; el.download = `meeting-${selMeeting.meeting_date}${filterSuffix}.csv`; el.click()
   }
+  // Pas d'export d'une réunion lue en partie : il aurait l'air complet. Idem
+  // pendant le chargement — coûts d'en-tête et filtre ignoré le temps que
+  // lignes et coûts arrivent.
+  const exportPending = filtersLoading || (tickets.length > 0 && !lineCosts && !costsQ.isError) || (!actions && !actionsQ.isError)
+  const exportBlocked = !selId || ticketDataError || actionsQ.isError || exportPending
+
+  // Années fiscales couvertes par la liste des réunions : elle n'est PAS filtrée
+  // par année (toutes les réunions, la plus récente en tête). « FY » suivi de
+  // l'année en cours seule laissait croire à un filtre.
+  const meetingFYs = (meetings || []).map(m => getFiscalYear(m.meeting_date)).filter(Boolean)
+  const fyFirst = meetingFYs.length ? Math.min(...meetingFYs) : CURRENT_FISCAL_YEAR
+  const fyLast  = meetingFYs.length ? Math.max(...meetingFYs) : CURRENT_FISCAL_YEAR
+  const fyRange = fyFirst === fyLast ? `${fyLast}` : `${fyFirst}–${fyLast}`
 
   return (
     <>
@@ -630,8 +753,8 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
         subtitle={t('meeting.subtitle')}
         actions={
           <div className="flex gap-2">
-            <button className="btn-ghost text-xs" onClick={handleExportExcel} disabled={!selId}
-              title={!selId ? t('meeting.select_prompt') : ''}>
+            <button className="btn-ghost text-xs" onClick={handleExportExcel} disabled={exportBlocked}
+              title={!selId ? t('meeting.select_prompt') : exportBlocked ? t(exportPending && !ticketDataError && !actionsQ.isError ? 'common.loading' : 'common.error') : ''}>
               <i className="ti ti-table-export" aria-hidden="true" /> {t('meeting.export_excel')}
             </button>
             <button className="btn-primary" onClick={() => setShowNewMeeting(true)}>
@@ -644,8 +767,11 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       <div className="flex-1 overflow-hidden flex">
         <div className="w-48 flex-shrink-0 border-r border-gray-200 dark:border-gray-700/60 overflow-y-auto bg-white dark:bg-[#0D1117]">
           <div className="px-3 py-2 text-xs font-medium text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800">
-            {t('meeting.weeks')}{CURRENT_FISCAL_YEAR}
+            {t('meeting.weeks')}{fyRange}
           </div>
+          {meetingsQ.isError && (
+            <div className="px-3"><QueryError queries={[meetingsQ]} /></div>
+          )}
           {loadingMeetings ? (
             <div className="flex justify-center p-4"><Spinner /></div>
           ) : (meetings || []).map(m => (
@@ -672,7 +798,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
               </button>
             </div>
           ))}
-          {(meetings || []).length === 0 && !loadingMeetings && (
+          {(meetings || []).length === 0 && !loadingMeetings && !meetingsQ.isError && (
             <div className="p-4 text-xs text-gray-400 text-center">{t('meeting.no_meetings')}</div>
           )}
         </div>
@@ -691,19 +817,21 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                     {t('meeting.kpis')} — {weekLabel(selMeeting?.meeting_date)}
                   </div>
                   <div className="flex items-center gap-2">
-                    <MultiSelect icon="ti-building" allLabel={t('meeting.all_depts')}
-                      options={deptOptions} value={deptFilter} onChange={setMeetingDepts} loading={filtersLoading} />
-                    <MultiSelect icon="ti-building-factory-2" allLabel={t('meeting.all_plants')}
-                      options={plantOptions} value={plantFilter} onChange={setMeetingPlants} loading={filtersLoading} />
+                    <MultiSelect icon="ti-building" allLabel={t('meeting.all_depts')} renderOption={showValue}
+                      options={deptOptions} value={deptFilter} onChange={setMeetingDepts} loading={filtersLoading} failed={filtersFailed} />
+                    <MultiSelect icon="ti-building-factory-2" allLabel={t('meeting.all_plants')} renderOption={showValue}
+                      options={plantOptions} value={plantFilter} onChange={setMeetingPlants} loading={filtersLoading} failed={filtersFailed} />
                     <div className="text-xs text-gray-400">{formatDate(selMeeting?.meeting_date)}</div>
                   </div>
                 </div>
+                {/* Lecture en échec → « — » plutôt qu'un 0 / 0 $ qui passerait
+                    pour une réunion vide ; le détail est dans les sections. */}
                 <div className="grid grid-cols-4 gap-2">
                   {[
-                    { v: displayedCount, l: t('meeting.tickets_discussed'), c:'#3b82f6' },
-                    { v: `$${Math.round(displayedCost).toLocaleString()}`, l: t('meeting.sc_cost_week'), c:'#ef4444' },
-                    { v: openAct, l: t('meeting.open_actions'), c:'#f59e0b' },
-                    { v: doneAct, l: t('meeting.completed_actions'), c:'#22c55e' },
+                    { v: ticketsQ.isError ? '—' : displayedCount, l: t('meeting.tickets_discussed'), c:'#3b82f6' },
+                    { v: ticketDataError ? '—' : `$${Math.round(displayedCost).toLocaleString()}`, l: t('meeting.sc_cost_week'), c:'#ef4444' },
+                    { v: actionsQ.isError ? '—' : openAct, l: t('meeting.open_actions'), c:'#f59e0b' },
+                    { v: actionsQ.isError ? '—' : doneAct, l: t('meeting.completed_actions'), c:'#22c55e' },
                   ].map(({ v, l, c }) => (
                     <div key={l} className="bg-gray-50 dark:bg-[#161B22] rounded-lg p-2.5 text-center">
                       <div className="text-xl font-medium" style={{ color: c }}>{v}</div>
@@ -713,6 +841,11 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                 </div>
               </div>
 
+              {prevActionsQ.isError && (
+                <div className="card px-4">
+                  <QueryError queries={[prevActionsQ]} />
+                </div>
+              )}
               {(prevActions || []).length > 0 && (
                 <div className="card">
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-gray-800">
@@ -748,18 +881,24 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                     <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
                       {anyFilter ? `${t('meeting.tickets_section')} · ${filterLabel}` : t('meeting.tickets_section')}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
-                      {anyFilter
-                        ? `${t('meeting.occurrences_count', { count: filteredGroups.length })} · ${t('meeting.lines_count', { count: filteredUnits.length })}`
-                        : `${tickets.length} ${t('meeting.selected')}`}
-                    </span>
+                    {meetingTickets && !ticketsQ.isError && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium">
+                        {anyFilter
+                          ? `${t('meeting.occurrences_count', { count: filteredGroups.length })} · ${t('meeting.lines_count', { count: filteredUnits.length })}`
+                          : `${tickets.length} ${t('meeting.selected')}`}
+                      </span>
+                    )}
                   </div>
                   <button onClick={() => setShowTicketPicker(true)} className="btn-primary py-1 px-2.5 text-xs">
                     <i className="ti ti-plus text-xs" aria-hidden="true" /> {t('meeting.add_ticket')}
                   </button>
                 </div>
                 <div className="px-4 py-1">
-                  {tickets.length === 0 ? (
+                  {ticketDataError ? (
+                    <QueryError queries={[ticketsQ, costsQ, linesQ]} />
+                  ) : !meetingTickets ? (
+                    <div className="flex justify-center py-4"><Spinner /></div>
+                  ) : tickets.length === 0 ? (
                     <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_tickets')}</div>
                   ) : anyFilter ? (
                     /* Vue filtrée — occurrences ayant au moins une ligne dans le département /
@@ -784,7 +923,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                                 onClick={() => navigate(`/tickets/${g.id}?${ticketLinkParams()}`)}>
                                 {g.title}
                               </div>
-                              <div className="truncate text-gray-500 dark:text-gray-400">{g.ticket?.project_name || '—'}</div>
+                              <div className="truncate text-gray-500 dark:text-gray-400">{customerOf(g.ticket) || '—'}</div>
                               <div className="truncate text-gray-500 dark:text-gray-400" title={g.department}>{g.department || '—'}</div>
                               <div className="font-mono text-gray-400 text-right">{formatCost(g.cost)}</div>
                               <div></div>
@@ -828,7 +967,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                             onClick={() => navigate(`/tickets/${tk?.id}?${ticketLinkParams()}`)}>
                             {tk?.quality_issue}
                           </div>
-                          <div className="truncate text-gray-500 dark:text-gray-400">{tk?.project_name || '—'}</div>
+                          <div className="truncate text-gray-500 dark:text-gray-400">{customerOf(tk) || '—'}</div>
                           <div className="truncate text-gray-500 dark:text-gray-400" title={ticketDept(tk?.id)}>{ticketDept(tk?.id) || '—'}</div>
                           <div className="font-mono text-gray-400 text-right">{formatCost(getTicketCost(tk))}</div>
                           <button onClick={() => removeTicketMut.mutate(tk?.id)} className="text-red-400 hover:text-red-600 text-sm p-0 bg-transparent border-0 cursor-pointer">
@@ -855,7 +994,11 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
                   </button>
                 </div>
                 <div className="px-4 py-1">
-                  {actList.length === 0 && !showActionForm ? (
+                  {actionsQ.isError ? (
+                    <QueryError queries={[actionsQ]} />
+                  ) : !actions ? (
+                    <div className="flex justify-center py-4"><Spinner /></div>
+                  ) : actList.length === 0 && !showActionForm ? (
                     <div className="py-4 text-center text-xs text-gray-400">{t('meeting.no_actions')}</div>
                   ) : (
                     <>
@@ -921,7 +1064,7 @@ const { data: meetings, isLoading: loadingMeetings } = useQuery({
       </div>
 
       {showTicketPicker && (
-        <TicketPicker tickets={allTickets || []} selected={tickets} meetingMap={meetingMap} onAdd={(id) => addTicketMut.mutate(id)} onClose={() => setShowTicketPicker(false)} />
+        <TicketPicker ticketsQ={allTicketsQ} linksQ={meetingLinksQ} selected={tickets} meetingMap={meetingMap} onAdd={(id) => addTicketMut.mutate(id)} onClose={() => setShowTicketPicker(false)} />
       )}
 
       {showNewMeeting && (
