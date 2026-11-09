@@ -71,6 +71,20 @@ function toStr(v) {
   return s === '' ? null : s
 }
 
+// Placeholder identifiers typed in the Excel when the value is unknown ('-',
+// 'N/A'…). They mean "empty": stored as NULL and never used in a key. The
+// 2026-07-08 import inserted 11 copies with SC# '-' of occurrences whose SC# is
+// NULL — the '-' built strong keys that could not match the original.
+const PLACEHOLDER_IDS = new Set(['-', '--', '---', '—', '–', '_', '.', '?', 'n/a', 'na', 'n.a.', 'none', 'null'])
+function toId(v) {
+  const s = toStr(v)
+  return s && PLACEHOLDER_IDS.has(s.toLowerCase()) ? null : s
+}
+function normId(v) {
+  const s = norm(v)
+  return PLACEHOLDER_IDS.has(s) ? '' : s
+}
+
 // Fiscal calendar: December = month 1 of the NEXT fiscal year (mirrors api.js)
 function getFiscalYear(yyyymm) {
   if (!yyyymm) return null
@@ -155,10 +169,10 @@ function mapRow(rawRow) {
     fiscal_month: getFiscalMonth(yyyymm),
     ship_to: toStr(r.ship_to),
     dd: r.dd != null && r.dd !== '' ? (parseInt(r.dd, 10) || null) : null,
-    ref_so: toStr(r.ref_so),
-    sc_number: toStr(r.sc_number),
-    item: toStr(r.item),
-    material_number: toStr(r.material_number),
+    ref_so: toId(r.ref_so),
+    sc_number: toId(r.sc_number),
+    item: toId(r.item),
+    material_number: toId(r.material_number),
     sold_to: toStr(r.sold_to),
     department: toStr(r.department),
     brand: toStr(r.brand),
@@ -182,13 +196,16 @@ function mapRow(rawRow) {
 }
 
 // Composite keys (strongest first). Each returned only when all its parts exist.
+// Identifiers go through normId: a placeholder ('-') counts as absent, on the
+// Excel row AND on the existing ticket. The customer is ship_to, or project_name
+// for occurrences created in the app (ship_to is no longer entered since 2026-06-25).
 function buildKeys(rec) {
-  const sc = norm(rec.sc_number)
-  const refso = norm(rec.ref_so)
-  const item = norm(rec.item)
-  const mat = norm(rec.material_number)
+  const sc = normId(rec.sc_number)
+  const refso = normId(rec.ref_so)
+  const item = normId(rec.item)
+  const mat = normId(rec.material_number)
   const issue = norm(rec.quality_issue)
-  const ship = norm(rec.ship_to)
+  const ship = norm(rec.ship_to || rec.project_name)
   const month = rec.issue_reception_date ? rec.issue_reception_date.slice(0, 7) : ''
   const strong = []
   if (sc && refso && item && mat && issue) strong.push(`k1|${sc}|${refso}|${item}|${mat}|${issue}`)
@@ -198,9 +215,27 @@ function buildKeys(rec) {
   if (ship && month && issue)              weak.push(`k4|${ship}|${month}|${issue}`)
   return { strong, weak }
 }
+// Does an existing ticket contradict the Excel row? Both have an item and they
+// differ, or the row's cost matches NEITHER the ticket's header cost (the value
+// imported from the Excel, no longer editable) NOR its current cost (real_cost:
+// lines, edited in the app — #2003 went from $373 to $2,963). An empty side
+// contradicts nothing (imported tickets have no item; '-' is empty).
+function contradicts(rec, t) {
+  const ia = normId(rec.item), ib = normId(t.item)
+  if (ia && ib && ia !== ib) return true
+  const costs = [t.cost_approx, t.real_cost].filter(v => v != null).map(Number)
+  if (rec.cost_approx != null && costs.length && !costs.some(c => Math.abs(Number(rec.cost_approx) - c) <= 0.005)) return true
+  return false
+}
+
+// Identity of a row with no strong key, for duplicates WITHIN the Excel file.
+// Cost and affected qty are part of it: same SC# + date + issue with different
+// costs are distinct occurrences (several defects on one service call — 30 such
+// groups in the data, see the 2026-09-08 duplicate audit).
 function rowHash(rec) {
   const basis = [rec.sc_number, rec.ref_so, rec.item, rec.material_number,
-    rec.issue_reception_date, rec.quality_issue, rec.ship_to, rec.department].map(norm).join('¦')
+    rec.issue_reception_date, rec.quality_issue, rec.ship_to, rec.department,
+    rec.cost_approx, rec.affected_qty].map(norm).join('¦')
   return 'h|' + crypto.createHash('sha1').update(basis).digest('hex')
 }
 
@@ -228,12 +263,19 @@ function readExcel(file, sheetName) {
 }
 
 // Pull every existing ticket's key-relevant fields (paginated; RLS bypassed by service key).
+// All statuses, cancelled included: a cancelled duplicate still "exists".
+// Read through tickets_with_cost for real_cost (the occurrence's cost from its
+// lines, else the header), used to tell a re-typed copy from a distinct defect.
+// ORDER BY id is required with .range(): without it Postgres returns pages in
+// an arbitrary order — rows repeated, others missed, and a missed ticket would
+// be re-inserted as "new".
 async function loadExistingTickets(supabase) {
-  const cols = 'id, sc_number, ref_so, item, material_number, quality_issue, ship_to, issue_reception_date, department'
+  const cols = 'id, occurrence_no, sc_number, ref_so, item, material_number, quality_issue, ship_to, project_name, '
+    + 'issue_reception_date, department, cost_approx, real_cost'
   const all = []
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase.from('tickets').select(cols).range(from, from + PAGE - 1)
+    const { data, error } = await supabase.from('tickets_with_cost').select(cols).order('id', { ascending: true }).range(from, from + PAGE - 1)
     if (error) throw new Error('loadExistingTickets: ' + error.message)
     all.push(...(data || []))
     if (!data || data.length < PAGE) break
@@ -242,15 +284,32 @@ async function loadExistingTickets(supabase) {
 }
 
 function analyze(excelRows, existing, limit) {
-  // Index existing keys by strategy.
-  const existingStrong = new Set()
-  const existingWeak = new Set()
+  // Index existing tickets by key. Each existing ticket can account for ONE Excel
+  // row: once matched it is consumed, so a weak key (customer + month + issue)
+  // never swallows a second, genuinely new row that merely looks alike.
+  const byStrong = new Map()
+  const byWeak = new Map()
+  const index = (map, key, i) => { const a = map.get(key); if (a) a.push(i); else map.set(key, [i]) }
   const fieldCounts = { sc_number: 0, ref_so: 0, item: 0, material_number: 0, quality_issue: 0 }
-  for (const t of existing) {
-    for (const f of Object.keys(fieldCounts)) if (norm(t[f])) fieldCounts[f]++
+  existing.forEach((t, i) => {
+    for (const f of Object.keys(fieldCounts)) if (f === 'quality_issue' ? norm(t[f]) : normId(t[f])) fieldCounts[f]++
     const k = buildKeys(t)
-    k.strong.forEach(x => existingStrong.add(x))
-    k.weak.forEach(x => existingWeak.add(x))
+    k.strong.forEach(x => index(byStrong, x, i))
+    k.weak.forEach(x => index(byWeak, x, i))
+  })
+  const consumed = new Set()
+  // `accept` filters candidates: for the weak key, an existing ticket that
+  // CONTRADICTS the row (another item, another cost) is a different defect of
+  // the same service call, not the same occurrence. Replay of the 2026-07-08
+  // import: 9 rows sharing customer + month + issue with an existing ticket but
+  // with other items or costs (#2185 items 10-30 $2,000 vs #484 item 60 $200)
+  // are legitimate — a bare weak key would have dropped them.
+  const take = (map, keys, accept = () => true) => {
+    for (const k of keys) {
+      const free = (map.get(k) || []).find(i => !consumed.has(i) && accept(existing[i]))
+      if (free !== undefined) { consumed.add(free); return { key: k, ticket: existing[free] } }
+    }
+    return null
   }
 
   const report = {
@@ -259,6 +318,13 @@ function analyze(excelRows, existing, limit) {
     existingFieldCoverage: fieldCounts,
     emptyRows: 0, rejected: [], existingSkipped: 0, intraFileDup: 0,
     matchedByStrategy: { k1: 0, k2: 0, k3: 0, k4: 0 }, toInsertWeakKeyOnly: 0,
+    // Rows that HAD strong keys but were recognised only by the weak key —
+    // listed in the dry-run so they can be eyeballed before --commit.
+    weakFallbackMatches: [],
+    // Rows inserted although an existing ticket shares their weak key, because
+    // item or cost differ — most are distinct defects, a few may be re-typed
+    // copies (#2295 vs #2003: $2,963 vs $373). Listed for review, never skipped.
+    possibleDuplicates: [],
     toInsert: [],
   }
   const seenStrong = new Set()
@@ -280,19 +346,8 @@ function analyze(excelRows, existing, limit) {
     }
     const keys = buildKeys(rec)
 
-    // Already in platform?
-    let matchStrategy = null
-    for (const k of keys.strong) if (existingStrong.has(k)) { matchStrategy = k.slice(0, 2); break }
-    if (!matchStrategy && keys.strong.length === 0) {
-      for (const k of keys.weak) if (existingWeak.has(k)) { matchStrategy = k.slice(0, 2); break }
-    }
-    if (matchStrategy) {
-      report.existingSkipped++
-      report.matchedByStrategy[matchStrategy]++
-      return
-    }
-
-    // Duplicate within the Excel file itself?
+    // Duplicate within the Excel file itself? Checked first: a repeated row must
+    // not fall through to "new" once its existing ticket has been consumed.
     const dupKey = keys.strong[0] || rowHash(rec)
     if (keys.strong.some(k => seenStrong.has(k)) || seenHash.has(dupKey)) {
       report.intraFileDup++
@@ -300,6 +355,30 @@ function analyze(excelRows, existing, limit) {
     }
     keys.strong.forEach(k => seenStrong.add(k))
     seenHash.add(dupKey)
+
+    // Already in platform? Strong keys first, then the weak key whenever NO
+    // strong key matched — not only when the row has none. Existing tickets
+    // often lack `item` (moved to the lines since 2026-06-25, NULL on imported
+    // rows), so a row with an item builds strong keys that can never match:
+    // the 2026-07-08 import re-inserted 87 occurrences that way (#2295 too).
+    const match = take(byStrong, keys.strong) || take(byWeak, keys.weak, t => !contradicts(rec, t))
+    if (match) {
+      report.existingSkipped++
+      report.matchedByStrategy[match.key.slice(0, 2)]++
+      if (match.key.startsWith('k4') && keys.strong.length) {
+        report.weakFallbackMatches.push({ rowNo, sc_number: rec.sc_number, quality_issue: rec.quality_issue,
+          matched: match.ticket.occurrence_no != null ? `#${match.ticket.occurrence_no}` : match.ticket.id || null })
+      }
+      return
+    }
+
+    const lookAlike = keys.weak.map(k => (byWeak.get(k) || []).find(i => !consumed.has(i))).find(i => i !== undefined)
+    if (lookAlike !== undefined) {
+      const t = existing[lookAlike]
+      report.possibleDuplicates.push({ rowNo, sc_number: rec.sc_number, item: rec.item, cost_approx: rec.cost_approx,
+        quality_issue: rec.quality_issue, existing: t.occurrence_no != null ? `#${t.occurrence_no}` : t.id || null,
+        existingItem: t.item || null, existingCost: t.real_cost ?? t.cost_approx ?? null })
+    }
 
     if (keys.strong.length === 0) report.toInsertWeakKeyOnly++
     report.toInsert.push({ rowNo, rec, weakKeyOnly: keys.strong.length === 0 })
@@ -330,6 +409,8 @@ async function main() {
   console.log('  field coverage              :', JSON.stringify(report.existingFieldCoverage))
   console.log('Rejected (missing required)    :', report.rejected.length)
   console.log('Already existing → skipped     :', report.existingSkipped, '  by strategy:', JSON.stringify(report.matchedByStrategy))
+  console.log('  of which weak key only       :', report.weakFallbackMatches.length, '(strong keys present but unmatched — listed below)')
+  console.log('Look-alikes inserted (review)  :', report.possibleDuplicates.length, '(same customer + month + issue, other item or cost)')
   console.log('Duplicates within Excel        :', report.intraFileDup)
   console.log('NEW → would insert             :', report.toInsert.length, `(dont ${report.toInsertWeakKeyOnly} sans clé forte)`)
   console.log('===============================================')
@@ -338,6 +419,17 @@ async function main() {
     console.log(`  #${rowNo} ${weakKeyOnly ? '[weak] ' : ''}SC=${rec.sc_number || '-'} REF=${rec.ref_so || '-'} ITEM=${rec.item || '-'} ` +
       `date=${rec.issue_reception_date} dept=${rec.department || '-'} $${rec.cost_approx ?? '-'} :: ${String(rec.quality_issue).slice(0, 60)}`)
   })
+  if (report.weakFallbackMatches.length) {
+    console.log(`\nRecognised by the weak key only (customer + month + issue) — check before --commit:`)
+    report.weakFallbackMatches.slice(0, 20).forEach(m =>
+      console.log(`  #${m.rowNo} SC=${m.sc_number || '-'} → existing ${m.matched} :: ${String(m.quality_issue).slice(0, 60)}`))
+  }
+  if (report.possibleDuplicates.length) {
+    console.log(`\nInserted although an existing ticket looks alike (other item or cost) — review:`)
+    report.possibleDuplicates.slice(0, 20).forEach(p =>
+      console.log(`  #${p.rowNo} SC=${p.sc_number || '-'} item=${p.item || '-'} $${p.cost_approx ?? '-'} vs ${p.existing} ` +
+        `item=${p.existingItem || '-'} $${p.existingCost ?? '-'} :: ${String(p.quality_issue).slice(0, 50)}`))
+  }
   if (report.rejected.length) {
     console.log(`\nFirst 10 rejected rows:`)
     report.rejected.slice(0, 10).forEach(r => console.log(`  #${r.rowNo} ${r.reason} (SC=${r.sc_number || '-'})`))
@@ -392,12 +484,12 @@ async function main() {
   console.log('Skipped existing :', report.existingSkipped)
   console.log('Rejected/dupes   :', report.rejected.length + report.intraFileDup)
   console.log('Batch errors     :', errors.length)
-  errors.forEach(e => console.log(`  @row ${e.batchStart} (${e.size}): ${e.message}`))
+  errors.forEach(e => console.log(`  @row ${e.rowNo}: ${e.message}`))
   console.log('==============================================')
   console.log('\nRe-run the dry-run to confirm idempotency (NEW should now be 0).')
 }
 
-module.exports = { norm, normHeader, excelSerialToISO, toNumber, toStr,
+module.exports = { norm, normHeader, excelSerialToISO, toNumber, toStr, toId, normId, PLACEHOLDER_IDS, contradicts,
   getFiscalYear, getFiscalMonth, mapRow, buildKeys, rowHash, analyze, COLUMN_MAP, STATUS_MAP }
 
 if (require.main === module) {
