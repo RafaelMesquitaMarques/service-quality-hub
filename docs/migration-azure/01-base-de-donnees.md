@@ -90,8 +90,20 @@ faire la migration, soit exécuter la migration depuis le VM applicatif.
 7 lignes de `ticket_photos` pointent vers des fichiers absents du bucket
 (6 en erreur 400, 1 vers `https://test.com/test.jpg`) : métadonnées orphelines
 à purger plutôt qu’à migrer.
-Besoin d'un **compte de stockage Azure (Blob)**, conteneur **privé**, accès par
-SAS à durée limitée.
+**Réglé le 2026-11-19.** Pas de compte Blob : le TI a fourni un dossier sur le
+serveur de fichiers interne, que le VM applicatif joint déjà.
+
+- un **compte de service dédié** y a les droits d'écriture, et lui seul ;
+- l'**héritage des permissions est cassé** : le groupe « utilisateurs
+  authentifiés », qui a *Modify* sur la racine du partage, n'a plus aucun accès
+  au dossier — vérifié le 2026-11-19 ;
+- un **sous-dossier par environnement** (dev, qa, prod), créés et vérifiés, pour
+  que tester ne touche jamais aux photos réelles ;
+- écriture testée de bout en bout depuis le poste.
+
+Les photos seront servies par notre nginx derrière l'authentification de
+l'application, donc l'exposition publique disparaît quel que soit l'état des
+droits du partage.
 
 > À noter : chez Supabase ces photos sont dans un bucket **public** — n'importe
 > qui ayant l'URL voit les photos de réclamation client. La migration est

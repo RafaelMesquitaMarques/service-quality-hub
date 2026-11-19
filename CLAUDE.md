@@ -24,12 +24,16 @@ npm run test:reports
 # Tests of the Dashboard calculations (event = line, cost rule, YoY to date, SC%, fiscal calendar)
 npm run test:dashboard
 
+# Tests of the API layer being built in server/src (authorization model, Express
+# guards, audit-trail diff, Knex config). Pure logic, no database needed.
+npm run test:api
+
 # Production container (Vite build served by nginx) on http://localhost:8080
 # needs a root .env (template: .env.example; gitignored)
 docker compose up --build -d
 ```
 
-No linting is configured; `test:reports` and `test:dashboard` are the automated test suites (Node ≥ 22, no dependency).
+No linting is configured; `test:reports`, `test:dashboard` and `test:api` are the automated test suites (Node ≥ 22, no dependency).
 
 ## Architecture
 
@@ -66,7 +70,28 @@ All dashboard numbers come from the pure module `client/src/pages/Dashboard/metr
 
 Five roles: `admin > manager > cpm > service_desk > viewer`. The `usePermissions` hook in `client/src/hooks/usePermissions.js` resolves each capability, first checking a `perm_*` field on the user profile (explicit override), then falling back to a role-based default. Always gate UI and mutations through this hook.
 
-### Environment variables
+### API layer (in progress, Nov 2026)
+
+The frontend talks straight to Supabase today, which means **authorization lives
+in the database** as 44 RLS policies. Migrating off Supabase therefore requires
+building the API layer that does not exist yet. What is already there, all pure
+logic with no database dependency (`npm run test:api`):
+
+- `server/src/auth/policy.js` — the authorization matrix, role × resource ×
+  action, default-deny. The reference for who may do what.
+- `server/src/middleware/authorize.js` — `requireCan` for role-only rules,
+  `requireCanOn` for rules that need the row loaded. Using the wrong one throws
+  **at route definition**, so the server fails to boot rather than misbehave.
+- `server/src/occurrences/history.js` — the audit-trail diff, ported from the
+  browser so the log stops being written by the audited party.
+- `server/src/db/knex.js` — `DB_CLIENT` picks the dialect (`pg` today).
+
+Design notes and the endpoint inventory live in `docs/migration-azure/`.
+**An UPDATE or DELETE refused by RLS raises no error — it affects zero rows.**
+Always check affected rows, never just `error`; in the API a write that touches
+nothing answers 404, never 200.
+
+## Environment variables
 
 **Client** (`client/.env.local`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`
 
