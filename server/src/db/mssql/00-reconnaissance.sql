@@ -20,7 +20,16 @@
 --  COMMENT RÉPONDRE : renvoyer la sortie des 6 blocs, même partielle. Si l'un
 --  échoue faute de droits (le bloc 5 lit msdb), passer au suivant — chaque
 --  bloc est indépendant.
+--
+--  IMPORTANT — le premier passage du 2026-11-19 a été exécuté dans le contexte
+--  d'une AUTRE base (MicroServices) : les blocs 2, 3 et 4 décrivaient donc une
+--  application qui n'est pas la nôtre. Le USE ci-dessous évite que ça se
+--  reproduise. Le bloc 2 affiche DB_NAME() précisément pour qu'on puisse le
+--  vérifier d'un coup d'œil.
 -- ============================================================================
+
+USE Checkmate;
+GO
 
 
 -- ── 1. Version et édition ───────────────────────────────────────────────────
@@ -124,6 +133,27 @@ SELECT TOP (25)
     CAST(bs.backup_size / 1048576.0 AS decimal(12,2)) AS taille_mo
 FROM msdb.dbo.backupset bs
 ORDER BY bs.backup_start_date DESC;
+
+-- Âge de la dernière sauvegarde complète, par base. Une date seule se lit mal ;
+-- un nombre de jours saute aux yeux.
+--
+-- Au premier passage du 2026-11-19, l'entrée la plus récente de msdb datait du
+-- 2025-10-08 et le gros du 2025-03-27 — plus d'un an. Le TI indique que les
+-- sauvegardes sont « gérées par l'infra », ce qui est plausible : un outil
+-- tiers qui sauvegarde au niveau du stockage n'écrit rien dans msdb. Mais
+-- c'est aussi l'assurance qui avait été donnée pour les VM, qui se sont
+-- révélées non sauvegardées. D'où cette requête, pour trancher sur pièce.
+SELECT
+    'Bloc 5c : age des sauvegardes'  AS bloc,
+    d.name                           AS base,
+    MAX(bs.backup_finish_date)       AS derniere_complete,
+    DATEDIFF(day, MAX(bs.backup_finish_date), GETDATE()) AS jours_depuis
+FROM sys.databases d
+LEFT JOIN msdb.dbo.backupset bs
+       ON bs.database_name = d.name AND bs.type = 'D'
+WHERE d.database_id > 4
+GROUP BY d.name
+ORDER BY jours_depuis DESC;
 
 
 -- ── 6. Fonctionnalités dont dépend la conversion ────────────────────────────
