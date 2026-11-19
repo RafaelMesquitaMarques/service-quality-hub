@@ -5,9 +5,16 @@
 // est testable ici, c'est sa forme — que le module se charge, qu'il expose ce
 // que le service attend, et qu'il vise les bonnes relations.
 //
-// Le SQL lui-même sera vérifié contre une vraie base dès qu'une connexion sera
-// disponible. Tant que ce n'est pas fait, ne pas considérer ce module comme
-// couvert.
+// Le SQL lui-même se vérifie séparément, contre une vraie base :
+//
+//     DATABASE_URL="postgresql://..." npm run verify:repository
+//
+// Lancé le 2026-11-19 contre la base de production : les onze vérifications
+// passent. Le `returning` renvoie bien `null` quand aucune ligne n'est touchée,
+// le service en fait un 404, et surtout le rollback annule réellement l'écriture
+// ET sa ligne d'historique — la promesse du service, constatée plutôt que
+// supposée. Reste non couvert : le verrou `forUpdate` face à une transaction
+// concurrente.
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'

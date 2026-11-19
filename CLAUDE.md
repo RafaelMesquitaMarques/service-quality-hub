@@ -28,6 +28,11 @@ npm run test:dashboard
 # guards, audit-trail diff, Knex config). Pure logic, no database needed.
 npm run test:api
 
+# Verifies the one module that cannot be covered without a database: the
+# occurrence repository. Everything it writes happens inside a transaction that
+# is rolled back on purpose, so it is safe against the live database.
+DATABASE_URL="postgresql://..." npm run verify:repository
+
 # Production container (Vite build served by nginx) on http://localhost:8080
 # needs a root .env (template: .env.example; gitignored)
 docker compose up --build -d
@@ -85,8 +90,21 @@ logic with no database dependency (`npm run test:api`):
 - `server/src/occurrences/history.js` — the audit-trail diff, ported from the
   browser so the log stops being written by the audited party.
 - `server/src/db/knex.js` — `DB_CLIENT` picks the dialect (`pg` today).
+- `server/src/occurrences/service.js` — the transactional update: snapshot,
+  write and audit entry in one unit of work. Rejects `created_by` from the
+  payload (the authorization rule says "the creator may edit their own", so
+  rewriting that field would be self-granting). A write touching no row is a
+  404, never a success.
+- `server/src/occurrences/repository.js` — the only module that speaks SQL.
+  Verified against the real database on 2026-11-19 (`npm run verify:repository`):
+  `returning` gives `null` on zero rows, and a rollback really does undo both
+  the write and its history row. Not covered: `forUpdate` under concurrency.
 
 Design notes and the endpoint inventory live in `docs/migration-azure/`.
+Target engine is **SQL Server** (see `docs/migration-azure/`). Its collation is
+case-insensitive but **codepage 1252, not UTF-8** — so every text column must be
+`nvarchar`, never `varchar`, or characters outside CP1252 are silently replaced.
+
 **An UPDATE or DELETE refused by RLS raises no error — it affects zero rows.**
 Always check affected rows, never just `error`; in the API a write that touches
 nothing answers 404, never 200.
