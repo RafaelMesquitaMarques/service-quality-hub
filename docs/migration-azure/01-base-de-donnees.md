@@ -157,6 +157,17 @@ sont pas remplies :
 La base faisant 30 à 50 Mo, un dump quotidien compressé est négligeable : une
 année de rétention tient dans quelques centaines de Mo.
 
+## DEV et PROD sont deux serveurs
+
+Précision du TI le 2026-11-19 : le serveur de base fourni est celui de **DEV**.
+La base `Checkmate` qui y a été créée, les droits relevés et son absence de
+sauvegarde concernent donc l'environnement de développement — ce qui est normal
+pour du DEV.
+
+**La question de la sauvegarde se reposera entièrement pour la PROD**, sur un
+autre serveur, et c'est celle qui compte : c'est là que vivra l'historique
+qualité depuis 2024-11. À poser avant la bascule, pas après.
+
 ## Questions au TI — état au 2026-11-19
 
 **Répondu :**

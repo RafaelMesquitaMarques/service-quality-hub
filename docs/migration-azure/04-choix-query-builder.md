@@ -57,13 +57,34 @@ une ligne de configuration. Knex porte la **syntaxe** des requêtes, pas le
 | Colonnes `uuid` (dont les clés primaires) | 29 | `uniqueidentifier`, `NEWID()` |
 | `timestamp with time zone` | 29 | `datetimeoffset` |
 | `numeric(p,s)` | 11 | `decimal(p,s)` |
+| Colonnes texte (`text`, `character varying`) | 70 | **`nvarchar`**, jamais `varchar` |
 | `jsonb` | **1** — `saved_reports.config` | `nvarchar(max)` |
 | Contraintes `CHECK` en `= ANY (ARRAY[...])` | 24 | `IN (...)` |
 | Fonctions `plpgsql` | 6 | réécriture en T-SQL |
 | Déclencheurs | 4 | réécriture |
 | Vues | 2 | syntaxe proche, à retester |
-| `ILIKE` (recherche de la liste) | — | `LIKE` + collation insensible à la casse |
+| `ILIKE` (recherche de la liste) | — | `LIKE` seul : la collation cible est déjà insensible à la casse |
 | Colonnes de type tableau | **0** | — |
+
+### Pourquoi `nvarchar` et pas `varchar`
+
+La base cible a la collation `SQL_Latin1_General_CP1_CI_AS` (relevé du
+2026-11-19). Deux conséquences opposées :
+
+- **CI** — insensible à la casse. Le `ILIKE` de la recherche d'occurrences se
+  traduit par un `LIKE` nu, sans `COLLATE` à ajouter nulle part. Gratuit.
+- **CP1** — codepage 1252, pas UTF-8. Une colonne `varchar` n'y stocke que les
+  caractères de ce jeu ; le reste est remplacé par « ? », silencieusement.
+
+Scan des 178 641 valeurs texte de l'export de production : **un seul caractère
+hors CP1252**, la flèche « → » (U+2192), deux fois, dans des descriptions de
+problème qualité. Le français tient entièrement dans CP1252, accents compris.
+
+Deux valeurs abîmées ne justifieraient pas à elles seules une décision. Ce qui
+la justifie, c'est que la saisie est libre et vient souvent d'un copier-coller
+depuis Word ou un courriel : guillemets typographiques, tirets longs, flèches,
+symboles. `nvarchar` les accepte tous et ne coûte que de l'espace. `varchar`
+les perdrait sans erreur ni avertissement — le pire mode de défaillance.
 
 La conversion est donc nettement plus mécanique que ce que la première version
 laissait croire. Le vrai travail tient dans les **6 fonctions et 4 déclencheurs
