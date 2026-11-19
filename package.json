@@ -13,7 +13,8 @@
     "test:reports": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test client/src/pages/Reports/engine/tests/reports.test.mjs",
     "test:dashboard": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test client/src/pages/Dashboard/tests/dashboard.test.mjs",
     "test:api": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"server/src/**/tests/*.test.mjs\"",
-    "verify:repository": "node server/scripts/verify-repository.js"
+    "verify:repository": "node server/scripts/verify-repository.js",
+    "verify:routes": "node server/scripts/verify-routes.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

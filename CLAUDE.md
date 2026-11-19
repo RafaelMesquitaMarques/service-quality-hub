@@ -33,6 +33,11 @@ npm run test:api
 # is rolled back on purpose, so it is safe against the live database.
 DATABASE_URL="postgresql://..." npm run verify:repository
 
+# End-to-end HTTP check of the occurrence routes: starts the app in-process on
+# an ephemeral port and drives it with real tokens for each role. Read-only —
+# the write requests it sends are the ones that must be refused.
+DATABASE_URL="postgresql://..." npm run verify:routes
+
 # Production container (Vite build served by nginx) on http://localhost:8080
 # needs a root .env (template: .env.example; gitignored)
 docker compose up --build -d
