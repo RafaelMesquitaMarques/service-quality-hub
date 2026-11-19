@@ -43,24 +43,38 @@ Il serait malhonnête de laisser croire que passer à SQL Server se résume alor
 une ligne de configuration. Knex porte la **syntaxe** des requêtes, pas le
 **dialecte** du schéma. Relevé sur le dump du 2026-11-18 :
 
+> **Correction du 2026-11-19.** Une première version de ce tableau annonçait
+> 15 colonnes `text[]` « sans équivalent en SQL Server », présentées comme le
+> point dur. C'était faux : le relevé avait compté les occurrences de la chaîne
+> `text[]` dans tout le dump, qui apparaît surtout dans les expressions
+> `= ANY (ARRAY[...])` des contraintes CHECK et des politiques RLS. En
+> extrayant les définitions de colonnes, **il n'y a aucune colonne de type
+> tableau**. Les chiffres ci-dessous viennent de l'inventaire corrigé :
+> 15 tables, 183 colonnes.
+
 | À reprendre | Quantité | Vers SQL Server |
 |---|---|---|
-| Colonnes `uuid`, défaut `gen_random_uuid()` | 31 colonnes, 14 défauts | `uniqueidentifier`, `NEWID()` |
-| `timestamp with time zone` | 33 colonnes | `datetimeoffset` |
-| `jsonb` | 7 colonnes | `nvarchar(max)` + fonctions JSON |
-| Tableaux `text[]` | 15 colonnes | **aucun équivalent** : table de liaison ou chaîne délimitée |
+| Colonnes `uuid` (dont les clés primaires) | 29 | `uniqueidentifier`, `NEWID()` |
+| `timestamp with time zone` | 29 | `datetimeoffset` |
+| `numeric(p,s)` | 11 | `decimal(p,s)` |
+| `jsonb` | **1** — `saved_reports.config` | `nvarchar(max)` |
+| Contraintes `CHECK` en `= ANY (ARRAY[...])` | 24 | `IN (...)` |
 | Fonctions `plpgsql` | 6 | réécriture en T-SQL |
 | Déclencheurs | 4 | réécriture |
 | Vues | 2 | syntaxe proche, à retester |
 | `ILIKE` (recherche de la liste) | — | `LIKE` + collation insensible à la casse |
-| Contraintes `CHECK` | 24 | portables pour la plupart |
+| Colonnes de type tableau | **0** | — |
 
-Les tableaux `text[]` sont le point dur : il n'existe pas d'équivalent en SQL
-Server, c'est un changement de modèle de données, pas de syntaxe.
+La conversion est donc nettement plus mécanique que ce que la première version
+laissait croire. Le vrai travail tient dans les **6 fonctions et 4 déclencheurs
+plpgsql**, qui demandent une réécriture et des tests ; les types se convertient
+ligne à ligne. La seule colonne `jsonb` porte des configurations de rapport que
+l'application lit et écrit d'un bloc, sans jamais interroger l'intérieur en SQL :
+`nvarchar(max)` suffit.
 
 Estimation honnête : Knex supprime l'essentiel de la peine côté requêtes —
-syntaxe, paramétrage, transactions, pagination — et laisse entier le travail de
-conversion du schéma. Utile, pas magique.
+syntaxe, paramétrage, transactions, pagination — et laisse le travail de
+conversion du schéma, qui est réel mais borné. Utile, pas magique.
 
 ## Ce qui est déjà fait
 
