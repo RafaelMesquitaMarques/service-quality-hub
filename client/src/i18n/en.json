@@ -954,6 +954,7 @@
     "skipped": "{{count}} skipped"
   },
   "common": {
+    "nothing_saved": "Nothing was saved — you may not have the required permissions.",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",

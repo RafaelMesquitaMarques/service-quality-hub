@@ -954,6 +954,7 @@
     "skipped": "{{count}} ignorées"
   },
   "common": {
+    "nothing_saved": "Rien n'a été enregistré : vous n'avez peut-être pas les droits nécessaires.",
     "save": "Enregistrer",
     "cancel": "Annuler",
     "delete": "Supprimer",

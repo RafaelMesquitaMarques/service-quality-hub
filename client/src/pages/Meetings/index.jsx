@@ -605,8 +605,15 @@ const meetingsQ = useQuery({
 
   const saveNotesMut = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('meetings').update({ notes, updated_at: new Date().toISOString() }).eq('id', selId)
+      const { data, error } = await supabase.from('meetings')
+        .update({ notes, updated_at: new Date().toISOString() })
+        .eq('id', selId)
+        .select('id')
       if (error) throw error
+      // Sous RLS, un UPDATE non autorisé ne renvoie PAS d'erreur : il touche
+      // zéro ligne. Sans ce contrôle l'écran annonçait « enregistré » alors que
+      // rien ne l'était — aucune réunion modifiée en six mois.
+      if (!data || data.length === 0) throw new Error(t('common.nothing_saved'))
     },
     onSuccess: () => { queryClient.invalidateQueries(['meetings-v2']); toast.success(t('meeting.save_notes')) },
     onError: () => toast.error(t('common.error')),
@@ -631,8 +638,9 @@ const meetingsQ = useQuery({
 
   const updateActionMut = useMutation({
     mutationFn: async ({ id, status }) => {
-      const { error } = await supabase.from('meeting_actions').update({ status }).eq('id', id)
+      const { data, error } = await supabase.from('meeting_actions').update({ status }).eq('id', id).select('id')
       if (error) throw error
+      if (!data || data.length === 0) throw new Error(t('common.nothing_saved'))
     },
     onSuccess: () => queryClient.invalidateQueries(['meeting-actions', selId]),
     // Sans onError, un échec passait inaperçu : le sélecteur revenait à son
@@ -651,8 +659,9 @@ const meetingsQ = useQuery({
 
   const removeTicketMut = useMutation({
     mutationFn: async (ticketId) => {
-      const { error } = await supabase.from('meeting_tickets').delete().eq('meeting_id', selId).eq('ticket_id', ticketId)
+      const { data, error } = await supabase.from('meeting_tickets').delete().eq('meeting_id', selId).eq('ticket_id', ticketId).select('ticket_id')
       if (error) throw error
+      if (!data || data.length === 0) throw new Error(t('common.nothing_saved'))
     },
     onSuccess: () => queryClient.invalidateQueries(['meeting-tickets', selId]),
     onError: (e) => toast.error(e?.message || t('common.error')),
@@ -664,8 +673,9 @@ const meetingsQ = useQuery({
       if (e1) throw e1
       const { error: e2 } = await supabase.from('meeting_tickets').delete().eq('meeting_id', id)
       if (e2) throw e2
-      const { error: e3 } = await supabase.from('meetings').delete().eq('id', id)
+      const { data: deleted, error: e3 } = await supabase.from('meetings').delete().eq('id', id).select('id')
       if (e3) throw e3
+      if (!deleted || deleted.length === 0) throw new Error(t('common.nothing_saved'))
       return id
     },
     onSuccess: (deletedId) => {
