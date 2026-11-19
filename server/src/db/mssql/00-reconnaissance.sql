@@ -137,12 +137,12 @@ ORDER BY bs.backup_start_date DESC;
 -- Âge de la dernière sauvegarde complète, par base. Une date seule se lit mal ;
 -- un nombre de jours saute aux yeux.
 --
--- Au premier passage du 2026-11-19, l'entrée la plus récente de msdb datait du
--- 2025-10-08 et le gros du 2025-03-27 — plus d'un an. Le TI indique que les
--- sauvegardes sont « gérées par l'infra », ce qui est plausible : un outil
--- tiers qui sauvegarde au niveau du stockage n'écrit rien dans msdb. Mais
--- c'est aussi l'assurance qui avait été donnée pour les VM, qui se sont
--- révélées non sauvegardées. D'où cette requête, pour trancher sur pièce.
+-- RÉSOLU le 2026-11-19 : au premier passage, l'entrée la plus récente de msdb
+-- datait du 2025-10-08 et le gros du 2025-03-27. Ce n'est pas le signe d'une
+-- absence de sauvegarde — l'infra passe par un outil qui n'écrit pas dans
+-- msdb. Le TI a précisé que seules les nouvelles VM Azure ne sont pas encore
+-- couvertes, que le reste tourne à ~90 %, et que le serveur de fichiers a son
+-- propre plan. La requête reste utile pour surveiller, pas pour soupçonner.
 SELECT
     'Bloc 5c : age des sauvegardes'  AS bloc,
     d.name                           AS base,

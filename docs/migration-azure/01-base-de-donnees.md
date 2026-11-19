@@ -127,13 +127,22 @@ les 25 comptes locaux disparaissent. Décision à prendre avec le TI.
 
 ## Sauvegardes : état au 2026-11-19
 
-Le TI a confirmé qu'**il n'y a aujourd'hui aucune sauvegarde des VM**, et que
-tout le dispositif de sauvegarde est en cours de révision — rien n'est prévu à
-court terme.
+Précisé par le TI le 2026-11-19, après une première formulation trop large de
+notre part :
 
-Conséquence directe : une base PostgreSQL en conteneur sur le VM applicatif ne
-serait couverte par rien, alors que l'hébergeur actuel sauvegarde
-automatiquement. La base porte l'historique qualité depuis 2024-11.
+- **Les nouvelles VM Azure ne sont pas encore sauvegardées**, dont celle qui
+  héberge l'application. C'est un périmètre précis, pas l'infrastructure
+  entière.
+- Le reste **tourne à environ 90 %**, et les points problématiques sont en
+  cours de traitement.
+- **Le serveur de fichiers a son propre plan de sauvegarde**, ajusté après un
+  problème de volume.
+
+Conséquence directe, et elle valide l'architecture retenue : une base
+PostgreSQL en conteneur sur le VM applicatif ne serait couverte par rien, alors
+que la base SQL Server et le partage de fichiers le sont. En plaçant les
+données sur ces deux-là, **il ne reste rien à perdre sur le VM applicatif** —
+le conteneur est sans état, le pipeline le reconstruit.
 
 **Règle retenue :** le DEV peut basculer tout de suite, il n'y a rien à y
 perdre. La **PROD ne bascule pas** tant que les trois conditions suivantes ne
@@ -168,8 +177,8 @@ année de rétention tient dans quelques centaines de Mo.
 
 **En attente :**
 
-5. Le serveur de fichiers interne est-il lui-même sauvegardé ? S'il ne l'est
-   pas non plus, il faut une troisième destination pour les dumps.
+5. ~~Le serveur de fichiers est-il sauvegardé ?~~ **Oui**, il a son propre plan
+   (TI, 2026-11-19). Les photos y sont donc couvertes.
 6. L'authentification doit-elle passer par **Entra ID**, ou l'app garde-t-elle
    ses propres comptes ?
 7. Pour QA et PROD, réplique-t-on le même montage sur chaque VM ?
