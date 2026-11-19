@@ -101,18 +101,17 @@ JOIN sys.database_principals membre ON membre.principal_id = drm.member_principa
 WHERE membre.name = 'checkmate' OR membre.name = USER_NAME();
 
 
--- ── 5. LES SAUVEGARDES EXISTENT-ELLES VRAIMENT ? ────────────────────────────
--- Le bloc le plus important du script.
+-- ── 5. Sauvegardes et mode de restauration ──────────────────────────────────
+-- Renseigné depuis : l'infra sauvegarde bien ces bases, via un outil qui
+-- n'écrit pas dans msdb — seules les nouvelles VM Azure ne sont pas encore
+-- couvertes, et le serveur de fichiers a son propre plan (TI, 2026-11-19).
 --
--- Les VM ne sont pas sauvegardées ; le choix de SQL Server comme cible tient
--- au fait que ces bases, elles, le sont. Ces deux requêtes le confirment ou
--- l'infirment. La base Checkmate venant d'être créée, elle n'a sans doute pas
--- encore de sauvegarde : ce qui compte, c'est de voir la rotation tourner sur
--- les AUTRES bases du serveur.
+-- Ces requêtes restent utiles pour deux choses : connaître le mode de
+-- restauration (SIMPLE = retour à la dernière complète, pas à un instant
+-- choisi), et disposer d'un point de repère si la question se repose.
 --
--- Lit msdb : si les droits manquent, cette partie échouera. Dans ce cas elle
--- vaut d'être lancée par un compte administrateur — la réponse engage deux ans
--- d'historique qualité.
+-- Lit msdb : si les droits manquent, passer au bloc suivant, ce n'est plus
+-- bloquant.
 SELECT
     'Bloc 5 : mode de restauration'  AS bloc,
     name                             AS base,
