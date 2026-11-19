@@ -28,9 +28,20 @@ fonctions et déclencheurs, retyper les colonnes (`uniqueidentifier`,
 `datetimeoffset`) et refaire les politiques de sécurité. C'est un chantier
 nettement plus lourd, et sans gain fonctionnel pour l'application.
 
-**Demande au TI : une instance PostgreSQL (15 ou plus récent).**
-Azure Database for PostgreSQL — Flexible Server convient, un conteneur
-PostgreSQL sur le VM applicatif aussi.
+**Décision du 2026-11-19 : la cible est SQL Server**, et non une instance
+PostgreSQL.
+
+Le facteur décisif n'est pas technique, il est opérationnel : le TI n'a
+**aucune sauvegarde des VM**, et refond tout son dispositif de sauvegarde —
+alors que ses bases SQL Server sont déjà dans sa rotation. Une base PostgreSQL
+en conteneur sur le VM serait bien plus simple à atteindre, et sans aucune
+sauvegarde : une régression de durabilité sur deux ans d'historique qualité.
+
+Le coût de conversion listé ci-dessus reste entier. Il se paie en deux temps :
+d'abord la couche API, qui doit exister de toute façon (voir
+[03-endpoints-api.md](03-endpoints-api.md)) ; ensuite le changement de moteur
+sous elle, où le dialecte devient une ligne de configuration (voir
+[04-choix-query-builder.md](04-choix-query-builder.md)).
 
 ## Volumes actuels
 
@@ -141,9 +152,11 @@ année de rétention tient dans quelques centaines de Mo.
 
 **Répondu :**
 
-1. ~~Quel moteur ?~~ **SQL Server.** Le TI envisage PostgreSQL « dans le futur »
-   mais rien n'est acté. Il propose en attendant un conteneur portant notre
-   propre base — c'est la voie retenue.
+1. ~~Quel moteur ?~~ **SQL Server, et c'est la cible retenue.** Le TI envisage
+   PostgreSQL « dans le futur » mais rien n'est acté. Il proposait en attendant
+   un conteneur portant notre propre base : écarté le 2026-11-19, parce que les
+   VM ne sont pas sauvegardées et les bases SQL Server le sont. La base
+   `Checkmate` déjà créée par le TI est donc la destination — à conserver.
 2. ~~Accès réseau ?~~ Le VM applicatif joint la base sans problème. Depuis le
    poste de travail il faudrait faire ouvrir le flux.
 3. ~~Stockage des photos ?~~ Pas de compte Blob : le TI propose un dossier sur
