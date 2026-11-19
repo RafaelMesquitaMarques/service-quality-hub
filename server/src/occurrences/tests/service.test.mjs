@@ -9,7 +9,10 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import service from '../service.js'
 
-const { updateOccurrence, sanitizePatch, NotFoundError, IMMUTABLE_FIELDS } = service
+const {
+  updateOccurrence, createOccurrence, deleteOccurrence,
+  sanitizePatch, NotFoundError, IMMUTABLE_FIELDS,
+} = service
 
 const user = { id: 'u-cpm', role: 'cpm' }
 const HORLOGE = () => '2026-11-19T12:00:00.000Z'
@@ -206,5 +209,144 @@ describe('échec du journal', () => {
     await assert.rejects(
       () => updateOccurrence({ repo, id: 'occ-1', user, now: HORLOGE, patch: { status: 'completed' } }),
       (e) => e === boom)
+  })
+})
+
+// ─── Création ────────────────────────────────────────────────────────────────
+
+/** Double pour la création et la suppression. */
+function fakeRepo2({ creee = { id: 'occ-neuve' }, lignes = [], chemins = [], supprimee = { id: 'occ-1' } } = {}) {
+  const calls = []
+  return {
+    calls,
+    nomsAppeles: () => calls.map(c => c[0]),
+    async insertOccurrence(row) { calls.push(['insertOccurrence', row]); return creee },
+    async insertLines(rows) { calls.push(['insertLines', rows]); return lignes },
+    async findPhotoPaths(id) { calls.push(['findPhotoPaths', id]); return chemins },
+    async deleteOccurrence(id) { calls.push(['deleteOccurrence', id]); return supprimee },
+  }
+}
+
+describe('createOccurrence', () => {
+  test('l auteur vient de la session, pas de la charge utile', async () => {
+    // Sinon on s attribue la paternite, et avec elle le droit de modifier.
+    const repo = fakeRepo2()
+    await createOccurrence({
+      repo, user, now: HORLOGE,
+      header: { quality_issue: 'Porte rayée', created_by: 'quelqu-un-dautre' },
+    })
+    const [, ecrit] = repo.calls.find(c => c[0] === 'insertOccurrence')
+    assert.equal(ecrit.created_by, user.id)
+  })
+
+  test('sans session, l auteur reste nul', async () => {
+    const repo = fakeRepo2()
+    await createOccurrence({ repo, user: null, now: HORLOGE, header: { quality_issue: 'x' } })
+    const [, ecrit] = repo.calls.find(c => c[0] === 'insertOccurrence')
+    assert.equal(ecrit.created_by, null)
+  })
+
+  test('les champs d identite et les champs fiscaux sont refusés', async () => {
+    const repo = fakeRepo2()
+    await createOccurrence({
+      repo, user, now: HORLOGE,
+      header: { quality_issue: 'x', id: 'impose', occurrence_no: 1, fiscal_year: 2030 },
+    })
+    const [, ecrit] = repo.calls.find(c => c[0] === 'insertOccurrence')
+    assert.deepEqual(Object.keys(ecrit).sort(), ['created_by', 'quality_issue', 'updated_at'])
+  })
+
+  test('les lignes reçoivent l identifiant de l occurrence créée', async () => {
+    const repo = fakeRepo2({ creee: { id: 'occ-neuve' } })
+    await createOccurrence({
+      repo, user, now: HORLOGE, header: { quality_issue: 'x' },
+      lines: [{ quality_issue: 'Tiroir' }, { quality_issue: 'Panneau' }],
+    })
+    const [, lignes] = repo.calls.find(c => c[0] === 'insertLines')
+    assert.deepEqual(lignes.map(l => l.occurrence_id), ['occ-neuve', 'occ-neuve'])
+  })
+
+  test('une ligne ne peut pas désigner une autre occurrence', async () => {
+    const repo = fakeRepo2({ creee: { id: 'occ-neuve' } })
+    await createOccurrence({
+      repo, user, now: HORLOGE, header: { quality_issue: 'x' },
+      lines: [{ quality_issue: 'Tiroir', occurrence_id: 'occ-de-quelqu-un-dautre' }],
+    })
+    const [, lignes] = repo.calls.find(c => c[0] === 'insertLines')
+    assert.equal(lignes[0].occurrence_id, 'occ-neuve')
+  })
+
+  test('l ordre des lignes suit leur position, sauf s il est fourni', async () => {
+    const repo = fakeRepo2()
+    await createOccurrence({
+      repo, user, now: HORLOGE, header: { quality_issue: 'x' },
+      lines: [{ quality_issue: 'a' }, { quality_issue: 'b', sort_order: 7 }, { quality_issue: 'c' }],
+    })
+    const [, lignes] = repo.calls.find(c => c[0] === 'insertLines')
+    assert.deepEqual(lignes.map(l => l.sort_order), [0, 7, 2])
+  })
+
+  test('les photos ne partent pas en base avec la ligne', async () => {
+    // Elles passent par le stockage, hors transaction : voir le service.
+    const repo = fakeRepo2()
+    await createOccurrence({
+      repo, user, now: HORLOGE, header: { quality_issue: 'x' },
+      lines: [{ quality_issue: 'a', photos: [{ name: 'p.jpg' }] }],
+    })
+    const [, lignes] = repo.calls.find(c => c[0] === 'insertLines')
+    assert.equal('photos' in lignes[0], false)
+  })
+
+  test('sans ligne, aucune insertion de ligne', async () => {
+    const repo = fakeRepo2()
+    await createOccurrence({ repo, user, now: HORLOGE, header: { quality_issue: 'x' } })
+    assert.deepEqual(repo.nomsAppeles(), ['insertOccurrence'])
+  })
+
+  test('une création qui ne renvoie rien lève', async () => {
+    const repo = fakeRepo2({ creee: null })
+    await assert.rejects(
+      () => createOccurrence({ repo, user, now: HORLOGE, header: { quality_issue: 'x' } }),
+      /aucune ligne/)
+  })
+})
+
+// ─── Suppression ─────────────────────────────────────────────────────────────
+
+describe('deleteOccurrence', () => {
+  test('relève les fichiers AVANT de supprimer', async () => {
+    // Dans l autre ordre, les chemins sont perdus avec les lignes.
+    const repo = fakeRepo2({ chemins: ['tickets/occ-1/a.jpg'] })
+    await deleteOccurrence({ repo, id: 'occ-1' })
+    assert.deepEqual(repo.nomsAppeles(), ['findPhotoPaths', 'deleteOccurrence'])
+  })
+
+  test('renvoie les chemins pour nettoyage après commit', async () => {
+    const chemins = ['tickets/occ-1/a.jpg', 'tickets/occ-1/b.jpg']
+    const repo = fakeRepo2({ chemins })
+    const r = await deleteOccurrence({ repo, id: 'occ-1' })
+    assert.deepEqual(r.storagePaths, chemins)
+  })
+
+  test('une seule suppression : la base fait la cascade', async () => {
+    // occurrence_lines, ticket_photos, ticket_history et meeting_tickets
+    // portent toutes ON DELETE CASCADE vers tickets.
+    const repo = fakeRepo2()
+    await deleteOccurrence({ repo, id: 'occ-1' })
+    assert.equal(repo.nomsAppeles().filter(n => n.startsWith('delete')).length, 1)
+  })
+
+  test('une suppression qui ne touche rien est un 404', async () => {
+    const repo = fakeRepo2({ supprimee: null })
+    await assert.rejects(
+      () => deleteOccurrence({ repo, id: 'occ-absente' }),
+      (e) => e instanceof NotFoundError && e.status === 404)
+  })
+
+  test('une occurrence sans photo se supprime sans histoire', async () => {
+    const repo = fakeRepo2({ chemins: [] })
+    const r = await deleteOccurrence({ repo, id: 'occ-1' })
+    assert.deepEqual(r.storagePaths, [])
+    assert.ok(r.occurrence)
   })
 })

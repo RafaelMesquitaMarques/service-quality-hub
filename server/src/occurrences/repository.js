@@ -21,6 +21,8 @@
 const TABLE = 'tickets'
 const VIEW = 'tickets_with_cost'
 const HISTORY = 'ticket_history'
+const LINES = 'occurrence_lines'
+const PHOTOS = 'ticket_photos'
 
 function occurrenceRepository(trx) {
   return {
@@ -58,7 +60,39 @@ function occurrenceRepository(trx) {
       await trx(HISTORY).insert(rows)
       return rows.length
     },
+
+    /** Création de l'en-tête. Renvoie la ligne créée, avec ses valeurs par défaut. */
+    async insertOccurrence(row) {
+      const rows = await trx(TABLE).insert(row).returning('*')
+      return rows && rows.length ? rows[0] : null
+    },
+
+    /** Création des lignes en un seul INSERT, pour ne pas multiplier les allers-retours. */
+    async insertLines(rows) {
+      if (!rows || rows.length === 0) return []
+      return trx(LINES).insert(rows).returning('*')
+    },
+
+    /**
+     * Chemins des fichiers rattachés, AVANT suppression.
+     * À relever pendant la transaction, à effacer après le commit.
+     */
+    async findPhotoPaths(occurrenceId) {
+      const rows = await trx(PHOTOS).where({ ticket_id: occurrenceId }).select('path')
+      return rows.map(r => r.path).filter(Boolean)
+    },
+
+    /**
+     * Suppression de l'en-tête seulement : la base cascade vers
+     * `occurrence_lines`, `ticket_photos`, `ticket_history` et
+     * `meeting_tickets`. Renvoie la ligne supprimée, ou null si rien n'a été
+     * touché — ce null devient un 404.
+     */
+    async deleteOccurrence(id) {
+      const rows = await trx(TABLE).where({ id }).del().returning('*')
+      return rows && rows.length ? rows[0] : null
+    },
   }
 }
 
-module.exports = { occurrenceRepository, TABLE, VIEW, HISTORY }
+module.exports = { occurrenceRepository, TABLE, VIEW, HISTORY, LINES, PHOTOS }

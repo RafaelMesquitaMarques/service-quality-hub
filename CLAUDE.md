@@ -95,6 +95,14 @@ logic with no database dependency (`npm run test:api`):
   payload (the authorization rule says "the creator may edit their own", so
   rewriting that field would be self-granting). A write touching no row is a
   404, never a success.
+- `server/src/occurrences/service.js` also holds `createOccurrence` (header +
+  lines in one transaction; photos stay outside, their failure is non-fatal by
+  design) and `deleteOccurrence`. **The database already cascades**:
+  `occurrence_lines`, `ticket_photos`, `ticket_history` and `meeting_tickets`
+  all carry `ON DELETE CASCADE` towards `tickets`, so deleting the header is
+  enough — do not re-implement the cascade by hand. Photo file paths are
+  collected before the delete and returned, to be cleared from storage *after*
+  the commit.
 - `server/src/occurrences/repository.js` — the only module that speaks SQL.
   Verified against the real database on 2026-11-19 (`npm run verify:repository`):
   `returning` gives `null` on zero rows, and a rollback really does undo both

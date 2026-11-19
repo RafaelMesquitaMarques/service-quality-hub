@@ -105,4 +105,77 @@ async function updateOccurrence({ repo, id, patch, user, now = () => new Date().
   return { occurrence: updated, historyRows, rejectedFields: rejected }
 }
 
-module.exports = { updateOccurrence, sanitizePatch, NotFoundError, IMMUTABLE_FIELDS }
+/**
+ * Crée une occurrence et ses lignes, dans la même unité de travail.
+ *
+ * Aujourd'hui cette séquence est écrite dans TROIS composants (TicketModal,
+ * MobileTicketForm, MobileNewOccurrence), chacun enchaînant des insertions
+ * indépendantes : une panne entre l'en-tête et les lignes laisse une occurrence
+ * vide en base.
+ *
+ * Les PHOTOS restent volontairement HORS de la transaction. Leur dépôt passe
+ * par un stockage de fichiers, qui ne participe à aucune transaction SQL, et
+ * l'application traite déjà leur échec comme non fatal : perdre une photo ne
+ * doit pas faire perdre la réclamation. L'appelant les traite après coup.
+ *
+ * @returns { occurrence, lines }
+ */
+async function createOccurrence({ repo, header, lines = [], user, now = () => new Date().toISOString() }) {
+  const { clean } = sanitizePatch(header)
+
+  // L'auteur vient de la session. Le refuser dans la charge utile puis le poser
+  // ici évite qu'une requête s'attribue la paternité d'une occurrence — et donc,
+  // par la règle « le créateur modifie la sienne », le droit de la modifier.
+  const aEcrire = { ...clean, created_by: user ? user.id : null, updated_at: now() }
+
+  const occurrence = await repo.insertOccurrence(aEcrire)
+  if (!occurrence) throw new Error('La création n\'a renvoyé aucune ligne')
+
+  let creees = []
+  if (lines.length > 0) {
+    const aInserer = lines.map((l, i) => {
+      const { clean: ligne } = sanitizePatch(l)
+      delete ligne.occurrence_id          // jamais depuis la requête
+      delete ligne.photos                 // côté client uniquement
+      return { ...ligne, occurrence_id: occurrence.id, sort_order: ligne.sort_order ?? i }
+    })
+    creees = await repo.insertLines(aInserer)
+  }
+
+  return { occurrence, lines: creees }
+}
+
+/**
+ * Supprime une occurrence.
+ *
+ * La base fait déjà la cascade : `occurrence_lines`, `ticket_photos`,
+ * `ticket_history` et `meeting_tickets` portent toutes
+ * `ON DELETE CASCADE` vers `tickets`. Une seule suppression suffit donc, et
+ * elle est atomique par construction.
+ *
+ * Le client, lui, supprime les trois tables à la main — sans vérifier l'erreur
+ * des deux premières. C'est précisément cette duplication qui crée le risque
+ * d'orphelins que la cascade évitait déjà.
+ *
+ * Les FICHIERS du stockage sont retournés, pas supprimés : il faut les effacer
+ * APRÈS le commit. Le client fait l'inverse — il efface les fichiers d'abord,
+ * si bien qu'un échec ensuite laisse des vignettes cassées. Dans l'autre ordre,
+ * le pire cas est un fichier orphelin, qui ne coûte que de l'espace.
+ *
+ * @returns { occurrence, storagePaths }
+ */
+async function deleteOccurrence({ repo, id }) {
+  const storagePaths = await repo.findPhotoPaths(id)
+  const occurrence = await repo.deleteOccurrence(id)
+  if (!occurrence) throw new NotFoundError()
+  return { occurrence, storagePaths }
+}
+
+module.exports = {
+  updateOccurrence,
+  createOccurrence,
+  deleteOccurrence,
+  sanitizePatch,
+  NotFoundError,
+  IMMUTABLE_FIELDS,
+}

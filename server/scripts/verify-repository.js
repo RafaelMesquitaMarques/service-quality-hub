@@ -22,7 +22,9 @@ const fs = require('fs')
 const path = require('path')
 const knexFactory = require('knex')
 const { occurrenceRepository } = require('../src/occurrences/repository')
-const { updateOccurrence, NotFoundError } = require('../src/occurrences/service')
+const {
+  updateOccurrence, createOccurrence, deleteOccurrence, NotFoundError,
+} = require('../src/occurrences/service')
 
 function connectionString() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL
@@ -102,6 +104,84 @@ async function main() {
     verifier('aucune ligne d\'historique en trop', (await compterHist()) === histAvant)
     const sondes = Number((await db('ticket_history').where('new_value', SONDE).count({ n: '*' }).first()).n)
     verifier('aucune trace de la sonde dans tout le journal', sondes === 0)
+
+    // ── 5. Création, puis rollback ──────────────────────────────────────────
+    console.log('\n5. Création d\'une occurrence et de ses lignes, annulée')
+    const occAvant = Number((await db('tickets').count({ n: '*' }).first()).n)
+    let creee = null
+    try {
+      await db.transaction(async (trx) => {
+        const r = await createOccurrence({
+          repo: occurrenceRepository(trx), user: { id: null },
+          header: { quality_issue: SONDE, issue_reception_date: '2026-11-19' },
+          lines: [{ quality_issue: SONDE + ' ligne A' }, { quality_issue: SONDE + ' ligne B' }],
+        })
+        creee = r.occurrence
+        verifier('l\'en-tête est créé avec un identifiant', !!r.occurrence && !!r.occurrence.id)
+        verifier('un numéro d\'occurrence est attribué par la base', r.occurrence.occurrence_no != null,
+          `n° ${r.occurrence.occurrence_no}`)
+        verifier('les deux lignes sont créées', r.lines.length === 2)
+        verifier('les lignes pointent vers l\'en-tête',
+          r.lines.every(l => l.occurrence_id === r.occurrence.id))
+        verifier('les champs fiscaux sont calculés par la base',
+          r.occurrence.fiscal_year != null && r.occurrence.fiscal_month != null,
+          `FY${r.occurrence.fiscal_year} M${r.occurrence.fiscal_month}`)
+        throw new Error('__ROLLBACK_VOULU__')
+      })
+    } catch (e) { if (e.message !== '__ROLLBACK_VOULU__') throw e }
+
+    verifier('rien n\'a été créé après le rollback',
+      Number((await db('tickets').count({ n: '*' }).first()).n) === occAvant)
+    if (creee) {
+      const restant = await db('occurrence_lines').where({ occurrence_id: creee.id }).count({ n: '*' }).first()
+      verifier('aucune ligne orpheline', Number(restant.n) === 0)
+    }
+
+    // ── 6. Suppression en cascade, puis rollback ────────────────────────────
+    console.log('\n6. Suppression en cascade, annulée')
+    const avecLignes = await db('occurrence_lines')
+      .join('tickets', 'tickets.id', 'occurrence_lines.occurrence_id')
+      .groupBy('tickets.id', 'tickets.occurrence_no')
+      .select('tickets.id', 'tickets.occurrence_no')
+      .count({ n: 'occurrence_lines.id' })
+      .orderBy('n', 'desc').first()
+
+    if (!avecLignes) {
+      console.log('  (aucune occurrence avec lignes — bloc sauté)')
+    } else {
+      const cpt = async (q, table, col) =>
+        Number((await q(table).where({ [col]: avecLignes.id }).count({ n: '*' }).first()).n)
+      const av = {
+        lignes: await cpt(db, 'occurrence_lines', 'occurrence_id'),
+        photos: await cpt(db, 'ticket_photos', 'ticket_id'),
+        hist: await cpt(db, 'ticket_history', 'ticket_id'),
+      }
+      console.log(`   témoin #${avecLignes.occurrence_no} : ${av.lignes} lignes, ${av.photos} photos, ${av.hist} historique`)
+
+      try {
+        await db.transaction(async (trx) => {
+          const r = await deleteOccurrence({ repo: occurrenceRepository(trx), id: avecLignes.id })
+          verifier('la suppression renvoie la ligne supprimée', !!r.occurrence && r.occurrence.id === avecLignes.id)
+          verifier('les chemins des fichiers sont relevés avant', r.storagePaths.length === av.photos,
+            `${r.storagePaths.length} chemin(s)`)
+          verifier('la base a cascadé vers les lignes', (await cpt(trx, 'occurrence_lines', 'occurrence_id')) === 0)
+          verifier('la base a cascadé vers les photos', (await cpt(trx, 'ticket_photos', 'ticket_id')) === 0)
+          verifier('la base a cascadé vers l\'historique', (await cpt(trx, 'ticket_history', 'ticket_id')) === 0)
+          throw new Error('__ROLLBACK_VOULU__')
+        })
+      } catch (e) { if (e.message !== '__ROLLBACK_VOULU__') throw e }
+
+      const ap = {
+        lignes: await cpt(db, 'occurrence_lines', 'occurrence_id'),
+        photos: await cpt(db, 'ticket_photos', 'ticket_id'),
+        hist: await cpt(db, 'ticket_history', 'ticket_id'),
+      }
+      verifier('tout est revenu après le rollback',
+        ap.lignes === av.lignes && ap.photos === av.photos && ap.hist === av.hist,
+        `${ap.lignes} lignes, ${ap.photos} photos, ${ap.hist} historique`)
+      verifier('l\'occurrence elle-même est toujours là',
+        !!(await db('tickets').where({ id: avecLignes.id }).first('id')))
+    }
 
     console.log(`\n${echecs === 0 ? 'TOUT PASSE' : echecs + ' ECHEC(S)'}`)
   } finally {
